@@ -18,6 +18,7 @@ import { PALETTES } from '../domain/palettes.js'
 import { validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
+  MAX_BAY_FIELD,
   cellCount,
   type Bay,
   type Ceiling,
@@ -89,9 +90,17 @@ export function createLevel(options: { y: number; name: string; bayCols: number;
   return { id: newId(), y: options.y, name: options.name, paletteId: DEFAULT_PALETTE_ID, bays }
 }
 
+/** §15 open question 2 — the bay field is capped until V1 stops being O(n²). */
+function assertFieldExtent(extent: number, label: string): number {
+  if (!Number.isInteger(extent) || extent < 1 || extent > MAX_BAY_FIELD) {
+    throw new RangeError(`${label} must be an integer between 1 and ${MAX_BAY_FIELD}, got ${extent}`)
+  }
+  return extent
+}
+
 export function createProject(options: NewProjectOptions = {}): Project {
-  const bayCols = options.bayCols ?? 3
-  const bayRows = options.bayRows ?? 3
+  const bayCols = assertFieldExtent(options.bayCols ?? 3, 'bayCols')
+  const bayRows = assertFieldExtent(options.bayRows ?? 3, 'bayRows')
   return {
     schemaVersion: 1,
     id: newId(),

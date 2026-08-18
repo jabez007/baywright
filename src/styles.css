@@ -1,0 +1,106 @@
+/*
+ * PRD §12 — no CSS framework. Plain CSS with custom properties, dark mode via
+ * prefers-color-scheme.
+ *
+ * §10: colour encodes module *category*, not module identity. The four category
+ * fills are the only saturated colours in the plan; errors are drawn as a
+ * dashed border overlay so the underlying category stays readable.
+ */
+
+:root {
+  --bg: #f4f4f2;
+  --panel: #ffffff;
+  --panel-2: #ebebe8;
+  --border: #d3d3cd;
+  --text: #1c1c1a;
+  --muted: #6d6d66;
+  --accent: #2f6f9f;
+  --danger: #b4342b;
+
+  --wall: #b9b6ad;
+  --wall-edge: #8d8a81;
+  --void: #e6e5e0;
+
+  --cat-circulation: #7fb2d9;
+  --cat-room: #e3b778;
+  --cat-service: #8fbf8a;
+  --cat-storage: #b79ad0;
+
+  --radius: 6px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a;
+    --panel: #1e2024;
+    --panel-2: #26292e;
+    --border: #383c43;
+    --text: #e8e8e6;
+    --muted: #9a9c9f;
+    --accent: #6ba8d8;
+    --danger: #e5675c;
+
+    --wall: #43484f;
+    --wall-edge: #5b616a;
+    --void: #1a1c1f;
+
+    --cat-circulation: #3f6f96;
+    --cat-room: #96703c;
+    --cat-service: #487a45;
+    --cat-storage: #6f5590;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: var(--mono);
+}

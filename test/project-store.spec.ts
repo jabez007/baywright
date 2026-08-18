@@ -375,3 +375,23 @@ describe('toJSON', () => {
     expect(JSON.parse(JSON.stringify(copy)).schemaVersion).toBe(1)
   })
 })
+
+/** PRD §15 open question 2 — the field is capped while V1 is still O(n²). */
+describe('the bay field cap', () => {
+  it('accepts a field up to 8x8', () => {
+    expect(Object.keys(createProject({ bayCols: 8, bayRows: 8 }).levels[0]!.bays)).toHaveLength(64)
+  })
+
+  it('rejects a field wider than the cap', () => {
+    expect(() => createProject({ bayCols: 9 })).toThrow(/bayCols must be an integer between 1 and 8/)
+  })
+
+  it('rejects a field taller than the cap', () => {
+    expect(() => createProject({ bayRows: 12 })).toThrow(/bayRows must be an integer between 1 and 8/)
+  })
+
+  it('rejects a non-integer or empty field', () => {
+    expect(() => createProject({ bayCols: 2.5 })).toThrow(RangeError)
+    expect(() => createProject({ bayRows: 0 })).toThrow(RangeError)
+  })
+})
