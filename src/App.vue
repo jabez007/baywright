@@ -16,6 +16,7 @@ import type { Grain } from './domain/types.js'
 import { loadLastOpenedProject } from './persistence/db.js'
 import { useAutosave } from './persistence/autosave.js'
 import { useProjectStore } from './stores/project.js'
+import NewProjectDialog from './components/NewProjectDialog.vue'
 import PlanCanvas from './components/PlanCanvas.vue'
 import Toolbar from './components/Toolbar.vue'
 
@@ -29,6 +30,7 @@ const grain = ref<Grain>('fine')
 const booted = ref(false)
 const notice = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const newProjectOpen = ref(false)
 
 const errorCount = computed(() => store.issues.filter((issue) => issue.severity === 'error').length)
 const warningCount = computed(() => store.issues.filter((issue) => issue.severity === 'warning').length)
@@ -106,9 +108,9 @@ async function onFileChosen(event: Event): Promise<void> {
   }
 }
 
-async function onReset(): Promise<void> {
-  if (!window.confirm('Discard this project and start a new one?')) return
-  store.newProject()
+async function onCreate(options: { bayCols: number; bayRows: number }): Promise<void> {
+  newProjectOpen.value = false
+  store.newProject(options)
   notice.value = null
   await autosave.flush()
 }
@@ -127,7 +129,7 @@ async function onReset(): Promise<void> {
       @set-grain="grain = $event"
       @export="onExport"
       @import="onImport"
-      @reset="onReset"
+      @reset="newProjectOpen = true"
     />
 
     <p v-if="notice" class="notice" role="alert">{{ notice }}</p>
@@ -159,6 +161,14 @@ async function onReset(): Promise<void> {
         drag to paint · shift-drag to merge · alt-click an edge for sockets · [ ] height · ⌘Z undo
       </span>
     </footer>
+
+    <NewProjectDialog
+      :open="newProjectOpen"
+      :bay-cols="store.project.bayCols"
+      :bay-rows="store.project.bayRows"
+      @create="onCreate"
+      @cancel="newProjectOpen = false"
+    />
 
     <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="onFileChosen" />
   </div>
