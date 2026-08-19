@@ -52,7 +52,14 @@ export type BaywrightDB = IDBPDatabase<BaywrightSchema>
 
 let connection: Promise<BaywrightDB> | undefined
 
-/** Opens (and memoises) the connection. Safe to call on every operation. */
+/**
+ * Opens (and memoises) the connection. Safe to call on every operation.
+ *
+ * A failure drops the memo before rethrowing: keeping the rejected promise
+ * would turn one transient error — an upgrade blocked by another tab, a storage
+ * failure — into permanent, unrecoverable data loss for the rest of the page
+ * load, with every later save failing against the same dead promise.
+ */
 export function openDatabase(): Promise<BaywrightDB> {
   connection ??= openDB<BaywrightSchema>(DB_NAME, DB_VERSION, {
     upgrade(db) {
@@ -62,6 +69,9 @@ export function openDatabase(): Promise<BaywrightDB> {
       }
       if (!db.objectStoreNames.contains(META)) db.createObjectStore(META)
     },
+  }).catch((cause: unknown) => {
+    connection = undefined
+    throw cause
   })
   return connection
 }

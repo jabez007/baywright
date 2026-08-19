@@ -654,6 +654,16 @@ describe('resizing the field', () => {
     expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A4', 'A5'])
   })
 
+  it('never overwrites a bay already standing where the field grew', () => {
+    const s = store()
+    // Reachable only from a document that predates the import check, but the
+    // fill loop is what would destroy it, so it guards itself.
+    s.project.levels[0]!.bays['E1'] = { grain: 'merged', cells: [{ module: 'vault', heightCells: 1, ceiling: 'flat', sockets: { n: 'solid', e: 'solid', s: 'solid', w: 'solid', up: 'solid', down: 'solid' } }] }
+    s.setFieldExtent(6, 3)
+    expect(s.project.levels[0]!.bays['E1']!.cells[0]!.module).toBe('vault')
+    expect(s.project.levels[0]!.bays['D1']!.cells[0]!.module).toBe('empty')
+  })
+
   it('honours the §15 cap', () => {
     const s = store()
     expect(() => s.setFieldExtent(9, 3)).toThrow(/bayCols must be an integer between 1 and 8/)

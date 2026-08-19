@@ -341,7 +341,14 @@ function commitFootprint(current: Extract<Stroke, { kind: 'footprint' }>, levelI
   })
 }
 
-onBeforeUnmount(() => window.removeEventListener('pointermove', onPointerMove))
+onBeforeUnmount(() => {
+  // `pointerup` is registered `{ once: true }`, so it clears itself after a
+  // completed stroke — but not one interrupted by an unmount. Left behind, it
+  // would fire later and commit the stroke to a store that outlives the canvas.
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  stroke.value = null
+})
 
 // --------------------------------------------------------------------------
 // Target helpers

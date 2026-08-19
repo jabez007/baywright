@@ -74,16 +74,33 @@ export function useAutosave(
   // Not `immediate`: loading a project should not rewrite what was just read.
   const unwatch = watch(() => store.project, schedule, { deep: true })
 
+  /**
+   * `beforeunload` cannot await an IndexedDB write, so on its own it loses up to
+   * `delayMs` of edits. `visibilitychange` fires while the page is still alive —
+   * and is the only one of the two that fires at all when a mobile browser
+   * discards a backgrounded tab — so the write gets started early enough to
+   * commit. Both are kept: hiding is the reliable signal, unloading is the last
+   * chance for anything edited after the tab was last hidden.
+   */
   const onUnload = (): void => {
     if (timer !== undefined) void flush()
   }
-  if (typeof window !== 'undefined') window.addEventListener('beforeunload', onUnload)
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === 'hidden' && timer !== undefined) void flush()
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', onUnload)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+  }
 
   function stop(): void {
     unwatch()
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
-    if (typeof window !== 'undefined') window.removeEventListener('beforeunload', onUnload)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', onUnload)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }
 
   onScopeDispose(stop, true)

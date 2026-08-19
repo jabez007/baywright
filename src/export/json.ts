@@ -10,6 +10,7 @@
  *
  * Pure apart from {@link downloadProject}, which is the only browser-aware part.
  */
+import { parseBayKey } from '../domain/geometry.js'
 import { cellCount, type Bay, type Cell, type Face, type Level, type Project, type Socket } from '../domain/types.js'
 
 export const SCHEMA_VERSION = 1
@@ -60,14 +61,18 @@ export function validateProject(raw: unknown): Project {
   const origin = object(doc['origin'], '$.origin')
   const levels = array(doc['levels'], '$.levels')
 
+  // Read before the levels, which are checked against them.
+  const bayCols = positiveInteger(doc['bayCols'], '$.bayCols')
+  const bayRows = positiveInteger(doc['bayRows'], '$.bayRows')
+
   const project: Project = {
     schemaVersion: SCHEMA_VERSION,
     id: string(doc['id'], '$.id'),
     name: string(doc['name'], '$.name'),
     origin: { x: integer(origin['x'], '$.origin.x'), z: integer(origin['z'], '$.origin.z') },
-    bayCols: positiveInteger(doc['bayCols'], '$.bayCols'),
-    bayRows: positiveInteger(doc['bayRows'], '$.bayRows'),
-    levels: levels.map((level, index) => parseLevel(level, `$.levels[${index}]`)),
+    bayCols,
+    bayRows,
+    levels: levels.map((level, index) => parseLevel(level, `$.levels[${index}]`, bayCols, bayRows)),
     palettes: parsePalettes(doc['palettes'], '$.palettes'),
   }
 
@@ -84,7 +89,7 @@ export function validateProject(raw: unknown): Project {
   return project
 }
 
-function parseLevel(raw: unknown, path: string): Level {
+function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number): Level {
   const doc = object(raw, path)
   const bays = object(doc['bays'], `${path}.bays`)
   const level: Level = {
@@ -99,6 +104,16 @@ function parseLevel(raw: unknown, path: string): Level {
   for (const [bayKey, bay] of Object.entries(bays)) {
     if (!/^[A-Z]+[1-9][0-9]*$/.test(bayKey)) {
       throw new ProjectParseError(`malformed bay key '${bayKey}'`, `${path}.bays`)
+    }
+    // Unlike the geometry rules, an out-of-field bay is not something the
+    // validator has an opinion about: it is addressed by a key the field cannot
+    // name, invisible on the canvas, and silently replaced by a resize.
+    const { i, j } = parseBayKey(bayKey)
+    if (i >= bayCols || j >= bayRows) {
+      throw new ProjectParseError(
+        `bay '${bayKey}' is outside the ${bayCols}×${bayRows} field`,
+        `${path}.bays.${bayKey}`,
+      )
     }
     level.bays[bayKey] = parseBay(bay, `${path}.bays.${bayKey}`)
   }
@@ -157,6 +172,10 @@ function parsePalettes(raw: unknown, path: string): Project['palettes'] {
   const doc = object(raw, path)
   const palettes: Project['palettes'] = {}
   for (const [id, value] of Object.entries(doc)) {
+    // `palettes['__proto__'] = …` runs the inherited setter and swaps the map's
+    // prototype for file-supplied data instead of storing an entry. JSON.parse
+    // makes it an own key, so Object.entries hands it over like any other id.
+    if (id === '__proto__') throw new ProjectParseError(`reserved palette id '${id}'`, `${path}.${id}`)
     const palette = object(value, `${path}.${id}`)
     const blocks = object(palette['blocks'], `${path}.${id}.blocks`)
     palettes[id] = {
@@ -236,5 +255,7 @@ export function downloadProject(project: Project): void {
   anchor.href = url
   anchor.download = projectFilename(project)
   anchor.click()
-  URL.revokeObjectURL(url)
+  // Deferred: revoking in the same task can cancel the download, because the
+  // browser has not necessarily read the blob by the time click() returns.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }

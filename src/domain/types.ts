@@ -89,7 +89,7 @@ export const BAY_PITCH = 12
 
 /**
  * §15 open question 2 — the field is capped while the collision check is still
- * O(n²) per bay. An 8x8 field at 3 levels is 576 bays, up to 5184 cells.
+ * O(n²) per bay. An 8x8 field at 3 levels is 192 bays, up to 1728 fine cells.
  */
 export const MAX_BAY_FIELD = 8
 

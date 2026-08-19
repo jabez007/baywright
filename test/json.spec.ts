@@ -155,6 +155,51 @@ describe('defensive import', () => {
   })
 })
 
+/**
+ * A file on disk may be hand-edited or hostile. These are the cases where the
+ * old importer let something through that later corrupted the document.
+ */
+describe('import boundary hardening', () => {
+  it('refuses a bay outside the recorded field', () => {
+    const doc = project([level('ground', 0, { A1: bay('fine'), D1: bay('fine') })])
+    expect(() => validateProject(doc)).toThrow(ProjectParseError)
+    expect(() => validateProject(doc)).toThrow(/bay 'D1' is outside the 3×3 field/)
+  })
+
+  it('refuses a bay below the recorded field', () => {
+    const doc = project([level('ground', 0, { A1: bay('fine'), A4: bay('fine') })])
+    expect(() => validateProject(doc)).toThrow(/outside the 3×3 field/)
+  })
+
+  it('accepts a bay on the far edge of the field', () => {
+    const doc = project([level('ground', 0, { C3: bay('fine') })])
+    expect(Object.keys(validateProject(doc).levels[0]!.bays)).toEqual(['C3'])
+  })
+
+  it('checks against the field the file declares, not the default', () => {
+    const wide = project([level('ground', 0, { F1: bay('fine') })], { bayCols: 6, bayRows: 1 })
+    expect(Object.keys(validateProject(wide).levels[0]!.bays)).toEqual(['F1'])
+  })
+
+  it('refuses a __proto__ palette id rather than swapping the map prototype', () => {
+    // Built as text: assigning `__proto__` in JS runs the setter before the
+    // value ever reaches JSON, so the key has to arrive through JSON.parse.
+    const text = serializeProject(createProject())
+    const entry =
+      '"__proto__": {"id":"x","name":"x","blocks":' +
+      '{"floor":"a","wall":"a","ceiling":"a","accent":"a","trim":"a","light":"a"}},'
+    const injected = text.replace('"palettes": {', `"palettes": {${entry}`)
+    expect(injected).not.toEqual(text)
+    expect(() => parseProject(injected)).toThrow(/reserved palette id/)
+  })
+
+  it('leaves an ordinary palette id alone', () => {
+    const parsed = parseProject(serializeProject(createProject()))
+    expect(Object.getPrototypeOf(parsed.palettes)).toBe(Object.prototype)
+    expect(Object.keys(parsed.palettes).length).toBeGreaterThan(0)
+  })
+})
+
 describe('filenames', () => {
   it('slugs the project name', () => {
     expect(projectFilename(project([], { name: 'Deep Hall — Phase 2' }))).toBe('deep-hall-phase-2.json')

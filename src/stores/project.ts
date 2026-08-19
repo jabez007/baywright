@@ -427,7 +427,12 @@ export const useProjectStore = defineStore('project', () => {
         for (let j = 0; j < rows; j++) {
           for (let i = 0; i < cols; i++) {
             if (i < oldCols && j < oldRows) continue
-            level.bays[bayKeyOf(i, j)] = createBay(grain)
+            // Never overwrite: a bay already standing at a position the field is
+            // only now growing into came from somewhere, and filling would
+            // destroy whatever is painted in it.
+            const bayKey = bayKeyOf(i, j)
+            if (level.bays[bayKey]) continue
+            level.bays[bayKey] = createBay(grain)
           }
         }
 
