@@ -5,6 +5,8 @@
  * Everything needed to lay down geometry is one click away: pick a module, pick
  * a grain, drag on the canvas. Nothing here opens a modal.
  */
+import { computed } from 'vue'
+
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
 import type { Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
@@ -26,9 +28,13 @@ const emit = defineEmits<{
   import: []
   reset: []
   resize: []
+  'apply-footprint': []
 }>()
 
 const store = useProjectStore()
+
+/** One level is its own footprint already, so there is nothing to stamp onto. */
+const canApplyFootprint = computed(() => store.project.levels.length > 1)
 
 const GRAINS: readonly Grain[] = ['fine', 'coarse', 'merged']
 
@@ -83,6 +89,21 @@ function statusTitle(): string {
         @click="emit('set-mode', option.id)"
       >
         {{ option.label }}
+      </button>
+    </div>
+
+    <div v-if="mode === 'footprint'" class="group" role="group" aria-label="Footprint">
+      <button
+        type="button"
+        :disabled="!canApplyFootprint"
+        :title="
+          canApplyFootprint
+            ? 'Give every other level the same footprint as this one'
+            : 'There is only one level'
+        "
+        @click="emit('apply-footprint')"
+      >
+        Apply to all levels
       </button>
     </div>
 

@@ -116,6 +116,10 @@ async function onFileChosen(event: Event): Promise<void> {
   }
 }
 
+function onApplyFootprint(): void {
+  store.applyFootprintToAllLevels(store.currentLevelId)
+}
+
 async function onSized(options: { bayCols: number; bayRows: number }): Promise<void> {
   const intent = sizing.value
   sizing.value = null
@@ -148,6 +152,7 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
       @import="onImport"
       @reset="sizing = 'new'"
       @resize="sizing = 'resize'"
+      @apply-footprint="onApplyFootprint"
     />
 
     <p v-if="notice" class="notice" role="alert">{{ notice }}</p>

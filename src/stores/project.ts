@@ -468,6 +468,42 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /**
+   * Stamps one level's footprint onto every other level. Bays common to both
+   * are left exactly as they are — this squares up the outline of the stack,
+   * it does not repaint it — so only the bays being added are new and empty.
+   *
+   * Returns how many levels changed, so a caller can tell a no-op from work.
+   */
+  function applyFootprintToAllLevels(sourceLevelId: string): number {
+    return mutate(() => {
+      const source = requireLevel(sourceLevelId)
+      let changed = 0
+
+      for (const level of project.value.levels) {
+        if (level.id === source.id) continue
+        let touched = false
+
+        for (const bayKey of Object.keys(level.bays)) {
+          if (source.bays[bayKey]) continue
+          delete level.bays[bayKey]
+          touched = true
+        }
+        for (const [bayKey, bay] of Object.entries(source.bays)) {
+          if (level.bays[bayKey]) continue
+          level.bays[bayKey] = createBay(bay.grain)
+          touched = true
+        }
+
+        if (touched) changed++
+      }
+
+      // The source is never empty, so no level can be emptied by this.
+      reconcile()
+      return changed
+    })
+  }
+
   /** Returns whether the bay is present afterwards, so the canvas can drag-fill. */
   function toggleBay(levelId: string, bayKey: string, grain: Grain = 'fine'): boolean {
     const present = requireLevel(levelId).bays[bayKey] !== undefined
@@ -708,6 +744,7 @@ export const useProjectStore = defineStore('project', () => {
     addBay,
     removeBay,
     toggleBay,
+    applyFootprintToAllLevels,
     setBayGrain,
     paintBay,
     paintCell,

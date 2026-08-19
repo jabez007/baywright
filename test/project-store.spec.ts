@@ -481,6 +481,99 @@ describe('the footprint', () => {
   })
 })
 
+describe('applying a footprint across levels', () => {
+  /** Two levels, both full, so each test only has to say how they differ. */
+  function stacked() {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(8, 'Upper')
+    return { s, ground, upper }
+  }
+
+  it('copies the holes downward and upward alike', () => {
+    const { s, ground, upper } = stacked()
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    expect(Object.keys(s.project.levels.find((l) => l.id === upper)!.bays)).toHaveLength(9)
+
+    s.applyFootprintToAllLevels(ground)
+    expect(Object.keys(s.project.levels.find((l) => l.id === upper)!.bays).sort()).toEqual([
+      'A1',
+      'A2',
+      'A3',
+      'B1',
+      'B3',
+      'C1',
+      'C3',
+    ])
+  })
+
+  it('leaves the source level untouched', () => {
+    const { s, ground } = stacked()
+    s.paintBay(ground, 'B2', 'storage')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === ground)!.bays['B2']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('keeps what is painted in the bays that survive', () => {
+    const { s, ground, upper } = stacked()
+    s.paintBay(upper, 'A1', 'storage')
+    s.removeBay(ground, 'C3')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['A1']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('adds missing bays at the grain the source uses', () => {
+    const { s, ground, upper } = stacked()
+    s.setBayGrain(ground, 'B2', 'coarse')
+    s.removeBay(upper, 'B2')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['B2']!.grain).toBe('coarse')
+  })
+
+  it('does not re-cut a bay that is already there', () => {
+    const { s, ground, upper } = stacked()
+    s.setBayGrain(ground, 'B2', 'coarse')
+    s.setBayGrain(upper, 'B2', 'merged')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['B2']!.grain).toBe('merged')
+  })
+
+  it('reports how many levels it changed', () => {
+    const { s, ground } = stacked()
+    expect(s.applyFootprintToAllLevels(ground)).toBe(0)
+    s.removeBay(ground, 'B2')
+    expect(s.applyFootprintToAllLevels(ground)).toBe(1)
+  })
+
+  it('is one undo step', () => {
+    const { s, ground, upper } = stacked()
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    s.applyFootprintToAllLevels(ground)
+    s.undo()
+    expect(Object.keys(s.project.levels.find((l) => l.id === upper)!.bays)).toHaveLength(9)
+    expect(Object.keys(s.project.levels.find((l) => l.id === ground)!.bays)).toHaveLength(7)
+  })
+
+  it('drops a selection left on a bay it removed', () => {
+    const { s, ground, upper } = stacked()
+    s.select({ kind: 'bay', levelId: upper, bayKey: 'B2' })
+    s.removeBay(ground, 'B2')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+
+  it('refuses a level that is not there', () => {
+    const { s } = stacked()
+    expect(() => s.applyFootprintToAllLevels('nope')).toThrow(/no level/)
+  })
+})
+
 describe('resizing the field', () => {
   it('fills the positions the field grew into', () => {
     const s = store()
