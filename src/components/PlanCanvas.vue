@@ -20,7 +20,7 @@ import BayTile from './BayTile.vue'
 import { moduleFill } from './fills.js'
 
 const props = defineProps<{
-  mode: 'bay' | 'cell'
+  mode: 'bay' | 'cell' | 'footprint'
   moduleId: string
   grain: Grain
 }>()
@@ -34,6 +34,8 @@ type Target = string
 type Stroke =
   | { kind: 'paint'; targets: Set<Target> }
   | { kind: 'merge'; grain: Grain; anchor: { u: number; v: number }; head: { u: number; v: number } }
+  /** `add` is fixed by the first slot the drag touches, so a stroke never flip-flops. */
+  | { kind: 'footprint'; add: boolean; targets: Set<string> }
 
 const stroke = ref<Stroke | null>(null)
 
@@ -70,6 +72,61 @@ const bays = computed(() => {
   return Object.entries(level.bays)
     .map(([bayKey, bay]) => ({ bayKey, bay, ...parseBayKey(bayKey) }))
     .sort((left, right) => left.j - right.j || left.i - right.i)
+})
+
+/**
+ * The rim is painted per bay rather than as one rectangle over the field:
+ * neighbouring squares overlap on the wall they share, so the union is the
+ * outer wall of whatever shape the footprint actually is. A field-sized rect
+ * would draw a bay that is not there.
+ */
+function shapedRects(inset: number) {
+  return bays.value.map(({ i, j }) => ({
+    x: BAY_PITCH * i - inset,
+    y: BAY_PITCH * j - inset,
+    width: BAY_PITCH + 1 + inset * 2,
+    height: BAY_PITCH + 1 + inset * 2,
+  }))
+}
+
+const groundRects = computed(() => shapedRects(PAD))
+const fieldRects = computed(() => shapedRects(0))
+
+/**
+ * Every position in the field, present or not. Footprint mode hit-tests
+ * against these rather than the tiles, so an absent bay is as clickable as a
+ * present one.
+ */
+const slots = computed(() => {
+  const level = store.currentLevel
+  const out: { bayKey: string; present: boolean; x: number; y: number }[] = []
+  for (let j = 0; j < store.project.bayRows; j++) {
+    for (let i = 0; i < store.project.bayCols; i++) {
+      const bayKey = bayKeyOf(i, j)
+      out.push({
+        bayKey,
+        present: level?.bays[bayKey] !== undefined,
+        x: BAY_PITCH * i + 0.5,
+        y: BAY_PITCH * j + 0.5,
+      })
+    }
+  }
+  return out
+})
+
+/** Footprint mode draws bays whole; only the tools below it care about cells. */
+const tileMode = computed(() => (props.mode === 'footprint' ? 'bay' : props.mode))
+
+const footprintPreview = computed(() => {
+  const current = stroke.value
+  if (current?.kind !== 'footprint') return null
+  return {
+    add: current.add,
+    rects: [...current.targets].map((bayKey) => {
+      const { i, j } = parseBayKey(bayKey)
+      return { x: BAY_PITCH * i + 0.5, y: BAY_PITCH * j + 0.5, width: BAY_PITCH, height: BAY_PITCH }
+    }),
+  }
 })
 
 /** Cells the validator flagged, so tiles can draw the §10 dashed overlay. */
@@ -127,6 +184,7 @@ const previewFill = computed(() => moduleFill(props.moduleId))
 const preview = computed(() => {
   const current = stroke.value
   if (!current) return []
+  if (current.kind === 'footprint') return []
   if (current.kind === 'merge') return mergeTargets(current).map((ref) => cellInteriorRect(ref))
   return [...current.targets].map((target) => targetRect(target)).filter((rect) => rect !== null)
 })
@@ -165,6 +223,18 @@ function onPointerDown(event: PointerEvent): void {
 
   const [bayKey, index] = splitTarget(target)
 
+  // Footprint mode edits which bays exist, so none of the paint tools apply.
+  if (props.mode === 'footprint') {
+    stroke.value = {
+      kind: 'footprint',
+      add: store.currentLevel?.bays[bayKey] === undefined,
+      targets: new Set([bayKey]),
+    }
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp, { once: true })
+    return
+  }
+
   // §10 — alt-click a cell edge cycles that face's socket. Single click only.
   if (event.altKey && index !== null) {
     const face = nearestFace(event, { levelId: store.currentLevelId, bayKey, cellIndex: index })
@@ -194,6 +264,13 @@ function onPointerMove(event: PointerEvent): void {
   if (!target) return
   const [bayKey, index] = splitTarget(target)
 
+  if (current.kind === 'footprint') {
+    // Only slots the stroke would actually change, so the preview does not
+    // promise an edit to bays that are already the way the drag wants them.
+    if ((store.currentLevel?.bays[bayKey] === undefined) === current.add) current.targets.add(bayKey)
+    return
+  }
+
   if (current.kind === 'merge') {
     if (index === null || grainOf(bayKey) !== current.grain) return
     current.head = lattice(bayKey, current.grain, index)
@@ -210,6 +287,11 @@ function onPointerUp(): void {
 
   const levelId = store.currentLevel?.id
   if (!levelId) return
+
+  if (current.kind === 'footprint') {
+    commitFootprint(current, levelId)
+    return
+  }
 
   if (current.kind === 'merge') {
     const refs = mergeTargets(current)
@@ -235,6 +317,28 @@ function onPointerUp(): void {
   })
   store.batch(() => store.paintCells(refs, props.moduleId))
   store.selectCells(refs)
+}
+
+/**
+ * A level with no bays left is not a shape, it is a deleted level, and
+ * `removeBay` throws rather than allow it. Inside `batch` that throw would roll
+ * the whole gesture back, so the last bay is dropped from the stroke instead:
+ * a drag over everything leaves one bay standing rather than doing nothing.
+ */
+function commitFootprint(current: Extract<Stroke, { kind: 'footprint' }>, levelId: string): void {
+  const level = store.currentLevel
+  if (!level) return
+  const targets = [...current.targets]
+
+  if (!current.add && targets.length >= Object.keys(level.bays).length) targets.pop()
+  if (targets.length === 0) return
+
+  store.batch(() => {
+    for (const bayKey of targets) {
+      if (current.add) store.addBay(levelId, bayKey, props.grain)
+      else store.removeBay(levelId, bayKey)
+    }
+  })
 }
 
 onBeforeUnmount(() => window.removeEventListener('pointermove', onPointerMove))
@@ -334,9 +438,9 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
       </pattern>
     </defs>
 
-    <rect class="ground" :x="-PAD" :y="-PAD" :width="BAY_PITCH * store.project.bayCols + 1 + PAD * 2" :height="BAY_PITCH * store.project.bayRows + 1 + PAD * 2" />
+    <rect v-for="(rect, index) in groundRects" :key="`ground-${index}`" class="ground" v-bind="rect" />
     <!-- Tiles own only half of each shared wall, so the outer rim is painted here. -->
-    <rect class="field" x="0" y="0" :width="BAY_PITCH * store.project.bayCols + 1" :height="BAY_PITCH * store.project.bayRows + 1" />
+    <rect v-for="(rect, index) in fieldRects" :key="`field-${index}`" class="field" v-bind="rect" />
 
     <g class="headers">
       <text v-for="header in columnHeaders" :key="header.key" :x="header.x" :y="-PAD / 2">{{ header.key }}</text>
@@ -350,7 +454,7 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
       :bay="entry.bay"
       :i="entry.i"
       :j="entry.j"
-      :mode="mode"
+      :mode="tileMode"
       :selected-cells="selectedCells(entry.bayKey)"
       :error-cells="errorCells(entry.bayKey)"
       :bay-selected="selectedBayKey === entry.bayKey"
@@ -358,6 +462,24 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 
     <g class="preview" :fill="previewFill">
       <rect v-for="(rect, index) in preview" :key="index" v-bind="rect" />
+    </g>
+
+    <!-- Above the tiles: in footprint mode every position is a target, present or not. -->
+    <g v-if="mode === 'footprint'" class="slots">
+      <rect
+        v-for="slot in slots"
+        :key="slot.bayKey"
+        :data-bay="slot.bayKey"
+        :class="slot.present ? 'slot filled' : 'slot vacant'"
+        :x="slot.x"
+        :y="slot.y"
+        :width="BAY_PITCH"
+        :height="BAY_PITCH"
+      />
+    </g>
+
+    <g v-if="footprintPreview" :class="['footprint-preview', footprintPreview.add ? 'adding' : 'removing']">
+      <rect v-for="(rect, index) in footprintPreview.rects" :key="index" v-bind="rect" />
     </g>
   </svg>
 </template>
@@ -393,5 +515,42 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 .preview rect {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* A vacant slot has to be visible enough to aim at and quiet enough to read as absent. */
+.slot {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.slot.vacant {
+  fill: var(--panel-2);
+  fill-opacity: 0.5;
+  stroke: var(--border);
+  stroke-width: 0.3;
+  stroke-dasharray: 1 1;
+}
+
+.slot.vacant:hover {
+  fill-opacity: 0.85;
+  stroke: var(--accent);
+}
+
+.slot.filled:hover {
+  fill: var(--danger);
+  fill-opacity: 0.15;
+}
+
+.footprint-preview rect {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.footprint-preview.adding rect {
+  fill: var(--accent);
+}
+
+.footprint-preview.removing rect {
+  fill: var(--danger);
 }
 </style>

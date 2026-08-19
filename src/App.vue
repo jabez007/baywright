@@ -23,7 +23,7 @@ import Toolbar from './components/Toolbar.vue'
 const store = useProjectStore()
 const autosave = useAutosave(store)
 
-const mode = ref<'bay' | 'cell'>('cell')
+const mode = ref<'bay' | 'cell' | 'footprint'>('cell')
 const moduleId = ref<string>(MODULE_LIST[0]?.id ?? 'empty')
 const grain = ref<Grain>('fine')
 
@@ -31,6 +31,13 @@ const booted = ref(false)
 const notice = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const newProjectOpen = ref(false)
+
+/** The gestures differ per mode, and a hint for tools you cannot reach is noise. */
+const hint = computed(() =>
+  mode.value === 'footprint'
+    ? 'click a square to add or remove a bay · drag to do several · ⌘Z undo'
+    : 'drag to paint · shift-drag to merge · alt-click an edge for sockets · [ ] height · ⌘Z undo',
+)
 
 const errorCount = computed(() => store.issues.filter((issue) => issue.severity === 'error').length)
 const warningCount = computed(() => store.issues.filter((issue) => issue.severity === 'warning').length)
@@ -157,9 +164,7 @@ async function onCreate(options: { bayCols: number; bayRows: number }): Promise<
         </span>
       </span>
 
-      <span class="muted hint">
-        drag to paint · shift-drag to merge · alt-click an edge for sockets · [ ] height · ⌘Z undo
-      </span>
+      <span class="muted hint">{{ hint }}</span>
     </footer>
 
     <NewProjectDialog

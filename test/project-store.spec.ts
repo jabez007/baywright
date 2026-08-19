@@ -181,6 +181,22 @@ describe('levels', () => {
     expect(s.levelGaps[0]!.headroom).toBe(-4)
   })
 
+  it('stacks a new level on the footprint of the one below', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    s.setBayGrain(ground, 'A1', 'coarse')
+
+    const upper = s.addLevel(8, 'Upper')
+    const level = s.project.levels.find((entry) => entry.id === upper)!
+    expect(Object.keys(level.bays).sort()).toEqual(['A1', 'A2', 'A3', 'B1', 'B3', 'C1', 'C3'])
+    expect(level.bays['A1']!.grain).toBe('coarse')
+    expect(level.bays['A1']!.cells.every((cell) => cell.module === 'empty')).toBe(true)
+  })
+
   it('refuses a y off the 4-block lattice', () => {
     const s = store()
     expect(() => s.addLevel(6)).toThrow(/multiple of 4/)
@@ -373,6 +389,95 @@ describe('toJSON', () => {
     s.paintCell(firstCell(), 'spine')
     expect(copy.levels[0]!.bays['A1']!.cells[0]!.module).toBe('empty')
     expect(JSON.parse(JSON.stringify(copy)).schemaVersion).toBe(1)
+  })
+})
+
+/**
+ * §6 stores bays in a map, not a dense grid, so a level's footprint need not
+ * fill its field: an I, H or C plan is a field with bays taken out of it.
+ */
+describe('the footprint', () => {
+  it('removes a bay from the level', () => {
+    const s = store()
+    s.removeBay(s.currentLevelId, 'B2')
+    expect(s.project.levels[0]!.bays['B2']).toBeUndefined()
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(8)
+  })
+
+  it('puts a bay back, empty and at the requested grain', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.paintBay(levelId, 'B2', 'storage')
+    s.removeBay(levelId, 'B2')
+    s.addBay(levelId, 'B2', 'coarse')
+    const bay = s.project.levels[0]!.bays['B2']!
+    expect(bay.grain).toBe('coarse')
+    expect(bay.cells).toHaveLength(4)
+    expect(bay.cells.every((cell) => cell.module === 'empty')).toBe(true)
+  })
+
+  it('toggles a bay in and out', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    expect(s.toggleBay(levelId, 'A1')).toBe(false)
+    expect(s.project.levels[0]!.bays['A1']).toBeUndefined()
+    expect(s.toggleBay(levelId, 'A1')).toBe(true)
+    expect(s.project.levels[0]!.bays['A1']).toBeDefined()
+  })
+
+  it('carves a C without disturbing the rest of the level', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      s.removeBay(levelId, 'B2')
+      s.removeBay(levelId, 'C2')
+    })
+    expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A1', 'A2', 'A3', 'B1', 'B3', 'C1', 'C3'])
+    expect(s.canUndo).toBe(true)
+    s.undo()
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(9)
+  })
+
+  it('refuses a bay outside the field', () => {
+    const s = store()
+    expect(() => s.addBay(s.currentLevelId, 'D1')).toThrow(/outside the 3×3 field/)
+    expect(() => s.addBay(s.currentLevelId, 'A4')).toThrow(/outside the 3×3 field/)
+  })
+
+  it('refuses to empty a level', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      for (const bayKey of Object.keys(s.project.levels[0]!.bays)) {
+        if (bayKey !== 'A1') s.removeBay(levelId, bayKey)
+      }
+    })
+    expect(() => s.removeBay(levelId, 'A1')).toThrow(/last bay/)
+    expect(s.project.levels[0]!.bays['A1']).toBeDefined()
+  })
+
+  it('drops a selection that pointed into the removed bay', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.select({ kind: 'bay', levelId, bayKey: 'B2' })
+    s.removeBay(levelId, 'B2')
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+
+  it('leaves an unrelated selection alone', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.selectCells([{ levelId, bayKey: 'A1', cellIndex: 0 }])
+    s.removeBay(levelId, 'B2')
+    expect(s.selection.kind).toBe('cells')
+  })
+
+  it('adding a bay that is already there changes nothing', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.paintBay(levelId, 'B2', 'storage')
+    s.addBay(levelId, 'B2', 'merged')
+    expect(s.project.levels[0]!.bays['B2']!.cells[0]!.module).toBe('storage')
   })
 })
 

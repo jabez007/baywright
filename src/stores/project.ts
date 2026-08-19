@@ -12,7 +12,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, toRaw } from 'vue'
 
-import { bayKeyOf, resolveCell, sortedLevels } from '../domain/geometry.js'
+import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
 import { validate, type Issue } from '../domain/validate.js'
@@ -321,6 +321,16 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /**
+   * The footprint of the level below, so stacking onto a carved base does not
+   * hang a full rectangle over the parts that were taken out. Grain comes along
+   * too: re-cutting a bay is one click, redrawing a footprint is not.
+   */
+  function footprintBelow(y: number): Level | undefined {
+    const below = sortedLevels(project.value).filter((level) => level.y < y)
+    return below.at(-1) ?? sortedLevels(project.value)[0]
+  }
+
   function addLevel(y: number, name?: string): string {
     return mutate(() => {
       assertY(y)
@@ -330,6 +340,11 @@ export const useProjectStore = defineStore('project', () => {
         bayCols: project.value.bayCols,
         bayRows: project.value.bayRows,
       })
+      const source = footprintBelow(y)
+      if (source) {
+        level.bays = {}
+        for (const [bayKey, bay] of Object.entries(source.bays)) level.bays[bayKey] = createBay(bay.grain)
+      }
       project.value.levels.push(level)
       sortLevels()
       return level.id
@@ -377,6 +392,52 @@ export const useProjectStore = defineStore('project', () => {
    * not map onto 4. A bay painted uniformly keeps its module, which is the case
    * where the intent is obvious.
    */
+  /**
+   * §6 keys bays into a map rather than a dense grid, so a level's footprint is
+   * a subset of its field: removing bays is how an I, H or C plan is drawn. The
+   * field extent stays the bounding box and keeps addressing bays the same way,
+   * so §5.1's letters and numbers do not shift under an edit.
+   */
+  function assertInField(bayKey: string): void {
+    const { i, j } = parseBayKey(bayKey)
+    const { bayCols, bayRows } = project.value
+    if (i < 0 || j < 0 || i >= bayCols || j >= bayRows) {
+      throw new RangeError(`bay '${bayKey}' is outside the ${bayCols}×${bayRows} field`)
+    }
+  }
+
+  function addBay(levelId: string, bayKey: string, grain: Grain = 'fine'): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      assertInField(bayKey)
+      // Idempotent on purpose: a drag across the footprint re-enters bays it has
+      // already added, and re-cutting them would wipe whatever is painted there.
+      if (level.bays[bayKey]) return
+      level.bays[bayKey] = createBay(grain)
+    })
+  }
+
+  function removeBay(levelId: string, bayKey: string): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      if (!level.bays[bayKey]) return
+      if (Object.keys(level.bays).length === 1) {
+        throw new RangeError(`cannot remove the last bay of level '${level.name}'`)
+      }
+      delete level.bays[bayKey]
+      // The selection may have been pointing into it.
+      reconcile()
+    })
+  }
+
+  /** Returns whether the bay is present afterwards, so the canvas can drag-fill. */
+  function toggleBay(levelId: string, bayKey: string, grain: Grain = 'fine'): boolean {
+    const present = requireLevel(levelId).bays[bayKey] !== undefined
+    if (present) removeBay(levelId, bayKey)
+    else addBay(levelId, bayKey, grain)
+    return !present
+  }
+
   function setBayGrain(levelId: string, bayKey: string, grain: Grain): void {
     mutate(() => {
       const bay = requireBay(levelId, bayKey)
@@ -605,6 +666,9 @@ export const useProjectStore = defineStore('project', () => {
     setLevelY,
     renameLevel,
     setLevelPalette,
+    addBay,
+    removeBay,
+    toggleBay,
     setBayGrain,
     paintBay,
     paintCell,

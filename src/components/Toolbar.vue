@@ -11,7 +11,7 @@ import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
 
 const props = defineProps<{
-  mode: 'bay' | 'cell'
+  mode: 'bay' | 'cell' | 'footprint'
   moduleId: string
   grain: Grain
   saveStatus: SaveStatus
@@ -19,7 +19,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'set-mode': [value: 'bay' | 'cell']
+  'set-mode': [value: 'bay' | 'cell' | 'footprint']
   'set-module': [value: string]
   'set-grain': [value: Grain]
   export: []
@@ -30,6 +30,17 @@ const emit = defineEmits<{
 const store = useProjectStore()
 
 const GRAINS: readonly Grain[] = ['fine', 'coarse', 'merged']
+
+/**
+ * Bay and cell are zoom levels; footprint is a third thing — it edits which
+ * bays exist rather than what is painted in them. They share a group because
+ * they are mutually exclusive about what a click on the plan means.
+ */
+const MODES = [
+  { id: 'bay', label: 'Bay', title: 'Paint a whole bay at a time' },
+  { id: 'cell', label: 'Cell', title: 'Paint individual cells' },
+  { id: 'footprint', label: 'Footprint', title: 'Add and remove bays to shape the base' },
+] as const
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
   idle: 'Not saved yet',
@@ -61,15 +72,16 @@ function statusTitle(): string {
       <span class="muted mono">{{ store.project.name }}</span>
     </div>
 
-    <div class="group" role="group" aria-label="Zoom mode">
+    <div class="group" role="group" aria-label="Mode">
       <button
-        v-for="option in (['bay', 'cell'] as const)"
-        :key="option"
+        v-for="option in MODES"
+        :key="option.id"
         type="button"
-        :aria-pressed="mode === option"
-        @click="emit('set-mode', option)"
+        :aria-pressed="mode === option.id"
+        :title="option.title"
+        @click="emit('set-mode', option.id)"
       >
-        {{ option === 'bay' ? 'Bay' : 'Cell' }}
+        {{ option.label }}
       </button>
     </div>
 
