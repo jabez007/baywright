@@ -406,6 +406,44 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  /**
+   * Grows or shrinks the field every level sits in. The extent is the bounding
+   * box, not the footprint, so the two edits stay separable: growing fills only
+   * the positions that did not exist before, leaving alone the bays the footprint
+   * editor deliberately dropped. Shrinking discards whatever falls outside it.
+   */
+  function setFieldExtent(bayCols: number, bayRows: number, grain: Grain = 'fine'): void {
+    mutate(() => {
+      const cols = assertFieldExtent(bayCols, 'bayCols')
+      const rows = assertFieldExtent(bayRows, 'bayRows')
+      const { bayCols: oldCols, bayRows: oldRows } = project.value
+
+      for (const level of project.value.levels) {
+        for (const bayKey of Object.keys(level.bays)) {
+          const { i, j } = parseBayKey(bayKey)
+          if (i >= cols || j >= rows) delete level.bays[bayKey]
+        }
+
+        for (let j = 0; j < rows; j++) {
+          for (let i = 0; i < cols; i++) {
+            if (i < oldCols && j < oldRows) continue
+            level.bays[bayKeyOf(i, j)] = createBay(grain)
+          }
+        }
+
+        // Checked after filling: shrinking one axis while growing the other can
+        // hand a level its new bays even as it loses all of its old ones.
+        if (Object.keys(level.bays).length === 0) {
+          throw new RangeError(`a ${cols}×${rows} field would leave level '${level.name}' with no bays`)
+        }
+      }
+
+      project.value.bayCols = cols
+      project.value.bayRows = rows
+      reconcile()
+    })
+  }
+
   function addBay(levelId: string, bayKey: string, grain: Grain = 'fine'): void {
     mutate(() => {
       const level = requireLevel(levelId)
@@ -666,6 +704,7 @@ export const useProjectStore = defineStore('project', () => {
     setLevelY,
     renameLevel,
     setLevelPalette,
+    setFieldExtent,
     addBay,
     removeBay,
     toggleBay,

@@ -1,25 +1,31 @@
 <script setup lang="ts">
 /**
- * The one modal in the app. §10 keeps modals out of the paint tools, and this
- * is not one: the footprint is chosen once, before there is anything to paint.
+ * The one modal in the app, for the one thing that is not painting: how wide
+ * and deep the bay field is. §10 keeps modals out of the paint tools, and the
+ * field extent is not one — it is the bounding box the plan is drawn inside.
  *
- * Editing the footprint of a project that already exists is the canvas's job,
- * not this dialog's.
+ * Which bays inside that box actually exist is the canvas's job, in footprint
+ * mode, not this dialog's.
  */
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
+import { parseBayKey } from '../domain/geometry.js'
 import { MAX_BAY_FIELD } from '../domain/types.js'
+import { useProjectStore } from '../stores/project.js'
 
 const props = defineProps<{
   open: boolean
+  intent: 'new' | 'resize'
   bayCols: number
   bayRows: number
 }>()
 
 const emit = defineEmits<{
-  create: [value: { bayCols: number; bayRows: number }]
+  submit: [value: { bayCols: number; bayRows: number }]
   cancel: []
 }>()
+
+const store = useProjectStore()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const colsInput = ref<HTMLInputElement | null>(null)
@@ -34,8 +40,8 @@ watch(
       dialog.value?.close()
       return
     }
-    // Seeded from the current project: replacing a 6x2 almost always means
-    // wanting another 6x2.
+    // Seeded from the current project: replacing or resizing a 6x2 both start
+    // from 6x2.
     cols.value = props.bayCols
     rows.value = props.bayRows
     dialog.value?.showModal()
@@ -61,8 +67,28 @@ function commit(field: 'cols' | 'rows'): void {
 }
 
 function onSubmit(): void {
-  emit('create', { bayCols: clamp(cols.value), bayRows: clamp(rows.value) })
+  emit('submit', { bayCols: clamp(cols.value), bayRows: clamp(rows.value) })
 }
+
+/**
+ * Resizing is destructive at the edges and nowhere else, so the warning counts
+ * the bays that would actually go rather than saying the size "may lose work".
+ */
+const dropped = computed(() => {
+  if (props.intent !== 'resize') return 0
+  const width = clamp(cols.value)
+  const depth = clamp(rows.value)
+  let count = 0
+  for (const level of store.project.levels) {
+    for (const bayKey of Object.keys(level.bays)) {
+      const { i, j } = parseBayKey(bayKey)
+      if (i >= width || j >= depth) count++
+    }
+  }
+  return count
+})
+
+const levelCount = computed(() => store.project.levels.length)
 
 /**
  * Fires for Escape and for our own `close()`. The parent owns `open`, so an
@@ -74,10 +100,15 @@ function onClose(): void {
 </script>
 
 <template>
-  <dialog ref="dialog" class="sheet" aria-labelledby="new-project-title" @close="onClose">
+  <dialog ref="dialog" class="sheet" aria-labelledby="field-size-title" @close="onClose">
     <form @submit.prevent="onSubmit">
-      <h2 id="new-project-title">New project</h2>
-      <p class="muted">This discards the current project. Export first if you want to keep it.</p>
+      <h2 id="field-size-title">{{ intent === 'new' ? 'New project' : 'Resize the field' }}</h2>
+      <p v-if="intent === 'new'" class="muted">
+        This discards the current project. Export first if you want to keep it.
+      </p>
+      <p v-else class="muted">
+        The field is the box the plan sits in. Use footprint mode to say which bays inside it exist.
+      </p>
 
       <div class="fields">
         <label>
@@ -107,13 +138,21 @@ function onClose(): void {
       </div>
 
       <p class="muted note">
-        {{ clamp(cols) }}×{{ clamp(rows) }} — {{ clamp(cols) * clamp(rows) }} bays. Up to
-        {{ MAX_BAY_FIELD }} per side.
+        <!-- A new project fills its field; an existing one may have bays carved out of it. -->
+        {{ clamp(cols) }}×{{ clamp(rows) }} —
+        {{ intent === 'new' ? '' : 'up to ' }}{{ clamp(cols) * clamp(rows) }} bays{{
+          intent === 'resize' && levelCount > 1 ? ` per level, across ${levelCount} levels` : ''
+        }}. Max {{ MAX_BAY_FIELD }} per side.
+      </p>
+
+      <p v-if="dropped > 0" class="warning note" role="status">
+        Drops {{ dropped }} bay{{ dropped === 1 ? '' : 's' }} that would fall outside. Undo brings
+        {{ dropped === 1 ? 'it' : 'them' }} back.
       </p>
 
       <div class="actions">
         <button type="button" @click="emit('cancel')">Cancel</button>
-        <button type="submit" class="primary">Create</button>
+        <button type="submit" class="primary">{{ intent === 'new' ? 'Create' : 'Resize' }}</button>
       </div>
     </form>
   </dialog>
@@ -178,6 +217,10 @@ input:focus-visible {
 .note {
   margin: 10px 0 0;
   font-variant-numeric: tabular-nums;
+}
+
+.warning {
+  color: var(--danger);
 }
 
 .actions {

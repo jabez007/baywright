@@ -481,6 +481,101 @@ describe('the footprint', () => {
   })
 })
 
+describe('resizing the field', () => {
+  it('fills the positions the field grew into', () => {
+    const s = store()
+    s.setFieldExtent(5, 3)
+    expect(s.project.bayCols).toBe(5)
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(15)
+    expect(s.project.levels[0]!.bays['E3']).toBeDefined()
+  })
+
+  it('leaves what was already painted alone', () => {
+    const s = store()
+    s.paintBay(s.currentLevelId, 'B2', 'storage')
+    s.setFieldExtent(5, 5)
+    expect(s.project.levels[0]!.bays['B2']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('does not refill bays the footprint deliberately dropped', () => {
+    const s = store()
+    s.removeBay(s.currentLevelId, 'B2')
+    s.setFieldExtent(5, 3)
+    expect(s.project.levels[0]!.bays['B2']).toBeUndefined()
+    expect(s.project.levels[0]!.bays['D2']).toBeDefined()
+  })
+
+  it('drops the bays that fall outside a shrunk field', () => {
+    const s = store()
+    s.setFieldExtent(2, 2)
+    expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A1', 'A2', 'B1', 'B2'])
+  })
+
+  it('resizes every level, not just the current one', () => {
+    const s = store()
+    s.addLevel(8, 'Upper')
+    s.setFieldExtent(4, 1)
+    for (const level of s.project.levels) {
+      expect(Object.keys(level.bays).sort()).toEqual(['A1', 'B1', 'C1', 'D1'])
+    }
+  })
+
+  it('takes the new grain only for the bays it adds', () => {
+    const s = store()
+    s.setBayGrain(s.currentLevelId, 'A1', 'merged')
+    s.setFieldExtent(4, 3, 'coarse')
+    expect(s.project.levels[0]!.bays['A1']!.grain).toBe('merged')
+    expect(s.project.levels[0]!.bays['D1']!.grain).toBe('coarse')
+  })
+
+  it('is one undo step', () => {
+    const s = store()
+    s.setFieldExtent(6, 6)
+    s.undo()
+    expect(s.project.bayCols).toBe(3)
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(9)
+  })
+
+  it('refuses a size that would empty a level', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      for (const bayKey of Object.keys(s.project.levels[0]!.bays)) {
+        if (bayKey !== 'C3') s.removeBay(levelId, bayKey)
+      }
+    })
+    expect(() => s.setFieldExtent(2, 2)).toThrow(/would leave level 'Ground' with no bays/)
+    expect(s.project.bayCols).toBe(3)
+    expect(s.project.levels[0]!.bays['C3']).toBeDefined()
+  })
+
+  it('shrinking one way while growing the other can keep a level alive', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      for (const bayKey of Object.keys(s.project.levels[0]!.bays)) {
+        if (bayKey !== 'C3') s.removeBay(levelId, bayKey)
+      }
+    })
+    s.setFieldExtent(1, 5)
+    expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A4', 'A5'])
+  })
+
+  it('honours the §15 cap', () => {
+    const s = store()
+    expect(() => s.setFieldExtent(9, 3)).toThrow(/bayCols must be an integer between 1 and 8/)
+    expect(() => s.setFieldExtent(3, 0)).toThrow(RangeError)
+    expect(s.project.bayCols).toBe(3)
+  })
+
+  it('drops a selection left outside the field', () => {
+    const s = store()
+    s.select({ kind: 'bay', levelId: s.currentLevelId, bayKey: 'C3' })
+    s.setFieldExtent(2, 2)
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+})
+
 /** PRD §15 open question 2 — the field is capped while V1 is still O(n²). */
 describe('the bay field cap', () => {
   it('accepts a field up to 8x8', () => {

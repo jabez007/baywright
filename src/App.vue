@@ -16,7 +16,7 @@ import type { Grain } from './domain/types.js'
 import { loadLastOpenedProject } from './persistence/db.js'
 import { useAutosave } from './persistence/autosave.js'
 import { useProjectStore } from './stores/project.js'
-import NewProjectDialog from './components/NewProjectDialog.vue'
+import FieldSizeDialog from './components/FieldSizeDialog.vue'
 import PlanCanvas from './components/PlanCanvas.vue'
 import Toolbar from './components/Toolbar.vue'
 
@@ -30,7 +30,8 @@ const grain = ref<Grain>('fine')
 const booted = ref(false)
 const notice = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
-const newProjectOpen = ref(false)
+/** null when closed, otherwise which of the two things the dialog is doing. */
+const sizing = ref<'new' | 'resize' | null>(null)
 
 /** The gestures differ per mode, and a hint for tools you cannot reach is noise. */
 const hint = computed(() =>
@@ -115,10 +116,19 @@ async function onFileChosen(event: Event): Promise<void> {
   }
 }
 
-async function onCreate(options: { bayCols: number; bayRows: number }): Promise<void> {
-  newProjectOpen.value = false
-  store.newProject(options)
-  notice.value = null
+async function onSized(options: { bayCols: number; bayRows: number }): Promise<void> {
+  const intent = sizing.value
+  sizing.value = null
+  try {
+    if (intent === 'new') store.newProject(options)
+    else store.setFieldExtent(options.bayCols, options.bayRows)
+    notice.value = null
+  } catch (cause) {
+    // The only reachable failure is a shrink that would empty a level, which
+    // the dialog cannot rule out for the user in advance.
+    notice.value = (cause as Error).message
+    return
+  }
   await autosave.flush()
 }
 </script>
@@ -136,7 +146,8 @@ async function onCreate(options: { bayCols: number; bayRows: number }): Promise<
       @set-grain="grain = $event"
       @export="onExport"
       @import="onImport"
-      @reset="newProjectOpen = true"
+      @reset="sizing = 'new'"
+      @resize="sizing = 'resize'"
     />
 
     <p v-if="notice" class="notice" role="alert">{{ notice }}</p>
@@ -167,12 +178,13 @@ async function onCreate(options: { bayCols: number; bayRows: number }): Promise<
       <span class="muted hint">{{ hint }}</span>
     </footer>
 
-    <NewProjectDialog
-      :open="newProjectOpen"
+    <FieldSizeDialog
+      :open="sizing !== null"
+      :intent="sizing ?? 'new'"
       :bay-cols="store.project.bayCols"
       :bay-rows="store.project.bayRows"
-      @create="onCreate"
-      @cancel="newProjectOpen = false"
+      @submit="onSized"
+      @cancel="sizing = null"
     />
 
     <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="onFileChosen" />

@@ -25,6 +25,7 @@ const emit = defineEmits<{
   export: []
   import: []
   reset: []
+  resize: []
 }>()
 
 const store = useProjectStore()
@@ -121,6 +122,7 @@ function statusTitle(): string {
     <div class="group" role="group" aria-label="Project">
       <button type="button" title="Download the project as JSON" @click="emit('export')">Export</button>
       <button type="button" title="Load a project from a JSON file" @click="emit('import')">Import</button>
+      <button type="button" title="Change how many bays the field is" @click="emit('resize')">Resize</button>
       <button type="button" title="Discard this project and start over" @click="emit('reset')">New</button>
     </div>
 
