@@ -28,6 +28,8 @@ export interface Recipe {
   /** How many of `input` one of this block costs. Fractional where a recipe yields several. */
   per: number
   method: CraftMethod
+  /** Crafting-table recipes must consume a whole batch even when only part of its output is needed. */
+  batch?: { input: number; output: number }
 }
 
 const WOODS = [
@@ -47,8 +49,18 @@ function woodRecipes(): Record<string, Recipe> {
   const recipes: Record<string, Recipe> = {}
   for (const wood of WOODS) {
     recipes[`minecraft:${wood}_planks`] = { input: `minecraft:${wood}_log`, per: 0.25, method: 'craft' }
-    recipes[`minecraft:${wood}_stairs`] = { input: `minecraft:${wood}_planks`, per: 1.5, method: 'craft' }
-    recipes[`minecraft:${wood}_slab`] = { input: `minecraft:${wood}_planks`, per: 0.5, method: 'craft' }
+    recipes[`minecraft:${wood}_stairs`] = {
+      input: `minecraft:${wood}_planks`,
+      per: 1.5,
+      method: 'craft',
+      batch: { input: 6, output: 4 },
+    }
+    recipes[`minecraft:${wood}_slab`] = {
+      input: `minecraft:${wood}_planks`,
+      per: 0.5,
+      method: 'craft',
+      batch: { input: 3, output: 6 },
+    }
   }
   return recipes
 }
@@ -247,7 +259,10 @@ function expand(
     step.items += amount
     smelts.set(blockId, step)
   }
-  expand(recipe.input, amount * recipe.per, raw, smelts, [...trail, blockId])
+  const inputAmount = recipe.batch
+    ? Math.ceil(amount / recipe.batch.output) * recipe.batch.input
+    : amount * recipe.per
+  expand(recipe.input, inputAmount, raw, smelts, [...trail, blockId])
 }
 
 function estimateSmelting(smelts: ReadonlyMap<string, SmeltStep>, furnaces: number): SmeltingEstimate {

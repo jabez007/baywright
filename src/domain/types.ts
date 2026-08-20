@@ -17,6 +17,13 @@ export type Face = 'n' | 'e' | 's' | 'w' | 'up' | 'down'
 /** §5.4 — what opening (if any) a face carries. */
 export type Socket = 'solid' | 'corridor' | 'arch' | 'window' | 'bars' | 'shaft'
 
+/** Runtime guard for project imports and store actions. */
+export function isSocketValidForFace(face: Face, socket: Socket): boolean {
+  return face === 'up' || face === 'down'
+    ? socket === 'solid' || socket === 'shaft'
+    : socket !== 'shaft'
+}
+
 /** §5.5 — abstract material roles a palette binds to concrete block IDs. */
 export type MaterialRole = 'floor' | 'wall' | 'ceiling' | 'accent' | 'trim' | 'light'
 

@@ -27,6 +27,13 @@ const props = defineProps<{
 
 const store = useProjectStore()
 const svg = ref<SVGSVGElement | null>(null)
+const activeTarget = ref<Target | null>(null)
+
+function getSvgElement(): SVGSVGElement | null {
+  return svg.value
+}
+
+defineExpose({ getSvgElement })
 
 /** `"A1"` in bay mode, `"A1:4"` in cell mode. */
 type Target = string
@@ -46,6 +53,10 @@ const stroke = ref<Stroke | null>(null)
 const PAD = 3
 
 const viewBox = computed(() => {
+  if (props.mode === 'cell' && store.focusedBayKey) {
+    const { i, j } = parseBayKey(store.focusedBayKey)
+    return `${BAY_PITCH * i - PAD} ${BAY_PITCH * j - PAD} ${BAY_PITCH + 1 + PAD * 2} ${BAY_PITCH + 1 + PAD * 2}`
+  }
   const width = BAY_PITCH * store.project.bayCols + 1
   const height = BAY_PITCH * store.project.bayRows + 1
   return `${-PAD} ${-PAD} ${width + PAD * 2} ${height + PAD * 2}`
@@ -69,9 +80,10 @@ const rowHeaders = computed(() =>
 const bays = computed(() => {
   const level = store.currentLevel
   if (!level) return []
-  return Object.entries(level.bays)
+  const entries = Object.entries(level.bays)
     .map(([bayKey, bay]) => ({ bayKey, bay, ...parseBayKey(bayKey) }))
     .sort((left, right) => left.j - right.j || left.i - right.i)
+  return props.mode === 'cell' ? entries.filter((entry) => entry.bayKey === store.focusedBayKey) : entries
 })
 
 /**
@@ -113,6 +125,22 @@ const slots = computed(() => {
   }
   return out
 })
+
+const visibleTargets = computed<Target[]>(() => {
+  if (props.mode === 'footprint') return slots.value.map((slot) => slot.bayKey)
+  if (props.mode === 'bay') return bays.value.map((entry) => entry.bayKey)
+  return bays.value.flatMap((entry) => entry.bay.cells.map((_, index) => `${entry.bayKey}:${index}`))
+})
+
+const activePlanTarget = computed<Target | null>(() =>
+  activeTarget.value && visibleTargets.value.includes(activeTarget.value)
+    ? activeTarget.value
+    : visibleTargets.value[0] ?? null,
+)
+
+function targetTabIndex(target: Target): 0 | -1 {
+  return target === activePlanTarget.value ? 0 : -1
+}
 
 /** Footprint mode draws bays whole; only the tools below it care about cells. */
 const tileMode = computed(() => (props.mode === 'footprint' ? 'bay' : props.mode))
@@ -219,6 +247,8 @@ function cellInteriorRect(ref: CellRef) {
 function onPointerDown(event: PointerEvent): void {
   const target = targetAt(event.target)
   if (!target) return
+  activeTarget.value = target
+  targetElementAt(event.target)?.focus()
   event.preventDefault()
 
   const [bayKey, index] = splitTarget(target)
@@ -230,8 +260,7 @@ function onPointerDown(event: PointerEvent): void {
       add: store.currentLevel?.bays[bayKey] === undefined,
       targets: new Set([bayKey]),
     }
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp, { once: true })
+    startStrokeListeners()
     return
   }
 
@@ -251,8 +280,19 @@ function onPointerDown(event: PointerEvent): void {
     stroke.value = { kind: 'paint', targets: new Set([target]) }
   }
 
+  startStrokeListeners()
+}
+
+function startStrokeListeners(): void {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp, { once: true })
+  window.addEventListener('pointercancel', onPointerCancel, { once: true })
+}
+
+function stopStrokeListeners(): void {
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointercancel', onPointerCancel)
 }
 
 function onPointerMove(event: PointerEvent): void {
@@ -280,7 +320,7 @@ function onPointerMove(event: PointerEvent): void {
 }
 
 function onPointerUp(): void {
-  window.removeEventListener('pointermove', onPointerMove)
+  stopStrokeListeners()
   const current = stroke.value
   stroke.value = null
   if (!current) return
@@ -319,6 +359,12 @@ function onPointerUp(): void {
   store.selectCells(refs)
 }
 
+/** A cancelled touch or pen gesture must never leave a partial edit behind. */
+function onPointerCancel(): void {
+  stopStrokeListeners()
+  stroke.value = null
+}
+
 /**
  * A level with no bays left is not a shape, it is a deleted level, and
  * `removeBay` throws rather than allow it. Inside `batch` that throw would roll
@@ -345,8 +391,7 @@ onBeforeUnmount(() => {
   // `pointerup` is registered `{ once: true }`, so it clears itself after a
   // completed stroke — but not one interrupted by an unmount. Left behind, it
   // would fire later and commit the stroke to a store that outlives the canvas.
-  window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
+  stopStrokeListeners()
   stroke.value = null
 })
 
@@ -361,6 +406,93 @@ function targetAt(node: EventTarget | Element | null): Target | null {
   if (!bayKey) return null
   const cell = host?.getAttribute('data-cell')
   return cell === null || cell === undefined ? bayKey : `${bayKey}:${cell}`
+}
+
+function targetElementAt(node: EventTarget | Element | null): SVGGraphicsElement | null {
+  if (!(node instanceof Element)) return null
+  return node.closest<SVGGraphicsElement>('[data-plan-target]')
+}
+
+function onTargetKeyDown(event: KeyboardEvent): void {
+  const current = targetElementAt(event.target)
+  if (!current) return
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    const target = targetAt(current)
+    if (target) activateTarget(target)
+    return
+  }
+  if (event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+    event.preventDefault()
+    moveTargetFocus(current, event.key)
+  }
+}
+
+function onTargetFocus(event: FocusEvent): void {
+  const target = targetAt(event.target)
+  if (target) activeTarget.value = target
+}
+
+/** Keyboard equivalent of a short ordinary click, without modifier-only tools. */
+function activateTarget(target: Target): void {
+  const levelId = store.currentLevel?.id
+  if (!levelId) return
+  const [bayKey, index] = splitTarget(target)
+
+  if (props.mode === 'footprint') {
+    const level = store.currentLevel
+    if (!level) return
+    if (level.bays[bayKey]) {
+      if (Object.keys(level.bays).length > 1) store.removeBay(levelId, bayKey)
+    } else {
+      store.addBay(levelId, bayKey, props.grain)
+    }
+    return
+  }
+
+  if (props.mode === 'bay') {
+    store.paintBay(levelId, bayKey, props.moduleId, props.grain)
+    store.select({ kind: 'bay', levelId, bayKey })
+    return
+  }
+
+  if (index === null) return
+  const ref = { levelId, bayKey, cellIndex: index }
+  store.paintCell(ref, props.moduleId)
+  store.selectCells([ref])
+}
+
+function moveTargetFocus(current: SVGGraphicsElement, key: string): void {
+  const element = svg.value
+  if (!element) return
+  const origin = centreOf(current.getBoundingClientRect())
+  const direction =
+    key === 'ArrowUp' ? { x: 0, y: -1 }
+      : key === 'ArrowRight' ? { x: 1, y: 0 }
+        : key === 'ArrowDown' ? { x: 0, y: 1 }
+          : { x: -1, y: 0 }
+
+  const candidates = Array.from(element.querySelectorAll<SVGGraphicsElement>('[data-plan-target]'))
+    .filter((candidate) => candidate !== current)
+    .map((candidate) => {
+      const centre = centreOf(candidate.getBoundingClientRect())
+      const dx = centre.x - origin.x
+      const dy = centre.y - origin.y
+      const forward = dx * direction.x + dy * direction.y
+      const cross = Math.abs(dx * direction.y - dy * direction.x)
+      return { candidate, forward, score: cross * 1000 + forward }
+    })
+    .filter((entry) => entry.forward > 0.5)
+    .sort((left, right) => left.score - right.score)
+
+  const next = candidates[0]?.candidate
+  if (!next) return
+  activeTarget.value = targetAt(next)
+  next.focus()
+}
+
+function centreOf(rect: DOMRect): { x: number; y: number } {
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
 }
 
 function splitTarget(target: Target): [string, number | null] {
@@ -427,11 +559,16 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
     class="plan"
     :viewBox="viewBox"
     preserveAspectRatio="xMidYMid meet"
-    role="application"
-    aria-label="Floor plan"
+    role="group"
+    aria-labelledby="plan-title"
+    aria-describedby="plan-description"
     @pointerdown="onPointerDown"
+    @keydown="onTargetKeyDown"
+    @focusin="onTargetFocus"
     @contextmenu.prevent
   >
+    <title id="plan-title">Floor plan editor</title>
+    <desc id="plan-description">Use Tab to enter the plan, arrow keys to move between targets, and Enter or Space to paint and select.</desc>
     <defs>
       <!-- Bays whose cells do not share a module, in bay mode. -->
       <pattern id="mixed-hatch" width="2" height="2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -465,6 +602,8 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
       :selected-cells="selectedCells(entry.bayKey)"
       :error-cells="errorCells(entry.bayKey)"
       :bay-selected="selectedBayKey === entry.bayKey"
+      :interactive="mode !== 'footprint'"
+      :active-target="activePlanTarget"
     />
 
     <g class="preview" :fill="previewFill">
@@ -477,6 +616,10 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
         v-for="slot in slots"
         :key="slot.bayKey"
         :data-bay="slot.bayKey"
+        data-plan-target="footprint"
+        :tabindex="targetTabIndex(slot.bayKey)"
+        role="button"
+        :aria-label="`Bay ${slot.bayKey}, ${slot.present ? 'present; press Enter or Space to remove' : 'absent; press Enter or Space to add'}`"
         :class="slot.present ? 'slot filled' : 'slot vacant'"
         :x="slot.x"
         :y="slot.y"
@@ -546,6 +689,13 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 .slot.filled:hover {
   fill: var(--danger);
   fill-opacity: 0.15;
+}
+
+.slot:focus-visible {
+  outline: none;
+  stroke: var(--accent);
+  stroke-width: 0.65;
+  fill-opacity: 0.35;
 }
 
 .footprint-preview rect {

@@ -27,6 +27,8 @@ const props = defineProps<{
   selectedCells: ReadonlySet<number>
   errorCells: ReadonlySet<number>
   baySelected: boolean
+  interactive: boolean
+  activeTarget: string | null
 }>()
 
 const bayX = computed(() => BAY_PITCH * props.i)
@@ -87,6 +89,7 @@ const keyAnchor = computed(() => ({ x: bayX.value + BAY_PITCH / 2 + 0.5, y: bayZ
         :key="index"
         :data-bay="bayKey"
         :data-cell="index"
+        :bay-key="bayKey"
         :cell="cell"
         :grain="bay.grain"
         :cell-index="index"
@@ -94,17 +97,28 @@ const keyAnchor = computed(() => ({ x: bayX.value + BAY_PITCH / 2 + 0.5, y: bayZ
         :bay-z="bayZ"
         :selected="selectedCells.has(index)"
         :has-error="errorCells.has(index)"
+        :interactive="interactive"
+        :tab-index="activeTarget === `${bayKey}:${index}` ? 0 : -1"
         detailed
       />
     </template>
 
-    <g v-else :data-bay="bayKey" class="bay-tile">
+    <g
+      v-else
+      :data-bay="bayKey"
+      :data-plan-target="interactive ? 'bay' : undefined"
+      :tabindex="interactive ? (activeTarget === bayKey ? 0 : -1) : undefined"
+      :role="interactive ? 'button' : undefined"
+      :aria-label="interactive ? label : undefined"
+      class="bay-tile"
+    >
       <title>{{ label }}</title>
       <rect class="shell" v-bind="outer" />
       <rect class="interior" v-bind="interior" :fill="bayFill" />
       <line v-for="(line, index) in grainLines" :key="index" class="grain-line" v-bind="line" />
       <rect v-if="bayHasError" class="error-overlay" v-bind="outer" />
       <rect v-if="baySelected" class="selection-overlay" v-bind="interior" />
+      <rect class="focus-overlay" v-bind="interior" />
     </g>
 
     <text v-if="mode === 'bay'" class="bay-key" v-bind="keyAnchor">{{ bayKey }}</text>
@@ -146,6 +160,22 @@ const keyAnchor = computed(() => ({ x: bayX.value + BAY_PITCH / 2 + 0.5, y: bayZ
   stroke: var(--accent);
   stroke-width: 0.5;
   pointer-events: none;
+}
+
+.focus-overlay {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.7;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bay-tile:focus-visible {
+  outline: none;
+}
+
+.bay-tile:focus-visible .focus-overlay {
+  opacity: 1;
 }
 
 .bay-tile:hover .interior {

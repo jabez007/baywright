@@ -122,11 +122,29 @@ export async function loadLastOpenedProject(): Promise<Project | undefined> {
   const id = await db.get(META, LAST_OPENED)
   if (id !== undefined) {
     const record = await db.get(PROJECTS, id)
-    if (record) return validateProject(record.document)
+    if (record) {
+      try {
+        return validateProject(record.document)
+      } catch {
+        // Fall through: one bad record must not prevent recovery of another.
+      }
+    }
   }
-  const newest = await db.getAllFromIndex(PROJECTS, 'by-updated')
-  const record = newest.at(-1)
-  return record && validateProject(record.document)
+  const records = await db.getAllFromIndex(PROJECTS, 'by-updated')
+  for (const record of records.reverse()) {
+    try {
+      const document = validateProject(record.document)
+      try {
+        await db.put(META, record.id, LAST_OPENED)
+      } catch {
+        // The valid document is still usable if pointer repair cannot be saved.
+      }
+      return document
+    } catch {
+      // Keep walking toward older records until one validates.
+    }
+  }
+  return undefined
 }
 
 /** Summaries, newest first. */

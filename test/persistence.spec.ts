@@ -17,6 +17,7 @@ import {
   listProjects,
   loadLastOpenedProject,
   loadProject,
+  openDatabase,
   saveProject,
   setLastOpened,
 } from '../src/persistence/db.js'
@@ -48,6 +49,20 @@ describe('saving and loading', () => {
     expect(await listProjects()).toEqual([expect.objectContaining({ id: document.id, name: 'Second' })])
   })
 
+  it('keeps an existing project when a same-id import is saved as a copy', async () => {
+    const existing = createProject({ name: 'Existing' })
+    await saveProject(existing)
+    const imported = { ...existing, name: 'Imported' }
+    const store = useProjectStore()
+
+    store.loadImportedProjectAsCopy(imported)
+    await saveProject(store.toJSON())
+
+    expect((await loadProject(existing.id))?.name).toBe('Existing')
+    expect(store.project.id).not.toBe(existing.id)
+    expect(await listProjects()).toHaveLength(2)
+  })
+
   it('rejects a stored document that no longer validates', async () => {
     const document = project([level('ground', 0, { A1: bay('fine') })])
     await saveProject(document)
@@ -56,6 +71,15 @@ describe('saving and loading', () => {
     broken.schemaVersion = 99
     await saveProject(broken as never)
     await expect(loadProject(document.id)).rejects.toThrow(/schemaVersion/)
+  })
+
+  it('preserves a legacy schema-v1 height-3 plenum', async () => {
+    const document = project([level('ground', 0, { A1: bay('fine') })])
+    document.levels[0]!.bays['A1']!.cells[0]!.heightCells = 3
+    document.levels[0]!.bays['A1']!.cells[0]!.ceiling = 'dropped'
+    await saveProject(document)
+
+    expect((await loadProject(document.id))?.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('dropped')
   })
 })
 
@@ -84,6 +108,24 @@ describe('the last-opened pointer', () => {
     await saveProject(second, 2000)
     await setLastOpened('deleted-project')
     expect((await loadLastOpenedProject())?.name).toBe('Second')
+  })
+
+  it('skips corrupt pointed and newer records, then repairs the pointer', async () => {
+    const oldValid = createProject({ name: 'Old valid' })
+    const corruptPointed = createProject({ name: 'Corrupt pointed' }) as unknown as { schemaVersion: number; id: string }
+    const newestValid = createProject({ name: 'Newest valid' })
+    const corruptNewest = createProject({ name: 'Corrupt newest' }) as unknown as { schemaVersion: number; id: string }
+    corruptPointed.schemaVersion = 99
+    corruptNewest.schemaVersion = 99
+
+    await saveProject(oldValid, 1000)
+    await saveProject(corruptPointed as never, 2000)
+    await saveProject(newestValid, 3000)
+    await saveProject(corruptNewest as never, 4000)
+    await setLastOpened(corruptPointed.id)
+
+    expect((await loadLastOpenedProject())?.name).toBe('Newest valid')
+    expect(await (await openDatabase()).get('meta', 'lastOpenedId')).toBe(newestValid.id)
   })
 
   it('is undefined on a first run', async () => {

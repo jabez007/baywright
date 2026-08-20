@@ -18,6 +18,7 @@ import type { Cell, Face, Grain, Socket } from '../domain/types.js'
 import { moduleFill } from './fills.js'
 
 const props = defineProps<{
+  bayKey: string
   cell: Cell
   grain: Grain
   cellIndex: number
@@ -28,6 +29,8 @@ const props = defineProps<{
   hasError: boolean
   /** Cell mode draws sockets and labels; bay mode draws the block only. */
   detailed: boolean
+  interactive: boolean
+  tabIndex: number
 }>()
 
 const axes = computed(() => cellAxisIndices(props.grain, props.cellIndex))
@@ -125,7 +128,7 @@ const label = computed(() => {
   const parts = [module?.name ?? props.cell.module, `${props.cell.heightCells} cell${props.cell.heightCells > 1 ? 's' : ''} tall`, props.cell.ceiling]
   if (props.cell.mergeGroup) parts.push('merged')
   if (props.cell.note) parts.push(props.cell.note)
-  return parts.join(' · ')
+  return `${props.bayKey} cell ${props.cellIndex + 1} · ${parts.join(' · ')}`
 })
 
 function rect(x0: number, z0: number, x1: number, z1: number) {
@@ -134,7 +137,16 @@ function rect(x0: number, z0: number, x1: number, z1: number) {
 </script>
 
 <template>
-  <g class="cell" :class="{ selected, error: hasError }">
+  <g
+    class="cell"
+    :class="{ selected, error: hasError }"
+    :data-bay="bayKey"
+    :data-cell="cellIndex"
+    :data-plan-target="interactive ? 'cell' : undefined"
+    :tabindex="interactive ? tabIndex : undefined"
+    :role="interactive ? 'button' : undefined"
+    :aria-label="interactive ? label : undefined"
+  >
     <title>{{ label }}</title>
 
     <rect class="shell" v-bind="shell" />
@@ -165,6 +177,7 @@ function rect(x0: number, z0: number, x1: number, z1: number) {
 
     <rect v-if="hasError" class="error-overlay" v-bind="shell" />
     <rect v-if="selected" class="selection-overlay" v-bind="interior" />
+    <rect class="focus-overlay" v-bind="interior" />
   </g>
 </template>
 
@@ -223,6 +236,22 @@ function rect(x0: number, z0: number, x1: number, z1: number) {
   stroke: var(--accent);
   stroke-width: 0.4;
   pointer-events: none;
+}
+
+.focus-overlay {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.65;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cell:focus-visible {
+  outline: none;
+}
+
+.cell:focus-visible .focus-overlay {
+  opacity: 1;
 }
 
 .cell:hover .interior {

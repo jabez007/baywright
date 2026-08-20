@@ -6,6 +6,7 @@
 import {
   allCellRefs,
   bayKeyOf,
+  blockKey,
   cellAABB,
   cellAxisIndices,
   cellIndexOf,
@@ -13,6 +14,7 @@ import {
   cellPlenum,
   footprintsOverlap,
   parseBayKey,
+  resolveBlocks,
   resolveCell,
   sortedLevels,
   yIntervalsCollide,
@@ -110,8 +112,8 @@ export function checkVerticalCollisions(project: Project): Issue[] {
 // V2 — Grain seam (error)
 // --------------------------------------------------------------------------
 
-/** Sockets narrow enough to survive the 1-block overlap at a fine/coarse seam. */
-const SEAM_SAFE_SOCKETS: ReadonlySet<Socket> = new Set<Socket>(['solid', 'window'])
+/** The ambiguous middle fine cell cannot open onto either coarse partner. */
+const SEAM_SAFE_SOCKETS: ReadonlySet<Socket> = new Set<Socket>(['solid'])
 
 interface SeamDirection {
   face: Extract<Face, 'n' | 'e' | 's' | 'w'>
@@ -133,8 +135,8 @@ const SEAM_DIRECTIONS: readonly SeamDirection[] = [
 /**
  * At a fine/coarse seam the two outer fine cells line up with the two coarse
  * cells (spans 1..3 and 9..11 sit inside 1..5 and 7..11), but the middle fine
- * cell (5..7) overlaps each coarse partner by a single block. So it may carry
- * at most a `window`.
+ * cell (5..7) overlaps each coarse partner by a single block. It must stay
+ * solid because there is no unambiguous coarse cell for an opening.
  *
  * Fine-to-fine and coarse-to-coarse always align, and `merged` spans 1..11,
  * which contains every fine and coarse span — the universal adapter.
@@ -165,7 +167,7 @@ export function checkGrainSeams(project: Project): Issue[] {
           severity: 'error',
           message:
             `${bayKey} cell ${middleIndex} carries a '${socket}' onto the fine/coarse seam with ${neighbourKey} — ` +
-            `the middle fine cell overlaps each coarse cell by 1 block, so only a window fits ` +
+            `the middle fine cell overlaps two coarse cells, so it must stay solid ` +
             `(convert ${bayKey} or ${neighbourKey} to merged grain to adapt)`,
           refs: [
             { levelId: level.id, bayKey, cellIndex: middleIndex },
@@ -206,21 +208,19 @@ function neighbourBayKey(i: number, j: number, di: number, dj: number): string |
  * `sockets.down === 'shaft'`, and the y-delta between the two levels must equal
  * `4 * heightCells` of the lower cell.
  *
- * A shaft with no level above it is not reported — it is a roof exit, not a
- * broken stair.
+ * Missing levels, bays, overlapping cells, and downward shafts are all broken
+ * stair continuations and are reported against the upward shaft.
  */
 export function checkStairContinuity(project: Project): Issue[] {
   const issues: Issue[] = []
   const levels = sortedLevels(project)
 
-  for (let index = 0; index < levels.length - 1; index++) {
+  for (let index = 0; index < levels.length; index++) {
     const below = levels[index]!
-    const above = levels[index + 1]!
-    const delta = above.y - below.y
+    const above = levels[index + 1]
 
     for (const bayKey of Object.keys(below.bays).sort()) {
       const belowBay = below.bays[bayKey]
-      const aboveBay = above.bays[bayKey]
       if (!belowBay) continue
 
       for (let i = 0; i < belowBay.cells.length; i++) {
@@ -228,29 +228,62 @@ export function checkStairContinuity(project: Project): Issue[] {
         if (cell.sockets.up !== 'shaft') continue
         const belowRef: CellRef = { levelId: below.id, bayKey, cellIndex: i }
         const rise = LEVEL_PITCH * cell.heightCells
-        if (!aboveBay) continue
-        const belowBox = cellAABB(project, belowRef)
+        if (!above) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} has an upward shaft but no next level`,
+            refs: [belowRef],
+          })
+          continue
+        }
 
+        const aboveBay = above.bays[bayKey]
+        if (!aboveBay) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} rises into level '${above.name}' but that level has no matching bay`,
+            refs: [belowRef],
+          })
+          continue
+        }
+
+        const belowBox = cellAABB(project, belowRef)
+        const overlapping: CellRef[] = []
         for (let j = 0; j < aboveBay.cells.length; j++) {
           const aboveRef: CellRef = { levelId: above.id, bayKey, cellIndex: j }
-          if (!footprintsOverlap(belowBox, cellAABB(project, aboveRef))) continue
-          const aboveCell = resolveCell(project, aboveRef).cell
+          if (footprintsOverlap(belowBox, cellAABB(project, aboveRef))) overlapping.push(aboveRef)
+        }
+        if (overlapping.length === 0) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} rises into level '${above.name}' but no cell overlaps its shaft`,
+            refs: [belowRef],
+          })
+          continue
+        }
 
-          if (aboveCell.sockets.down !== 'shaft') {
-            issues.push({
-              id: 'V4',
-              severity: 'error',
-              message: `Stair at ${bayKey} rises into level '${above.name}' but cell ${j} above it has no shaft`,
-              refs: [belowRef, aboveRef],
-            })
-          } else if (delta !== rise) {
-            issues.push({
-              id: 'V4',
-              severity: 'error',
-              message: `Stair at ${bayKey} rises ${rise} but the level above is ${delta} higher`,
-              refs: [belowRef, aboveRef],
-            })
-          }
+        const matching = overlapping.filter((ref) => resolveCell(project, ref).cell.sockets.down === 'shaft')
+        if (matching.length === 0) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} rises into level '${above.name}' but no overlapping cell has a downward shaft`,
+            refs: [belowRef, ...overlapping],
+          })
+          continue
+        }
+
+        const delta = above.y - below.y
+        if (delta !== rise) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} rises ${rise} but the level above is ${delta} higher`,
+            refs: [belowRef, ...matching],
+          })
         }
       }
     }
@@ -350,9 +383,10 @@ function buildAdjacencies(nodes: CellNode[]): Adjacency[] {
   return adjacencies
 }
 
-/** §5.4 — a face is passable unless it is closed or merely glazed. */
-function isOpenSocket(socket: Socket): boolean {
-  return socket !== 'solid' && socket !== 'window'
+/** Room traversal needs a doorway horizontally and a shaft vertically. */
+function isRoomPassable(face: Face, socket: Socket): boolean {
+  if (face === 'up' || face === 'down') return socket === 'shaft'
+  return socket === 'corridor' || socket === 'arch'
 }
 
 // --------------------------------------------------------------------------
@@ -364,13 +398,11 @@ function isOpenSocket(socket: Socket): boolean {
  * never reaches. A warning rather than an error, because intentionally sealed
  * secret rooms are a legitimate design.
  *
- * A project with no spine at all is skipped entirely: with no anchor to fill
- * from, every cell would be reported, which is noise rather than a finding.
+ * With no spine there are no flood-fill starts, so every cell is reported.
  */
 export function checkConnectivity(project: Project): Issue[] {
   const nodes = buildCellNodes(project)
   const spines = nodes.filter((node) => node.cell.module === SPINE_MODULE_ID)
-  if (spines.length === 0) return []
 
   const byKey = new Map(nodes.map((node) => [node.key, node]))
   const graph = new Map<string, string[]>()
@@ -378,8 +410,8 @@ export function checkConnectivity(project: Project): Issue[] {
     const a = byKey.get(link.a)
     const b = byKey.get(link.b)
     if (!a || !b) continue
-    if (!isOpenSocket(a.cell.sockets[link.faceA])) continue
-    if (!isOpenSocket(b.cell.sockets[link.faceB])) continue
+    if (!isRoomPassable(link.faceA, a.cell.sockets[link.faceA])) continue
+    if (!isRoomPassable(link.faceB, b.cell.sockets[link.faceB])) continue
     push(graph, a.key, b.key)
     push(graph, b.key, a.key)
   }
@@ -404,30 +436,24 @@ export function checkConnectivity(project: Project): Issue[] {
 // --------------------------------------------------------------------------
 
 /**
- * Per level, connect plenum volumes that sit against each other through a wall
- * that is not solid, then flood-fill from every plenum next to a spine cell.
+ * Per level, connect plenum volumes only where the resolved shared wall has a
+ * physical opening made by passable sockets, then flood-fill from spine cells.
  * A hopper trunk in a disconnected island has nowhere to terminate.
  *
- * §8 words the wall test as "not `solid`" — looser than the §5.4 connectivity
- * rule, so a `window` counts here. That is deliberate: this is the same wall
- * plane the room below shares, and the plenum is carved above the room, so any
- * non-solid face marks a wall the builder intended to run services through.
- *
- * Levels with no spine are skipped, for the same reason V3 skips a spineless
- * project. A level that has a spine but no plenum touching it reports every
- * island, which is the honest answer: nothing can reach the trunk.
+ * Corridor, arch, and one-block window openings can carry services. Bars and
+ * solid walls cannot. A spineless level therefore reports every plenum island.
  */
 export function checkPlenumReachability(project: Project): Issue[] {
   const issues: Issue[] = []
   const nodes = buildCellNodes(project)
   const byKey = new Map(nodes.map((node) => [node.key, node]))
   const adjacencies = buildAdjacencies(nodes).filter((link) => !link.vertical)
+  const blocks = resolveBlocks(project)
 
   for (const level of sortedLevels(project)) {
     const onLevel = nodes.filter((node) => node.ref.levelId === level.id)
     const plenums = onLevel.filter((node) => node.plenum !== null)
     if (plenums.length === 0) continue
-    if (!onLevel.some((node) => node.cell.module === SPINE_MODULE_ID)) continue
 
     const plenumKeys = new Set(plenums.map((node) => node.key))
     const graph = new Map<string, string[]>()
@@ -437,13 +463,14 @@ export function checkPlenumReachability(project: Project): Issue[] {
       const a = byKey.get(link.a)
       const b = byKey.get(link.b)
       if (!a || !b || a.ref.levelId !== level.id || b.ref.levelId !== level.id) continue
+      const passable = hasPhysicalPlenumOpening(a, b, link, blocks)
 
       // A plenum next to a spine cell is where the trunk terminates.
-      if (plenumKeys.has(a.key) && b.cell.module === SPINE_MODULE_ID) anchors.add(a.key)
-      if (plenumKeys.has(b.key) && a.cell.module === SPINE_MODULE_ID) anchors.add(b.key)
+      if (passable && plenumKeys.has(a.key) && b.cell.module === SPINE_MODULE_ID) anchors.add(a.key)
+      if (passable && plenumKeys.has(b.key) && a.cell.module === SPINE_MODULE_ID) anchors.add(b.key)
 
       if (!plenumKeys.has(a.key) || !plenumKeys.has(b.key)) continue
-      if (a.cell.sockets[link.faceA] === 'solid' || b.cell.sockets[link.faceB] === 'solid') continue
+      if (!passable) continue
       if (!a.plenum || !b.plenum || !spansOverlap(a.plenum.y0, a.plenum.y1, b.plenum.y0, b.plenum.y1)) continue
       push(graph, a.key, b.key)
       push(graph, b.key, a.key)
@@ -470,6 +497,39 @@ export function checkPlenumReachability(project: Project): Issue[] {
   }
 
   return issues
+}
+
+function hasPhysicalPlenumOpening(
+  a: CellNode,
+  b: CellNode,
+  link: Adjacency,
+  blocks: ReadonlyMap<string, string>,
+): boolean {
+  if (!isPlenumPassable(a.cell.sockets[link.faceA]) || !isPlenumPassable(b.cell.sockets[link.faceB])) return false
+  const plenum = a.plenum ?? b.plenum
+  if (!plenum) return false
+  const otherPlenum = a.plenum && b.plenum ? b.plenum : plenum
+  const y0 = Math.max(plenum.y0, otherPlenum.y0)
+  const y1 = Math.min(plenum.y1, otherPlenum.y1)
+  if (y0 > y1) return false
+
+  const eastWest = link.faceA === 'e' || link.faceA === 'w'
+  const c0 = eastWest ? Math.max(a.interior.z0, b.interior.z0) : Math.max(a.interior.x0, b.interior.x0)
+  const c1 = eastWest ? Math.min(a.interior.z1, b.interior.z1) : Math.min(a.interior.x1, b.interior.x1)
+  const plane =
+    link.faceA === 'e' ? a.outer.x1 : link.faceA === 'w' ? a.outer.x0 : link.faceA === 'n' ? a.outer.z0 : a.outer.z1
+
+  for (let y = y0; y <= y1; y++) {
+    for (let c = c0; c <= c1; c++) {
+      const key = eastWest ? blockKey(plane, y, c) : blockKey(c, y, plane)
+      if (!blocks.has(key)) return true
+    }
+  }
+  return false
+}
+
+function isPlenumPassable(socket: Socket): boolean {
+  return socket === 'corridor' || socket === 'arch' || socket === 'window'
 }
 
 // --------------------------------------------------------------------------

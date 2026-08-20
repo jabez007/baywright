@@ -160,6 +160,67 @@ describe('the autosave debounce', () => {
     autosave.stop()
   })
 
+  it('rejects an explicit flush after surfacing the save error', async () => {
+    const store = useProjectStore()
+    const autosave = useAutosave(store, DELAY)
+    saveImpl = () => Promise.reject(new Error('disk unavailable'))
+
+    store.renameProject('Unsaved')
+    await nextTick()
+
+    await expect(autosave.flush()).rejects.toThrow('disk unavailable')
+    expect(autosave.status.value).toBe('error')
+    expect(autosave.error.value?.message).toBe('disk unavailable')
+    autosave.stop()
+  })
+
+  it('keeps pending status when an older write finishes', async () => {
+    const store = useProjectStore()
+    let release: (() => void) | undefined
+    saveImpl = async (document, now) => {
+      await new Promise<void>((resolve) => (release = resolve))
+      return realDb.saveProject(document, now)
+    }
+    const autosave = useAutosave(store, DELAY * 10)
+
+    store.renameProject('First')
+    await nextTick()
+    const first = autosave.flush()
+    await wait(5)
+
+    store.renameProject('Second')
+    await nextTick()
+    expect(autosave.status.value).toBe('pending')
+
+    release?.()
+    await first
+    expect(autosave.status.value).toBe('pending')
+    autosave.stop()
+  })
+
+  it('rejects an older failed write without replacing newer pending state', async () => {
+    const store = useProjectStore()
+    let rejectFirst: ((cause: Error) => void) | undefined
+    saveImpl = () => new Promise((_, reject) => (rejectFirst = reject))
+    const autosave = useAutosave(store, DELAY * 10)
+
+    store.renameProject('First')
+    await nextTick()
+    const first = autosave.flush()
+    await wait(5)
+
+    store.renameProject('Second')
+    await nextTick()
+    expect(autosave.status.value).toBe('pending')
+    expect(autosave.error.value).toBeUndefined()
+
+    rejectFirst?.(new Error('stale failure'))
+    await expect(first).rejects.toThrow('stale failure')
+    expect(autosave.status.value).toBe('pending')
+    expect(autosave.error.value).toBeUndefined()
+    autosave.stop()
+  })
+
   it('serialises overlapping writes so the newest document lands last', async () => {
     const store = useProjectStore()
     const order: string[] = []
@@ -183,6 +244,11 @@ describe('the autosave debounce', () => {
     await nextTick()
     const second = autosave.flush()
     await wait(5)
+
+    // This later edit must not leak into the already queued second snapshot.
+    store.renameProject('Third')
+    await nextTick()
+    autosave.stop()
 
     expect(order).toEqual(['start First'])
     release?.()
@@ -236,7 +302,21 @@ describe('the autosave debounce', () => {
     autosave.stop()
   })
 
-  it('stops watching and detaches both listeners', async () => {
+  it('writes the pending edit on pagehide', async () => {
+    const store = useProjectStore()
+    const autosave = useAutosave(store, DELAY)
+    expect(browser.attached('window', 'pagehide')).toBe(true)
+
+    store.renameProject('Page hidden')
+    await nextTick()
+    browser.fire('window', 'pagehide')
+    await settle()
+
+    expect((await realDb.loadProject(store.project.id))?.name).toBe('Page hidden')
+    autosave.stop()
+  })
+
+  it('stops watching and detaches lifecycle listeners', async () => {
     const store = useProjectStore()
     const spy = vi.fn(realDb.saveProject)
     saveImpl = spy
@@ -247,6 +327,7 @@ describe('the autosave debounce', () => {
     autosave.stop()
 
     expect(browser.attached('window', 'beforeunload')).toBe(false)
+    expect(browser.attached('window', 'pagehide')).toBe(false)
     expect(browser.attached('document', 'visibilitychange')).toBe(false)
 
     await settle()

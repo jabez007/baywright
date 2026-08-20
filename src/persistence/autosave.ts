@@ -33,33 +33,43 @@ export function useAutosave(
   const savedAt = ref<number | undefined>()
 
   let timer: ReturnType<typeof setTimeout> | undefined
+  let revision = 0
   // Serialises writes: a save that starts while another is in flight would
   // otherwise race, and the older document could land last.
   let inFlight: Promise<void> = Promise.resolve()
 
-  function write(): Promise<void> {
-    inFlight = inFlight.then(async () => {
-      status.value = 'saving'
+  function write(document: ReturnType<typeof store.toJSON>, writeRevision: number): Promise<void> {
+    const queued = inFlight.then(async () => {
+      if (writeRevision === revision) status.value = 'saving'
       try {
-        // toJSON detaches from the Vue proxy — IndexedDB cannot clone one.
-        const record = await saveProject(store.toJSON())
-        savedAt.value = record.updatedAt
-        error.value = undefined
-        status.value = 'saved'
+        const record = await saveProject(document)
+        if (writeRevision === revision) {
+          savedAt.value = record.updatedAt
+          error.value = undefined
+          status.value = 'saved'
+        }
       } catch (cause) {
-        error.value = cause instanceof Error ? cause : new Error(String(cause))
-        status.value = 'error'
+        const failure = cause instanceof Error ? cause : new Error(String(cause))
+        if (writeRevision === revision) {
+          error.value = failure
+          status.value = 'error'
+        }
+        throw failure
       }
     })
-    return inFlight
+    // Keep the serial queue usable after failure. Callers still receive the
+    // rejecting promise for this particular write.
+    inFlight = queued.catch(() => undefined)
+    return queued
   }
 
   function schedule(): void {
     if (timer !== undefined) clearTimeout(timer)
+    revision++
     status.value = 'pending'
     timer = setTimeout(() => {
       timer = undefined
-      void write()
+      void write(store.toJSON(), revision).catch(() => undefined)
     }, delayMs)
   }
 
@@ -68,28 +78,27 @@ export function useAutosave(
       clearTimeout(timer)
       timer = undefined
     }
-    await write()
+    // Capture before entering the queue so later edits cannot change this write.
+    await write(store.toJSON(), revision)
   }
 
   // Not `immediate`: loading a project should not rewrite what was just read.
-  const unwatch = watch(() => store.project, schedule, { deep: true })
+  const unwatch = watch(() => store.project, schedule, { deep: true, flush: 'sync' })
 
   /**
-   * `beforeunload` cannot await an IndexedDB write, so on its own it loses up to
-   * `delayMs` of edits. `visibilitychange` fires while the page is still alive —
-   * and is the only one of the two that fires at all when a mobile browser
-   * discards a backgrounded tab — so the write gets started early enough to
-   * commit. Both are kept: hiding is the reliable signal, unloading is the last
-   * chance for anything edited after the tab was last hidden.
+   * Lifecycle signals start a pending write without waiting for the debounce.
+   * Browsers may still terminate the page before IndexedDB commits it, so these
+   * handlers reduce the loss window rather than guarantee final-write durability.
    */
-  const onUnload = (): void => {
-    if (timer !== undefined) void flush()
+  const flushPending = (): void => {
+    if (timer !== undefined) void flush().catch(() => undefined)
   }
   const onVisibilityChange = (): void => {
-    if (document.visibilityState === 'hidden' && timer !== undefined) void flush()
+    if (document.visibilityState === 'hidden') flushPending()
   }
   if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', onUnload)
+    window.addEventListener('beforeunload', flushPending)
+    window.addEventListener('pagehide', flushPending)
     document.addEventListener('visibilitychange', onVisibilityChange)
   }
 
@@ -98,7 +107,8 @@ export function useAutosave(
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
     if (typeof window !== 'undefined') {
-      window.removeEventListener('beforeunload', onUnload)
+      window.removeEventListener('beforeunload', flushPending)
+      window.removeEventListener('pagehide', flushPending)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }

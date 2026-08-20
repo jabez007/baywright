@@ -90,6 +90,14 @@ describe('defensive import', () => {
     )
   })
 
+  it('rejects a shaft on a horizontal face', () => {
+    expect(mangle((doc) => (doc.levels[0]!.bays['A1']!.cells[0]!.sockets.n = 'shaft'))).toThrow(/not valid on horizontal face/)
+  })
+
+  it('rejects a horizontal opening on a vertical face', () => {
+    expect(mangle((doc) => (doc.levels[0]!.bays['A1']!.cells[0]!.sockets.up = 'corridor'))).toThrow(/not valid on vertical face/)
+  })
+
   it('rejects a missing socket face', () => {
     expect(
       mangle((doc) => {
@@ -102,6 +110,28 @@ describe('defensive import', () => {
     expect(mangle((doc) => ((doc.levels[0]!.bays['A1']!.cells[0]!.heightCells as number) = 4))).toThrow(
       /heightCells must be 1, 2 or 3/,
     )
+  })
+
+  it('normalizes a legacy height-1 dropped ceiling to flat', () => {
+    const doc = structuredClone(good)
+    const legacyCell = doc.levels[0]!.bays['A1']!.cells[0]!
+    legacyCell.heightCells = 1
+    legacyCell.ceiling = 'dropped'
+
+    expect(validateProject(doc).levels[0]!.bays['A1']!.cells[0]).toEqual({
+      ...legacyCell,
+      ceiling: 'flat',
+    })
+    expect(legacyCell.ceiling).toBe('dropped')
+  })
+
+  it('preserves a legacy height-3 dropped ceiling and its plenum intent', () => {
+    const doc = structuredClone(good)
+    const legacyCell = doc.levels[0]!.bays['A1']!.cells[0]!
+    legacyCell.heightCells = 3
+    legacyCell.ceiling = 'dropped'
+
+    expect(validateProject(doc).levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('dropped')
   })
 
   it('rejects a malformed bay key', () => {
@@ -179,6 +209,49 @@ describe('import boundary hardening', () => {
   it('checks against the field the file declares, not the default', () => {
     const wide = project([level('ground', 0, { F1: bay('fine') })], { bayCols: 6, bayRows: 1 })
     expect(Object.keys(validateProject(wide).levels[0]!.bays)).toEqual(['F1'])
+  })
+
+  it('refuses field dimensions above the supported cap', () => {
+    expect(() => validateProject(project([level('ground', 0, { A1: bay('fine') })], { bayCols: 9 }))).toThrow(
+      /bayCols.*at most 8/,
+    )
+    expect(() => validateProject(project([level('ground', 0, { A1: bay('fine') })], { bayRows: 9 }))).toThrow(
+      /bayRows.*at most 8/,
+    )
+  })
+
+  it('accepts palette references from the file or the shipped palettes', () => {
+    const custom = createProject().palettes['stone-brick']!
+    const doc = project(
+      [
+        level('ground', 0, {
+          A1: bay('fine', (index) => (index === 0 ? { paletteOverride: 'stone-brick' } : {})),
+        }, { paletteId: 'custom' }),
+      ],
+      { palettes: { custom: { ...custom, id: 'custom', name: 'Custom' } } },
+    )
+
+    expect(validateProject(doc).levels[0]!.paletteId).toBe('custom')
+  })
+
+  it('refuses dangling level and cell palette references', () => {
+    const missingLevel = project(
+      [level('ground', 0, { A1: bay('fine') }, { paletteId: 'missing' })],
+      { palettes: {} },
+    )
+    expect(() => validateProject(missingLevel)).toThrow(/paletteId.*unknown palette 'missing'/)
+
+    const missingCell = project(
+      [level('ground', 0, { A1: bay('fine', (index) => (index === 0 ? { paletteOverride: 'missing' } : {})) })],
+      { palettes: {} },
+    )
+    expect(() => validateProject(missingCell)).toThrow(/paletteOverride.*unknown palette 'missing'/)
+  })
+
+  it('refuses a palette whose id differs from its map key', () => {
+    const doc = structuredClone(createProject())
+    doc.palettes['stone-brick']!.id = 'not-stone-brick'
+    expect(() => validateProject(doc)).toThrow(/palettes\.stone-brick\.id.*must match map key 'stone-brick'/)
   })
 
   it('refuses a __proto__ palette id rather than swapping the map prototype', () => {

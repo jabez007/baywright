@@ -11,7 +11,18 @@
  * Pure apart from {@link downloadProject}, which is the only browser-aware part.
  */
 import { parseBayKey } from '../domain/geometry.js'
-import { cellCount, type Bay, type Cell, type Face, type Level, type Project, type Socket } from '../domain/types.js'
+import { PALETTES } from '../domain/palettes.js'
+import {
+  MAX_BAY_FIELD,
+  cellCount,
+  isSocketValidForFace,
+  type Bay,
+  type Cell,
+  type Face,
+  type Level,
+  type Project,
+  type Socket,
+} from '../domain/types.js'
 
 export const SCHEMA_VERSION = 1
 
@@ -62,8 +73,11 @@ export function validateProject(raw: unknown): Project {
   const levels = array(doc['levels'], '$.levels')
 
   // Read before the levels, which are checked against them.
-  const bayCols = positiveInteger(doc['bayCols'], '$.bayCols')
-  const bayRows = positiveInteger(doc['bayRows'], '$.bayRows')
+  const bayCols = fieldExtent(doc['bayCols'], '$.bayCols')
+  const bayRows = fieldExtent(doc['bayRows'], '$.bayRows')
+  const palettes = parsePalettes(doc['palettes'], '$.palettes')
+  const parsedLevels = levels.map((level, index) => parseLevel(level, `$.levels[${index}]`, bayCols, bayRows))
+  validatePaletteReferences(parsedLevels, palettes)
 
   const project: Project = {
     schemaVersion: SCHEMA_VERSION,
@@ -72,8 +86,8 @@ export function validateProject(raw: unknown): Project {
     origin: { x: integer(origin['x'], '$.origin.x'), z: integer(origin['z'], '$.origin.z') },
     bayCols,
     bayRows,
-    levels: levels.map((level, index) => parseLevel(level, `$.levels[${index}]`, bayCols, bayRows)),
-    palettes: parsePalettes(doc['palettes'], '$.palettes'),
+    levels: parsedLevels,
+    palettes,
   }
 
   if (project.levels.length === 0) throw new ProjectParseError('a project needs at least one level', '$.levels')
@@ -141,15 +155,23 @@ function parseCell(raw: unknown, path: string): Cell {
   if (height !== 1 && height !== 2 && height !== 3) {
     throw new ProjectParseError(`heightCells must be 1, 2 or 3, got ${height}`, `${path}.heightCells`)
   }
-  const ceiling = string(doc['ceiling'], `${path}.ceiling`)
-  if (!CEILINGS.has(ceiling)) throw new ProjectParseError(`unknown ceiling '${ceiling}'`, `${path}.ceiling`)
+  const storedCeiling = string(doc['ceiling'], `${path}.ceiling`)
+  if (!CEILINGS.has(storedCeiling)) throw new ProjectParseError(`unknown ceiling '${storedCeiling}'`, `${path}.ceiling`)
+  // A height-1 dropped flag never changed old geometry, so it can become flat.
+  // Height-3 schema-v1 cells had a real seven-block plenum and stay intact.
+  const ceiling = storedCeiling === 'dropped' && height === 1 ? 'flat' : storedCeiling
 
   const rawSockets = object(doc['sockets'], `${path}.sockets`)
   const sockets = {} as Record<Face, Socket>
   for (const face of FACES) {
     const socket = string(rawSockets[face], `${path}.sockets.${face}`)
     if (!SOCKETS.has(socket)) throw new ProjectParseError(`unknown socket '${socket}'`, `${path}.sockets.${face}`)
-    sockets[face] = socket as Socket
+    const typedSocket = socket as Socket
+    if (!isSocketValidForFace(face, typedSocket)) {
+      const direction = face === 'up' || face === 'down' ? 'vertical' : 'horizontal'
+      throw new ProjectParseError(`socket '${socket}' is not valid on ${direction} face '${face}'`, `${path}.sockets.${face}`)
+    }
+    sockets[face] = typedSocket
   }
 
   const cell: Cell = {
@@ -178,8 +200,12 @@ function parsePalettes(raw: unknown, path: string): Project['palettes'] {
     if (id === '__proto__') throw new ProjectParseError(`reserved palette id '${id}'`, `${path}.${id}`)
     const palette = object(value, `${path}.${id}`)
     const blocks = object(palette['blocks'], `${path}.${id}.blocks`)
+    const paletteId = string(palette['id'], `${path}.${id}.id`)
+    if (paletteId !== id) {
+      throw new ProjectParseError(`palette id '${paletteId}' must match map key '${id}'`, `${path}.${id}.id`)
+    }
     palettes[id] = {
-      id: string(palette['id'], `${path}.${id}.id`),
+      id: paletteId,
       name: string(palette['name'], `${path}.${id}.name`),
       blocks: {
         floor: string(blocks['floor'], `${path}.${id}.blocks.floor`),
@@ -192,6 +218,28 @@ function parsePalettes(raw: unknown, path: string): Project['palettes'] {
     }
   }
   return palettes
+}
+
+function validatePaletteReferences(levels: Level[], palettes: Project['palettes']): void {
+  const exists = (id: string): boolean => Object.hasOwn(palettes, id) || Object.hasOwn(PALETTES, id)
+  for (let levelIndex = 0; levelIndex < levels.length; levelIndex++) {
+    const level = levels[levelIndex]!
+    const levelPath = `$.levels[${levelIndex}]`
+    if (!exists(level.paletteId)) {
+      throw new ProjectParseError(`unknown palette '${level.paletteId}'`, `${levelPath}.paletteId`)
+    }
+    for (const [bayKey, bay] of Object.entries(level.bays)) {
+      for (let cellIndex = 0; cellIndex < bay.cells.length; cellIndex++) {
+        const paletteId = bay.cells[cellIndex]!.paletteOverride
+        if (paletteId !== undefined && !exists(paletteId)) {
+          throw new ProjectParseError(
+            `unknown palette '${paletteId}'`,
+            `${levelPath}.bays.${bayKey}.cells[${cellIndex}].paletteOverride`,
+          )
+        }
+      }
+    }
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -225,6 +273,14 @@ function integer(value: unknown, path: string): number {
 function positiveInteger(value: unknown, path: string): number {
   const n = integer(value, path)
   if (n < 1) throw new ProjectParseError(`expected a positive integer, got ${n}`, path)
+  return n
+}
+
+function fieldExtent(value: unknown, path: string): number {
+  const n = positiveInteger(value, path)
+  if (n > MAX_BAY_FIELD) {
+    throw new ProjectParseError(`expected an integer at most ${MAX_BAY_FIELD}, got ${n}`, path)
+  }
   return n
 }
 

@@ -111,6 +111,13 @@ describe('F4 — plenum', () => {
     const flat = project([level('L1', 24, { A1: bay('fine', () => ({ heightCells: 2 })) })])
     expect(cellPlenum(flat, ref)).toBeNull()
   })
+
+  it('preserves the seven-block plenum of a legacy height-3 schema-v1 cell', () => {
+    const legacy = project([
+      level('L1', 24, { A1: bay('fine', () => ({ heightCells: 3, ceiling: 'dropped' })) }),
+    ])
+    expect(cellPlenum(legacy, ref)).toEqual({ x0: 5, y0: 29, z0: 5, x1: 7, y1: 35, z1: 7 })
+  })
 })
 
 describe('F9 — shell dedup', () => {
@@ -156,6 +163,37 @@ describe('shared planes are counted once', () => {
     // Naive summing would give 1348; the shared x = 12 plane (9 x 13 = 117) is one wall.
     expect(resolveBlocks(one).size).toBe(674)
     expect(resolveBlocks(two).size).toBe(674 * 2 - 117)
+  })
+})
+
+describe('merge groups', () => {
+  it('removes internal partition walls but keeps every horizontal plane and the outer shell', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('fine', (index) =>
+          index === 0 || index === 1
+            ? { heightCells: 2, ceiling: 'dropped', mergeGroup: 'room' }
+            : { heightCells: 2, ceiling: 'dropped' },
+        ),
+      }),
+    ])
+    const blocks = resolveBlocks(p)
+
+    expect(blocks.has(blockKey(4, 2, 2))).toBe(false)
+    expect(blocks.has(blockKey(0, 2, 2))).toBe(true)
+    expect(blocks.has(blockKey(4, 0, 2))).toBe(true)
+    expect(blocks.has(blockKey(4, 4, 2))).toBe(true)
+    expect(blocks.has(blockKey(4, 8, 2))).toBe(true)
+  })
+
+  it('does not carve a merge group that is not a filled rectangle', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('fine', (index) => (index === 0 || index === 2 ? { mergeGroup: 'broken' } : {})),
+      }),
+    ])
+
+    expect(resolveBlocks(p).has(blockKey(4, 2, 2))).toBe(true)
   })
 })
 
@@ -219,17 +257,60 @@ describe('§5.4 socket openings', () => {
     ])
     expect(resolveBlocks(p).has(blockKey(12, 4, 6))).toBe(false)
   })
+
+  it('continues a corridor opening through matching plenum walls', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped', sockets: sockets({ e: 'corridor' }) })),
+        B1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped', sockets: sockets({ w: 'corridor' }) })),
+      }),
+    ])
+    expect(resolveBlocks(p).has(blockKey(12, 6, 6))).toBe(false)
+  })
+
+  it('carves a matching one-block window through plenum walls', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped', sockets: sockets({ e: 'window' }) })),
+        B1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped', sockets: sockets({ w: 'window' }) })),
+      }),
+    ])
+    expect(resolveBlocks(p).has(blockKey(12, 6, 6))).toBe(false)
+    expect(resolveBlocks(p).has(blockKey(12, 5, 6))).toBe(true)
+  })
+
+  it('keeps bars blocked through plenum walls', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped', sockets: sockets({ e: 'bars' }) })),
+        B1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped', sockets: sockets({ w: 'bars' }) })),
+      }),
+    ])
+    expect(resolveBlocks(p).has(blockKey(12, 6, 6))).toBe(true)
+  })
 })
 
 describe('§7 memoisation', () => {
-  it('reuses the cached map until the document changes', () => {
+  it('returns the same blocks until the document changes', () => {
     const p = project([level('L1', 0, { A1: bay('merged', () => ({ heightCells: 2 })) })])
     const first = resolveBlocks(p)
-    expect(resolveBlocks(p)).toBe(first)
+    expect(resolveBlocks(p)).toEqual(first)
 
     p.levels[0]!.bays['A1']!.cells[0]!.heightCells = 3
     const second = resolveBlocks(p)
-    expect(second).not.toBe(first)
+    expect(second).not.toEqual(first)
     expect(second.size).toBe(volume(cellAABB(p, { levelId: 'L1', bayKey: 'A1', cellIndex: 0 })) - 11 * 11 * 11)
+  })
+
+  it('does not let callers mutate the cached block map', () => {
+    const p = project([level('L1', 0, { A1: bay('merged', () => ({ heightCells: 2 })) })])
+    const first = resolveBlocks(p)
+    const expectedSize = first.size
+    first.clear()
+    first.set('caller-owned', 'minecraft:air')
+
+    const second = resolveBlocks(p)
+    expect(second.size).toBe(expectedSize)
+    expect(second.has('caller-owned')).toBe(false)
   })
 })

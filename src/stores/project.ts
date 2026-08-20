@@ -20,6 +20,7 @@ import {
   LEVEL_PITCH,
   MAX_BAY_FIELD,
   cellCount,
+  isSocketValidForFace,
   type Bay,
   type Ceiling,
   type Cell,
@@ -41,6 +42,15 @@ export const HORIZONTAL_SOCKET_CYCLE: readonly Socket[] = ['solid', 'corridor', 
 export const VERTICAL_SOCKET_CYCLE: readonly Socket[] = ['solid', 'shaft']
 
 export const DEFAULT_PALETTE_ID = 'stone-brick'
+
+/** The first 4-block floor plane above every level's occupied height. */
+export function nextLevelY(project: Project): number {
+  const occupiedTop = project.levels.reduce(
+    (highest, level) => Math.max(highest, level.y + LEVEL_PITCH * tallestCell(level)),
+    0,
+  )
+  return Math.ceil(occupiedTop / LEVEL_PITCH) * LEVEL_PITCH
+}
 
 // --------------------------------------------------------------------------
 // Selection
@@ -190,8 +200,10 @@ export const useProjectStore = defineStore('project', () => {
     depth++
     try {
       const result = change()
-      pushCapped(undoStack, before)
-      redoStack.length = 0
+      if (JSON.stringify(before) !== JSON.stringify(snapshot())) {
+        pushCapped(undoStack, before)
+        redoStack.length = 0
+      }
       return result
     } catch (error) {
       project.value = before
@@ -311,6 +323,10 @@ export const useProjectStore = defineStore('project', () => {
     clearHistory()
   }
 
+  function loadImportedProjectAsCopy(document: Project): void {
+    loadProject({ ...document, id: newId() })
+  }
+
   function newProject(options: NewProjectOptions = {}): void {
     loadProject(createProject(options))
   }
@@ -352,6 +368,10 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function removeLevel(levelId: string): void {
+    requireLevel(levelId)
+    if (project.value.levels.length === 1) {
+      throw new RangeError('cannot remove the final level')
+    }
     mutate(() => {
       requireLevel(levelId)
       // Spliced in place: assigning a filtered copy would write proxies into
@@ -574,7 +594,11 @@ export const useProjectStore = defineStore('project', () => {
 
   function setCellHeight(refs: CellRef[], heightCells: 1 | 2 | 3): void {
     mutate(() => {
-      for (const ref of refs) requireCell(ref).heightCells = heightCells
+      for (const ref of refs) {
+        const cell = requireCell(ref)
+        cell.heightCells = heightCells
+        if (heightCells !== 2 && cell.ceiling === 'dropped') cell.ceiling = 'flat'
+      }
     })
   }
 
@@ -584,18 +608,29 @@ export const useProjectStore = defineStore('project', () => {
       for (const ref of refs) {
         const cell = requireCell(ref)
         cell.heightCells = Math.min(3, Math.max(1, cell.heightCells + delta)) as 1 | 2 | 3
+        if (cell.heightCells !== 2 && cell.ceiling === 'dropped') cell.ceiling = 'flat'
       }
     })
   }
 
   function setCeiling(refs: CellRef[], ceiling: Ceiling): void {
     mutate(() => {
-      for (const ref of refs) requireCell(ref).ceiling = ceiling
+      for (const ref of refs) {
+        const cell = requireCell(ref)
+        if (ceiling === 'dropped' && cell.heightCells !== 2) {
+          throw new Error(`a dropped ceiling requires heightCells 2, got ${cell.heightCells}`)
+        }
+        cell.ceiling = ceiling
+      }
     })
   }
 
   function setSocket(ref: CellRef, face: Face, socket: Socket): void {
     mutate(() => {
+      if (!isSocketValidForFace(face, socket)) {
+        const direction = face === 'up' || face === 'down' ? 'vertical' : 'horizontal'
+        throw new Error(`socket '${socket}' is not valid on ${direction} face '${face}'`)
+      }
       requireCell(ref).sockets[face] = socket
     })
   }
@@ -652,14 +687,21 @@ export const useProjectStore = defineStore('project', () => {
   function setCurrentLevel(levelId: string): void {
     requireLevel(levelId)
     currentLevelId.value = levelId
+    if (selectionLevelId(selection.value) !== levelId) selection.value = { kind: 'none' }
   }
 
   function select(next: Selection): void {
+    if (!selectionExists(next)) throw new Error('selection points outside the project')
+    const levelId = selectionLevelId(next)
+    if (next.kind === 'cells' && next.refs.some((ref) => ref.levelId !== levelId)) {
+      throw new Error('selected cells must belong to one level')
+    }
+    if (levelId) currentLevelId.value = levelId
     selection.value = next
   }
 
   function selectCells(refs: CellRef[]): void {
-    selection.value = refs.length > 0 ? { kind: 'cells', refs } : { kind: 'none' }
+    select(refs.length > 0 ? { kind: 'cells', refs } : { kind: 'none' })
   }
 
   /** Escape (§10). */
@@ -669,6 +711,24 @@ export const useProjectStore = defineStore('project', () => {
 
   /** The cells an action like `[` or a paint should apply to. */
   const selectedRefs = computed<CellRef[]>(() => (selection.value.kind === 'cells' ? selection.value.refs : []))
+
+  /** Cell mode keeps one bay expanded. Follow selection, then fall back to the first bay. */
+  const focusedBayKey = computed<string | undefined>(() => {
+    const level = currentLevel.value
+    if (!level) return undefined
+    if (selection.value.kind === 'bay' && selection.value.levelId === level.id && level.bays[selection.value.bayKey]) {
+      return selection.value.bayKey
+    }
+    if (selection.value.kind === 'cells') {
+      const bayKey = selection.value.refs.find((ref) => ref.levelId === level.id)?.bayKey
+      if (bayKey && level.bays[bayKey]) return bayKey
+    }
+    return Object.keys(level.bays).sort((left, right) => {
+      const a = parseBayKey(left)
+      const b = parseBayKey(right)
+      return a.j - b.j || a.i - b.i
+    })[0]
+  })
 
   // -- derived ------------------------------------------------------------
 
@@ -726,6 +786,7 @@ export const useProjectStore = defineStore('project', () => {
     issues,
     issuesByLevel,
     selectedRefs,
+    focusedBayKey,
     canUndo,
     canRedo,
     undoDepth,
@@ -737,6 +798,7 @@ export const useProjectStore = defineStore('project', () => {
     clearHistory,
     // document
     loadProject,
+    loadImportedProjectAsCopy,
     newProject,
     renameProject,
     toJSON,
@@ -777,4 +839,16 @@ function tallestCell(level: Level): number {
     for (const cell of bay.cells) tallest = Math.max(tallest, cell.heightCells)
   }
   return tallest
+}
+
+function selectionLevelId(selection: Selection): string | undefined {
+  switch (selection.kind) {
+    case 'none':
+      return undefined
+    case 'level':
+    case 'bay':
+      return selection.levelId
+    case 'cells':
+      return selection.refs[0]?.levelId
+  }
 }

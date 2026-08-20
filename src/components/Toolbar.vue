@@ -18,6 +18,7 @@ const props = defineProps<{
   grain: Grain
   saveStatus: SaveStatus
   saveError?: Error | undefined
+  pngBusy: boolean
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
   'set-module': [value: string]
   'set-grain': [value: Grain]
   export: []
+  png: []
   import: []
   reset: []
   resize: []
@@ -141,14 +143,28 @@ function statusTitle(): string {
     </div>
 
     <div class="group" role="group" aria-label="Project">
-      <button type="button" title="Download the project as JSON" @click="emit('export')">Export</button>
+      <button type="button" title="Download the project as JSON" @click="emit('export')">JSON</button>
+      <button type="button" :disabled="pngBusy" title="Download one PNG plan per level" @click="emit('png')">
+        {{ pngBusy ? 'Rendering…' : 'PNG' }}
+      </button>
       <button type="button" title="Load a project from a JSON file" @click="emit('import')">Import</button>
       <button type="button" title="Change how many bays the field is" @click="emit('resize')">Resize</button>
       <button type="button" title="Discard this project and start over" @click="emit('reset')">New</button>
     </div>
 
-    <span class="status" :class="{ failed: saveStatus === 'error' }" :title="statusTitle()">
+    <span
+      class="status"
+      :class="{ failed: saveStatus === 'error' }"
+      :title="statusTitle()"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      :aria-label="saveStatus === 'error' ? `Autosave error: ${saveError?.message ?? 'Save failed'}` : `Autosave status: ${STATUS_TEXT[saveStatus]}`"
+    >
       {{ STATUS_TEXT[saveStatus] }}
+    </span>
+    <span v-if="saveStatus === 'error'" class="visually-hidden" role="alert">
+      Autosave failed: {{ saveError?.message ?? 'The project could not be saved.' }}
     </span>
   </header>
 </template>
@@ -180,6 +196,7 @@ function statusTitle(): string {
 
 .modules {
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .module {
@@ -203,5 +220,25 @@ function statusTitle(): string {
 
 .status.failed {
   color: var(--danger);
+}
+
+@media (max-width: 600px) {
+  .toolbar {
+    gap: 7px 10px;
+    padding: 7px 8px;
+  }
+
+  .group {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .modules {
+    width: 100%;
+  }
+
+  .group.push {
+    margin-left: 0;
+  }
 }
 </style>

@@ -15,6 +15,7 @@
   --text: #1c1c1a;
   --muted: #6d6d66;
   --accent: #2f6f9f;
+  --on-accent: #ffffff;
   --danger: #b4342b;
 
   --wall: #b9b6ad;
@@ -40,6 +41,7 @@
     --text: #e8e8e6;
     --muted: #9a9c9f;
     --accent: #6ba8d8;
+    --on-accent: #101820;
     --danger: #e5675c;
 
     --wall: #43484f;
@@ -94,7 +96,44 @@ button:disabled {
 button[aria-pressed='true'] {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
+}
+
+input,
+select,
+textarea {
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .muted {

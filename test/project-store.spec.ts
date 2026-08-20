@@ -3,7 +3,7 @@
  */
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { HISTORY_LIMIT, createProject, useProjectStore } from '../src/stores/project.js'
+import { HISTORY_LIMIT, createProject, nextLevelY, useProjectStore } from '../src/stores/project.js'
 import { toRaw } from 'vue'
 import type { CellRef } from '../src/domain/types.js'
 
@@ -156,9 +156,50 @@ describe('the undo ring buffer', () => {
     expect(s.canUndo).toBe(false)
     expect(s.project.name).toBe('Fresh')
   })
+
+  it('does not record a no-op or clear the redo branch', () => {
+    const s = store()
+    s.paintCell(firstCell(), 'spine')
+    s.undo()
+    expect(s.canRedo).toBe(true)
+
+    s.renameProject(s.project.name)
+
+    expect(s.undoDepth).toBe(0)
+    expect(s.canRedo).toBe(true)
+  })
+
+  it('loads an imported document as a copy with a fresh project id', () => {
+    const s = store()
+    const imported = createProject({ name: 'Imported' })
+    const importedId = imported.id
+
+    s.loadImportedProjectAsCopy(imported)
+
+    expect(s.project.name).toBe('Imported')
+    expect(s.project.id).not.toBe(importedId)
+    expect(imported.id).toBe(importedId)
+    expect(s.canUndo).toBe(false)
+  })
 })
 
 describe('levels', () => {
+  it('refuses to remove the final level', () => {
+    const s = store()
+    expect(() => s.removeLevel(s.currentLevelId)).toThrow(/final level/)
+    expect(s.project.levels).toHaveLength(1)
+    expect(s.canUndo).toBe(false)
+  })
+
+  it('places the next level above the tallest occupied height on the 4-block lattice', () => {
+    const s = store()
+    s.setCellHeight([firstCell()], 3)
+    expect(nextLevelY(s.project)).toBe(12)
+
+    s.addLevel(16)
+    expect(nextLevelY(s.project)).toBe(20)
+  })
+
   it('keeps levels sorted ascending by y', () => {
     const s = store()
     s.addLevel(16, 'Attic')
@@ -218,6 +259,27 @@ describe('levels', () => {
     expect(s.currentLevelId).toBe(s.project.levels[0]!.id)
   })
 
+  it('clears a cell selection when switching to another level', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(8)
+    s.selectCells([{ levelId: ground, bayKey: 'A1', cellIndex: 0 }])
+
+    s.setCurrentLevel(upper)
+
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+
+  it('switches to the level that owns a new cell selection', () => {
+    const s = store()
+    const upper = s.addLevel(8)
+
+    s.selectCells([{ levelId: upper, bayKey: 'A1', cellIndex: 0 }])
+
+    expect(s.currentLevelId).toBe(upper)
+    expect(s.selection.kind).toBe('cells')
+  })
+
   it('restores the current level and selection when undo brings a level back', () => {
     const s = store()
     const upper = s.addLevel(8)
@@ -239,6 +301,20 @@ describe('levels', () => {
 })
 
 describe('bays', () => {
+  it('focuses cell mode on the selected bay and otherwise falls back to the first bay', () => {
+    const s = store()
+    expect(s.focusedBayKey).toBe('A1')
+
+    s.select({ kind: 'bay', levelId: s.currentLevelId, bayKey: 'B2' })
+    expect(s.focusedBayKey).toBe('B2')
+
+    s.selectCells([{ levelId: s.currentLevelId, bayKey: 'C3', cellIndex: 4 }])
+    expect(s.focusedBayKey).toBe('C3')
+
+    s.clearSelection()
+    expect(s.focusedBayKey).toBe('A1')
+  })
+
   it('re-cuts the cells when the grain changes', () => {
     const s = store()
     s.setBayGrain(s.currentLevelId, 'B2', 'coarse')
@@ -314,6 +390,30 @@ describe('cells', () => {
     expect(s.project.levels[0]!.bays['A1']!.cells[0]!.heightCells).toBe(3)
   })
 
+  it('normalizes a dropped ceiling when a height action leaves height two', () => {
+    const s = store()
+    const ref = firstCell()
+    s.paintCell(ref, 'spine')
+    s.setCellHeight([ref], 3)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('flat')
+
+    s.paintCell(ref, 'spine')
+    s.nudgeCellHeight([ref], -1)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('flat')
+  })
+
+  it('rejects a dropped ceiling on a non-height-two cell and rolls back all refs', () => {
+    const s = store()
+    const refs = [0, 1].map((cellIndex) => ({ ...firstCell(), cellIndex }))
+    s.setCellHeight([refs[0]!], 2)
+    s.clearHistory()
+
+    expect(() => s.setCeiling(refs, 'dropped')).toThrow(/heightCells 2/)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('flat')
+    expect(s.project.levels[0]!.bays['A1']!.cells[1]!.ceiling).toBe('flat')
+    expect(s.canUndo).toBe(false)
+  })
+
   it('cycles a horizontal face through the openings', () => {
     const s = store()
     const ref = firstCell()
@@ -329,6 +429,22 @@ describe('cells', () => {
     const ref = firstCell()
     expect(s.cycleSocket(ref, 'up')).toBe('shaft')
     expect(s.cycleSocket(ref, 'up')).toBe('solid')
+  })
+
+  it('rejects sockets that are invalid for the named face without changing the cell', () => {
+    const s = store()
+    const ref = firstCell()
+    expect(() => s.setSocket(ref, 'n', 'shaft')).toThrow(/horizontal face/)
+    expect(() => s.setSocket(ref, 'up', 'corridor')).toThrow(/vertical face/)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.sockets).toEqual({
+      n: 'solid',
+      e: 'solid',
+      s: 'solid',
+      w: 'solid',
+      up: 'solid',
+      down: 'solid',
+    })
+    expect(s.canUndo).toBe(false)
   })
 
   it('gives one merge group to a whole rectangle, and takes it away again', () => {
@@ -367,8 +483,8 @@ describe('validation wiring', () => {
 
     const collisions = s.issues.filter((issue) => issue.id === 'V1')
     expect(collisions).toHaveLength(1)
-    expect(s.issuesByLevel[ground]).toHaveLength(1)
-    expect(s.issuesByLevel[upper]).toHaveLength(1)
+    expect(s.issuesByLevel[ground]!.filter((issue) => issue.id === 'V1')).toHaveLength(1)
+    expect(s.issuesByLevel[upper]!.filter((issue) => issue.id === 'V1')).toHaveLength(1)
   })
 
   it('clears the issue when the mistake is undone', () => {

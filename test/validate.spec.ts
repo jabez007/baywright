@@ -4,6 +4,7 @@
  * These assert against the V1/V2/V4 subset of §8 implemented so far.
  */
 import { describe, expect, it } from 'vitest'
+import { blockKey, resolveBlocks } from '../src/domain/geometry.js'
 import { validate, type Issue, type IssueId } from '../src/domain/validate.js'
 import type { Cell, Project, Socket } from '../src/domain/types.js'
 import { bay, level, project, sockets } from './factory.js'
@@ -38,7 +39,7 @@ describe('F6 — no false collision', () => {
   ])
 
   it('treats touching at exactly one shared plane as legal', () => {
-    expect(validate(p)).toEqual([])
+    expect(only(validate(p), 'V1')).toEqual([])
   })
 })
 
@@ -69,8 +70,8 @@ describe('F8 — grain seam, illegal', () => {
     expect(issues[0]!.refs[0]).toEqual({ levelId: 'L1', bayKey: 'A1', cellIndex: 5 })
   })
 
-  it('clears once the socket becomes a window', () => {
-    expect(only(validate(seamProject(5, 'window')), 'V2')).toHaveLength(0)
+  it('rejects a window on the middle fine cell too', () => {
+    expect(only(validate(seamProject(5, 'window')), 'V2')).toHaveLength(1)
   })
 
   it('clears once the coarse bay is converted to merged grain', () => {
@@ -90,7 +91,7 @@ describe('F10 — stair continuity', () => {
     ])
 
   it('accepts a rise of 8 under a heightCells = 2 cell', () => {
-    expect(validate(stairProject(32))).toEqual([])
+    expect(only(validate(stairProject(32)), 'V4')).toEqual([])
   })
 
   it('rejects a rise that does not match the level gap', () => {
@@ -104,6 +105,30 @@ describe('F10 — stair continuity', () => {
       level('lower', 24, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
       level('upper', 32, { A1: bay('merged', () => ({ heightCells: 1 })) }),
     ])
+    expect(only(validate(p), 'V4')).toHaveLength(1)
+  })
+
+  it('rejects an upward shaft with no next level', () => {
+    const p = project([
+      level('roof', 24, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
+    ])
+    expect(only(validate(p), 'V4')).toHaveLength(1)
+  })
+
+  it('rejects an upward shaft when the next level has no matching bay', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
+      level('upper', 8, { B1: bay('merged') }),
+    ])
+    expect(only(validate(p), 'V4')).toHaveLength(1)
+  })
+
+  it('rejects an upward shaft when no cell above overlaps it', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('fine', (index) => (index === 0 ? { heightCells: 2, sockets: sockets({ up: 'shaft' }) } : {})) }),
+      level('upper', 8, { A1: bay('fine', () => ({ sockets: sockets() })) }),
+    ])
+    p.levels[1]!.bays['A1']!.cells = []
     expect(only(validate(p), 'V4')).toHaveLength(1)
   })
 })
@@ -146,13 +171,18 @@ describe('V3 — connectivity', () => {
     expect(only(validate(p), 'V3')).toHaveLength(2)
   })
 
+  it('does not treat bars as a path', () => {
+    const p = row({ module: 'spine', sockets: sockets({ e: 'bars' }) }, { sockets: sockets({ w: 'bars' }) }, {})
+    expect(only(validate(p), 'V3')).toHaveLength(2)
+  })
+
   it('needs both sides open, not just one', () => {
     const p = row({ module: 'spine', sockets: sockets({ e: 'corridor' }) }, {}, {})
     expect(only(validate(p), 'V3').map((issue) => issue.refs[0]!.bayKey)).toEqual(['B1', 'C1'])
   })
 
-  it('skips a project with no spine at all rather than flagging every cell', () => {
-    expect(only(validate(row({}, {}, {})), 'V3')).toHaveLength(0)
+  it('reports every cell when the project has no spine', () => {
+    expect(only(validate(row({}, {}, {})), 'V3')).toHaveLength(3)
   })
 
   it('walks cells inside a bay, not just across bay seams', () => {
@@ -198,8 +228,17 @@ describe('V5 — plenum reachability', () => {
     project(
       [
         level('L1', 0, {
-          A1: bay('merged', () => ({ module: 'spine' })),
-          ...Object.fromEntries(Object.entries(bays).map(([key, proto]) => [key, bay('merged', () => proto)])),
+          A1: bay('merged', () => plenumCell({ module: 'spine', sockets: sockets({ e: 'corridor' }) })),
+          ...Object.fromEntries(
+            Object.entries(bays).map(([key, proto]) => [
+              key,
+              bay('merged', () =>
+                key === 'B1'
+                  ? { ...proto, sockets: { ...sockets(), ...proto.sockets, w: 'corridor' } }
+                  : proto,
+              ),
+            ]),
+          ),
         }),
       ],
       { bayCols, bayRows: 1 },
@@ -222,6 +261,32 @@ describe('V5 — plenum reachability', () => {
     expect(only(validate(p), 'V5')).toHaveLength(0)
   })
 
+  it('agrees with the block map about passable plenum openings', () => {
+    const connected = project(
+      [
+        level('L1', 0, {
+          A1: bay('merged', () => plenumCell({ module: 'spine', sockets: sockets({ e: 'window' }) })),
+          B1: bay('merged', () => plenumCell({ sockets: sockets({ w: 'window' }) })),
+        }),
+      ],
+      { bayCols: 2, bayRows: 1 },
+    )
+    const blocked = project(
+      [
+        level('L1', 0, {
+          A1: bay('merged', () => plenumCell({ module: 'spine', sockets: sockets({ e: 'bars' }) })),
+          B1: bay('merged', () => plenumCell({ sockets: sockets({ w: 'bars' }) })),
+        }),
+      ],
+      { bayCols: 2, bayRows: 1 },
+    )
+
+    expect(resolveBlocks(connected).has(blockKey(12, 6, 6))).toBe(false)
+    expect(only(validate(connected), 'V5')).toHaveLength(0)
+    expect(resolveBlocks(blocked).has(blockKey(12, 6, 6))).toBe(true)
+    expect(only(validate(blocked), 'V5')).toHaveLength(1)
+  })
+
   it('groups an island rather than reporting each of its cells', () => {
     const p = strip(
       {
@@ -242,12 +307,14 @@ describe('V5 — plenum reachability', () => {
     expect(only(validate(p), 'V5')).toHaveLength(1)
   })
 
-  it('skips a level with no spine', () => {
+  it('reports plenums on a level with no spine', () => {
     const p = project(
       [level('L1', 0, { A1: bay('merged', () => plenumCell()), B1: bay('merged', () => plenumCell()) })],
       { bayCols: 2, bayRows: 1 },
     )
-    expect(only(validate(p), 'V5')).toHaveLength(0)
+    const issues = only(validate(p), 'V5')
+    expect(issues).toHaveLength(2)
+    expect(issues.flatMap((issue) => issue.refs).map((ref) => ref.bayKey)).toEqual(['A1', 'B1'])
   })
 })
 
