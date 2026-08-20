@@ -234,24 +234,35 @@ function rect(x0: number, z0: number, x1: number, z1: number) {
 .selection-overlay {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 0.4;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 
 .focus-overlay {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 0.65;
+  stroke-width: 2px;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
   opacity: 0;
   pointer-events: none;
 }
 
-.cell:focus-visible {
+.cell:focus {
   outline: none;
 }
 
 .cell:focus-visible .focus-overlay {
   opacity: 1;
+}
+
+.cell[data-pointer-focus='true'] .focus-overlay {
+  opacity: 0;
+}
+
+.cell:focus-visible .selection-overlay {
+  opacity: 0;
 }
 
 .cell:hover .interior {

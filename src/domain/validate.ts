@@ -398,11 +398,20 @@ function isRoomPassable(face: Face, socket: Socket): boolean {
  * never reaches. A warning rather than an error, because intentionally sealed
  * secret rooms are a legitimate design.
  *
- * With no spine there are no flood-fill starts, so every cell is reported.
+ * Without a spine there is no useful reachability result. Report the missing
+ * prerequisite once instead of flooding the UI with one warning per cell.
  */
 export function checkConnectivity(project: Project): Issue[] {
   const nodes = buildCellNodes(project)
   const spines = nodes.filter((node) => node.cell.module === SPINE_MODULE_ID)
+  if (nodes.length > 0 && spines.length === 0) {
+    return [{
+      id: 'V3',
+      severity: 'warning',
+      message: 'Add a spine to check connectivity',
+      refs: nodes.map((node) => node.ref),
+    }]
+  }
 
   const byKey = new Map(nodes.map((node) => [node.key, node]))
   const graph = new Map<string, string[]>()
@@ -421,14 +430,26 @@ export function checkConnectivity(project: Project): Issue[] {
     graph,
   )
 
-  return nodes
-    .filter((node) => !reached.has(node.key))
-    .map((node) => ({
+  const byBay = new Map<string, typeof nodes>()
+  for (const node of nodes.filter((candidate) => !reached.has(candidate.key))) {
+    const key = `${node.ref.levelId}|${node.ref.bayKey}`
+    const group = byBay.get(key) ?? []
+    group.push(node)
+    byBay.set(key, group)
+  }
+
+  return [...byBay.values()].map((group) => {
+    const first = group[0]!
+    const refs = group.map((node) => node.ref)
+    return {
       id: 'V3' as const,
       severity: 'warning' as const,
-      message: `${node.ref.bayKey} cell ${node.ref.cellIndex} has no path to a spine`,
-      refs: [node.ref],
-    }))
+      message: refs.length === 1
+        ? `${first.ref.bayKey} cell ${first.ref.cellIndex + 1} has no path to a spine`
+        : `${refs.length} cells in Bay ${first.ref.bayKey} have no path to a spine`,
+      refs,
+    }
+  })
 }
 
 // --------------------------------------------------------------------------
@@ -489,7 +510,7 @@ export function checkPlenumReachability(project: Project): Issue[] {
         severity: 'warning',
         message:
           `Plenum island of ${island.length} cell${island.length === 1 ? '' : 's'} starting at ` +
-          `${first.bayKey} cell ${first.cellIndex} has no route to a spine`,
+          `${first.bayKey} cell ${first.cellIndex + 1} has no route to a spine`,
         refs,
         levelId: level.id,
       })

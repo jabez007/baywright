@@ -267,26 +267,26 @@ The BOM panel recomputes 200ms after the latest document change.
 Four regions:
 
 - **Left rail.** List levels by descending y, highest first. Each entry shows its y value and name. Show the vertical gap in blocks between entries because that gap exposes collisions. Mark levels that have errors. Users edit y in the inspector rather than dragging levels to reorder them.
-- **Plan canvas.** Use SVG with three editing modes:
-  - _Bay mode_: each bay is one tile. Painting sets grain and module for the whole bay.
-  - _Cell mode_: one bay expanded, subdivided 3x3 or 2x2 by its grain. Painting sets individual cells.
-  - _Footprint mode_: each field position is a target. Painting adds or removes bays from the current level.
+- **Plan canvas.** Use SVG with separate view and tool controls. Bay view shows the full level. Cell view expands one bay and subdivides it by grain. Select is the default tool and never changes the plan. Paint applies a module. Empty clears modules without changing bay grain. Footprint adds or removes bays.
 
 - **Inspector.** Show properties for the selected level, bay, or cells. Controls include module, `heightCells`, ceiling, palette, sockets, merge groups, and a cell note.
-- **Bottom bar.** Show the issue list and the BOM. Clicking an issue changes to its level and selects the referenced cells. The BOM shows placed blocks, raw inputs, and a smelting estimate.
+- **Output drawer.** Keep Issues and Materials collapsed until the user opens one. Group repeated connectivity warnings by bay. Clicking an issue changes to its level and selects the referenced cells. Materials shows placed blocks, raw inputs, and a smelting estimate.
 
 ### Interaction model
 
-**Paint instead of opening a form for each cell.** Keep common placement actions on the toolbar and canvas. Use the inspector for exact properties.
+**Separate inspection from editing.** A pointer click selects by default. The user must choose Paint or Footprint before a canvas gesture changes the plan. Keep common placement actions on the canvas toolbar. Use the inspector for exact properties.
 
-- Select a module in the toolbar, then drag across cells with a mouse, touch, or pen to apply it.
-- In footprint mode, drag to add or remove bays.
+- Click or drag with Select to inspect a bay or a cell range without changing it.
+- Double-click a bay to open it in Cell view.
+- Choose Paint and a module, then drag across cells with a mouse, touch, or pen to apply it.
+- Choose Empty, then click or drag to clear bays or cells. Clearing a bay preserves its grain.
+- Choose Footprint, then drag to add or remove bays.
 - Shift-drag with a mouse to create a merge group across a rectangle. The inspector provides the same merge action for a selected cell range.
 - Alt-click a cell edge to cycle that face's socket.
 - `[` and `]` decrease and increase `heightCells` on the selection.
 - Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z for undo/redo.
 - Escape clears selection.
-- Tab moves focus into the plan. Arrow keys move between plan targets. Enter and Space apply the active tool to the focused target.
+- A skip link moves focus to the plan. Arrow keys move between plan targets. Enter and Space apply the active tool to the focused target.
 
 ### Rendering
 

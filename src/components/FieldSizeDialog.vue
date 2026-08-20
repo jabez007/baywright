@@ -5,7 +5,7 @@
  * field extent is not one — it is the bounding box the plan is drawn inside.
  *
  * Which bays inside that box actually exist is the canvas's job, in footprint
- * mode, not this dialog's.
+ * tool, not this dialog's.
  */
 import { computed, nextTick, ref, watch } from 'vue'
 
@@ -107,7 +107,7 @@ function onClose(): void {
         This discards the current project. Export first if you want to keep it.
       </p>
       <p v-else class="muted">
-        The field is the box the plan sits in. Use footprint mode to say which bays inside it exist.
+        The field is the box the plan sits in. Use the Footprint tool to say which bays inside it exist.
       </p>
 
       <div class="fields">

@@ -24,7 +24,9 @@ const autosave = useAutosave(store)
 const route = useRoute()
 const router = useRouter()
 
-const mode = ref<'bay' | 'cell' | 'footprint'>('cell')
+const view = ref<'bay' | 'cell'>('bay')
+const tool = ref<'select' | 'paint' | 'empty' | 'footprint'>('select')
+const mode = computed<'bay' | 'cell' | 'footprint'>(() => tool.value === 'footprint' ? 'footprint' : view.value)
 const moduleId = ref<string>(MODULE_LIST[0]?.id ?? 'empty')
 const grain = ref<Grain>('fine')
 
@@ -33,18 +35,48 @@ const notice = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const planCanvas = ref<InstanceType<typeof PlanCanvas> | null>(null)
 const pngBusy = ref(false)
+const outputPanel = ref<'issues' | 'materials' | null>(null)
+const inspectorOpen = ref(false)
+const narrowViewport = ref(false)
 /** null when closed, otherwise which of the two things the dialog is doing. */
 const sizing = ref<'new' | 'resize' | null>(null)
 let routeSyncSuspensions = 0
 let routeRequest = 0
+let narrowMedia: MediaQueryList | null = null
+let inspectorReturnFocus: HTMLElement | SVGElement | null = null
+
+function syncNarrowViewport(): void {
+  narrowViewport.value = narrowMedia?.matches ?? false
+}
+
+function openInspector(): void {
+  const active = document.activeElement
+  inspectorReturnFocus = active instanceof HTMLElement || active instanceof SVGElement ? active : null
+  inspectorOpen.value = true
+}
+
+async function closeInspector(): Promise<void> {
+  inspectorOpen.value = false
+  await nextTick()
+  if (inspectorReturnFocus?.isConnected) inspectorReturnFocus.focus()
+  inspectorReturnFocus = null
+}
 
 /** The gestures differ per mode, and a hint for tools you cannot reach is noise. */
 const hint = computed(() =>
   mode.value === 'footprint'
-    ? 'click a square to add or remove a bay · drag to do several · ⌘Z undo'
-    : mode.value === 'bay'
-      ? 'drag to paint bays · change grain in the inspector · ⌘Z undo'
-      : 'drag to paint cells · choose a bay above · merge, height and sockets are also in the inspector · ⌘Z undo',
+    ? 'Click or drag to add and remove bays. Ctrl/Cmd+Z undoes the last change.'
+    : tool.value === 'select'
+      ? mode.value === 'bay'
+        ? 'Click a bay to inspect it. Double-click to edit its cells.'
+        : 'Click or drag across cells to select them without changing the plan.'
+      : tool.value === 'empty'
+        ? mode.value === 'bay'
+          ? 'Click or drag to clear bays without changing their bay detail.'
+          : 'Click or drag to clear cells.'
+      : mode.value === 'bay'
+        ? 'Click or drag to paint whole bays.'
+        : 'Click or drag to paint cells. Exact properties remain available in the inspector.',
 )
 
 const bayOptions = computed(() => {
@@ -161,6 +193,9 @@ async function loadRouteAfterBoot(): Promise<void> {
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeyDown)
+  narrowMedia = window.matchMedia('(max-width: 900px)')
+  syncNarrowViewport()
+  narrowMedia.addEventListener('change', syncNarrowViewport)
   const initialPath = route.fullPath
   try {
     const requestedProjectId = route.name === 'project-level' ? routeParam(route.params.id) : undefined
@@ -223,10 +258,26 @@ watch(
   },
 )
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
+watch(
+  () => store.selection,
+  (selection) => {
+    if (!pngBusy.value && (selection.kind === 'bay' || selection.kind === 'cells')) openInspector()
+  },
+  { deep: true },
+)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  narrowMedia?.removeEventListener('change', syncNarrowViewport)
+})
 
 /** §10 — the keyboard half of the interaction model. */
 function onKeyDown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && narrowViewport.value && inspectorOpen.value) {
+    event.preventDefault()
+    void closeInspector()
+    return
+  }
   const target = event.target as HTMLElement | null
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
 
@@ -259,7 +310,8 @@ async function onExportPng(): Promise<void> {
   notice.value = null
   const previousLevelId = store.currentLevelId
   const previousSelection = JSON.parse(JSON.stringify(store.selection)) as Selection
-  const previousMode = mode.value
+  const previousView = view.value
+  const previousTool = tool.value
   const levels = store.project.levels.map((level) => ({ id: level.id, name: level.name, y: level.y }))
   const failures: string[] = []
 
@@ -268,7 +320,8 @@ async function onExportPng(): Promise<void> {
     // Cell mode deliberately shows one expanded bay. PNG plans still need the
     // complete level, so render the full-field bay view only for the export.
     store.clearSelection()
-    mode.value = 'bay'
+    view.value = 'bay'
+    tool.value = 'select'
     await nextTick()
     for (const level of levels) {
       try {
@@ -287,7 +340,8 @@ async function onExportPng(): Promise<void> {
     }
   } finally {
     try {
-      mode.value = previousMode
+      view.value = previousView
+      tool.value = previousTool
       if (store.project.levels.some((level) => level.id === previousLevelId)) {
         store.setCurrentLevel(previousLevelId)
         try {
@@ -393,14 +447,17 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
 
 <template>
   <div class="app">
+    <a class="skip-link" href="#floor-plan-editor" @click.prevent="planCanvas?.focusActiveTarget()">Skip to plan</a>
     <Toolbar
-      :mode="mode"
+      :view="view"
+      :tool="tool"
       :module-id="moduleId"
       :grain="grain"
       :save-status="autosave.status.value"
       :save-error="autosave.error.value"
       :png-busy="pngBusy"
-      @set-mode="mode = $event"
+      @set-view="view = $event"
+      @set-tool="tool = $event"
       @set-module="moduleId = $event"
       @set-grain="grain = $event"
       @export="onExport"
@@ -413,10 +470,10 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
 
     <p v-if="notice" class="notice" role="alert">{{ notice }}</p>
 
-    <main class="workspace">
+    <main class="workspace" :class="{ 'output-open': outputPanel !== null }">
       <LevelRail class="levels-region" @error="notice = $event" />
 
-      <section class="canvas-region" aria-label="Plan canvas">
+      <section id="plan-canvas" class="canvas-region" aria-label="Plan canvas" tabindex="-1">
         <header class="canvas-context">
           <span v-if="store.currentLevel" class="level-context">
             <strong>{{ store.currentLevel.name }}</strong>
@@ -434,19 +491,62 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
               <option v-for="bayKey in bayOptions" :key="bayKey" :value="bayKey">Bay {{ bayKey }}</option>
             </select>
           </label>
+          <button
+            type="button"
+            class="mobile-inspector-trigger"
+            aria-controls="inspector-panel"
+            :aria-expanded="inspectorOpen"
+            @click="openInspector"
+          >
+            Inspector
+          </button>
         </header>
         <div class="canvas-stage">
-          <PlanCanvas v-if="booted" ref="planCanvas" :mode="mode" :module-id="moduleId" :grain="grain" />
+          <PlanCanvas
+            v-if="booted"
+            ref="planCanvas"
+            :mode="mode"
+            :tool="tool === 'footprint' ? 'select' : tool"
+            :module-id="moduleId"
+            :grain="grain"
+            @open-bay="view = 'cell'"
+          />
           <p v-else class="muted loading">Loading…</p>
         </div>
         <p class="canvas-hint muted">{{ hint }}</p>
       </section>
 
-      <Inspector class="inspector-region" @error="notice = $event" />
+      <Inspector
+        class="inspector-region"
+        :class="{ 'mobile-open': inspectorOpen }"
+        :sheet-mode="narrowViewport"
+        :sheet-open="narrowViewport && inspectorOpen"
+        @error="notice = $event"
+        @close="closeInspector"
+      />
 
       <section class="bottom-region" aria-label="Project output">
-        <IssueList />
-        <BomPanel />
+        <header class="output-tabs">
+          <button
+            type="button"
+            :aria-pressed="outputPanel === 'issues'"
+            @click="outputPanel = outputPanel === 'issues' ? null : 'issues'"
+          >
+            Issues <span class="count mono">{{ store.issues.length }}</span>
+          </button>
+          <button
+            type="button"
+            :aria-pressed="outputPanel === 'materials'"
+            @click="outputPanel = outputPanel === 'materials' ? null : 'materials'"
+          >
+            Materials
+          </button>
+          <span class="output-summary muted">{{ outputPanel ? 'Click the active tab to close' : 'Plan output' }}</span>
+        </header>
+        <div v-if="outputPanel" class="output-content">
+          <IssueList v-if="outputPanel === 'issues'" />
+          <BomPanel v-else />
+        </div>
       </section>
     </main>
 
@@ -471,17 +571,41 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
   min-width: 0;
 }
 
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: var(--radius);
+  transform: translateY(-150%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.mobile-inspector-trigger {
+  display: none;
+}
+
 .workspace {
   flex: 1;
   min-height: 470px;
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(170px, 215px) minmax(320px, 1fr) minmax(250px, 300px);
-  grid-template-rows: minmax(280px, 1fr) minmax(190px, 30vh);
+  grid-template-rows: minmax(280px, 1fr) auto;
   grid-template-areas:
     "levels canvas inspector"
     "bottom bottom bottom";
   overflow: hidden;
+}
+
+.workspace.output-open {
+  grid-template-rows: minmax(280px, 1fr) minmax(190px, 30vh);
 }
 
 .levels-region {
@@ -505,11 +629,55 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
   grid-area: bottom;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(460px, 1.5fr);
+  display: flex;
+  flex-direction: column;
   background: var(--panel);
   border-top: 1px solid var(--border);
   overflow: hidden;
+}
+
+.output-tabs {
+  flex: none;
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+.output-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.output-tabs .count {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 11px;
+  text-align: center;
+}
+
+.output-tabs button[aria-pressed='true'] .count {
+  background: rgb(255 255 255 / 0.18);
+}
+
+.output-summary {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.output-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+
+.output-content > * {
+  height: 100%;
 }
 
 .canvas-context {
@@ -608,10 +776,29 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
     overflow: visible;
   }
 
+  .workspace.output-open {
+    grid-template-rows: auto minmax(420px, 65vh) auto auto;
+  }
+
   .bottom-region {
-    grid-template-columns: minmax(0, 1fr);
     overflow: visible;
   }
+
+  .output-content {
+    max-height: 65vh;
+    overflow: auto;
+  }
+
+  .inspector-region {
+    grid-area: auto;
+  }
+
+  .mobile-inspector-trigger {
+    display: inline-flex;
+    min-height: 40px;
+    margin-left: auto;
+  }
+
 }
 
 @media (max-width: 560px) {

@@ -68,15 +68,19 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 
 ## Controls
 
-- Drag with a mouse, touch, or pen to paint bays or cells. In footprint mode, dragging adds or removes bays.
-- Press `Tab` to enter the plan, use the arrow keys to move between targets, and press `Enter` or `Space` to apply the active tool.
+- Select is the default tool. Click a bay or cell to inspect it without changing the plan. Drag across cells to select a range.
+- Double-click a bay to open its cells. Use the **Bays** and **Cells** controls to change views directly.
+- Choose **Paint** and a module to paint bays or cells. Drag with a mouse, touch, or pen to paint several targets.
+- Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain.
+- Choose **Footprint** to add or remove bays. Drag to change several bays.
+- Use the **Skip to plan** link or press `Tab` to enter the plan. Use the arrow keys to move between targets. Press `Enter` or `Space` to apply the active tool.
 - Shift-drag cells to make a rectangular merge group.
 - Alt-click a cell edge to cycle its horizontal socket.
 - Press `[` or `]` to change the selected cells' height.
 - Press Ctrl/Cmd+Z to undo and Ctrl/Cmd+Shift+Z to redo.
 - Press `Escape` to clear the selection.
 
-The inspector also exposes merge, height, ceiling, and socket controls without modifier keys.
+The inspector also exposes module, merge, height, ceiling, and socket controls without modifier keys. On narrow screens, it opens as a sheet over the bottom of the plan.
 
 ## Tests and CI
 

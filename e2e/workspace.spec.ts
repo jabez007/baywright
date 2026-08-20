@@ -9,6 +9,16 @@ interface StoredProjectRecord {
   document: Project
 }
 
+async function useCellTool(page: Page, tool: 'Select' | 'Paint' = 'Select'): Promise<void> {
+  await page.getByRole('button', { name: 'Cells', exact: true }).click()
+  await page.getByRole('button', { name: tool, exact: true }).click()
+}
+
+async function paintSpineCells(page: Page): Promise<void> {
+  await useCellTool(page, 'Paint')
+  await page.getByLabel('Module', { exact: true }).selectOption('spine')
+}
+
 async function pushRoute(page: Page, path: string): Promise<void> {
   await page.evaluate((nextPath) => {
     const previous = history.state as { current?: string; position?: number } | null
@@ -36,7 +46,7 @@ test('paints and restores a Spine cell at the canonical route', async ({ page })
   await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Project output' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Spine', exact: true }).click()
+  await paintSpineCells(page)
   await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
   await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
   await expect(page.getByRole('status')).toHaveAccessibleName('Autosave status: Saved')
@@ -46,6 +56,7 @@ test('paints and restores a Spine cell at the canonical route', async ({ page })
   await page.reload()
 
   await expect(page).toHaveURL(canonicalUrl)
+  await useCellTool(page)
   await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
 })
 
@@ -61,14 +72,28 @@ test('keeps the plan usable without document overflow at 390px', async ({ page }
   expect(bounds?.width).toBeGreaterThan(300)
   expect(bounds?.height).toBeGreaterThan(300)
 
+  await paintSpineCells(page)
+  await expect(page.locator('.inspector')).toHaveAttribute('inert', '')
   const firstCell = page.getByRole('button', { name: /^A1 cell 1 · Empty/ })
   await firstCell.focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
+  const paintedCell = page.getByRole('button', { name: /^A1 cell 1 · Spine/ })
+  await expect(paintedCell).toBeVisible()
+  await expect(page.locator('.inspector')).not.toHaveAttribute('inert', '')
+  await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.inspector')).toHaveAttribute('inert', '')
+  await expect(paintedCell).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.selection-overlay')).toHaveCount(0)
+  await expect(page.locator('.inspector')).toHaveAttribute('inert', '')
 })
 
 test('uses one roving tab stop for plan targets', async ({ page }) => {
   await page.goto('/')
+  await useCellTool(page)
 
   const targets = page.locator('[data-plan-target]')
   await expect(targets).toHaveCount(9)
@@ -77,6 +102,9 @@ test('uses one roving tab stop for plan targets', async ({ page }) => {
 
   const first = page.getByRole('button', { name: /^A1 cell 1 · Empty/ })
   const second = page.getByRole('button', { name: /^A1 cell 2 · Empty/ })
+  await page.getByRole('link', { name: 'Skip to plan' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(first).toBeFocused()
   await first.focus()
   await page.keyboard.press('ArrowRight')
   await expect(second).toBeFocused()
@@ -85,12 +113,44 @@ test('uses one roving tab stop for plan targets', async ({ page }) => {
 
   const third = page.locator('[data-plan-target][data-bay="A1"][data-cell="2"]')
   await third.click()
+  await expect(third).toHaveAccessibleName(/^A1 cell 3 · Empty/)
   await expect(third).toBeFocused()
+  await expect(third.locator('.focus-overlay')).toHaveCSS('opacity', '0')
   await expect(third).toHaveAttribute('tabindex', '0')
   await expect(second).toHaveAttribute('tabindex', '-1')
 
+  await page.keyboard.press('ArrowLeft')
+  await expect(second).toBeFocused()
   await page.keyboard.press('Tab')
   await expect.poll(() => page.evaluate(() => document.activeElement?.closest('[data-plan-target]') === null)).toBe(true)
+})
+
+test('opens a bay in cell view without changing its contents', async ({ page }) => {
+  await page.goto('/')
+
+  const bay = page.locator('[data-plan-target="bay"][data-bay="A1"]')
+  await bay.dblclick()
+
+  await expect(page.getByRole('button', { name: 'Cells', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: /^A1 cell 1 · Empty/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+})
+
+test('clears a bay with Empty without changing its grain', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('spine')
+  await expect(page.getByLabel('Module', { exact: true }).locator('option[value="empty"]')).toHaveCount(0)
+  await page.getByRole('button', { name: 'coarse', exact: true }).click()
+
+  const bay = page.locator('[data-plan-target="bay"][data-bay="A1"]')
+  await bay.click()
+  await expect(bay).toHaveAccessibleName(/A1.*coarse grain, Spine/)
+
+  await page.getByRole('button', { name: 'Empty', exact: true }).click()
+  await bay.click()
+  await expect(bay).toHaveAccessibleName(/A1.*coarse grain, Empty/)
 })
 
 test('limits issue selection to one bay across mode changes', async ({ page }) => {
@@ -127,22 +187,23 @@ test('limits issue selection to one bay across mode changes', async ({ page }) =
   })
   await page.reload()
 
-  await page.getByRole('button', { name: 'Bay', exact: true }).click()
+  await page.getByRole('button', { name: 'Issues' }).click()
   const issue = page.getByRole('button', { name: /V7.*not a contiguous rectangle/ })
   await expect(issue).toBeVisible()
   await issue.click()
-  await page.getByRole('button', { name: 'Cell', exact: true }).click()
+  await page.getByRole('button', { name: 'Cells', exact: true }).click()
   await expect(page.getByLabel('Plan canvas').getByRole('combobox')).toHaveValue('A1')
   await expect(page.locator('.selection-overlay')).toHaveCount(1)
   await expect(page.locator('[data-plan-target][data-bay="B1"]')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Bay', exact: true }).click()
+  await page.getByRole('button', { name: 'Bays', exact: true }).click()
   await expect(page.locator('[data-bay="A1"] .error-overlay')).toBeVisible()
   await expect(page.locator('[data-bay="B1"] .error-overlay')).toBeVisible()
 })
 
 test('PNG export preserves selection and browser history without exporting its overlay', async ({ page }) => {
   await page.goto('/')
+  await useCellTool(page)
   await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
   await expect(page.locator('.selection-overlay')).toHaveCount(1)
 
@@ -157,10 +218,11 @@ test('PNG export preserves selection and browser history without exporting its o
     }
   })
 
+  await page.getByText('Project', { exact: true }).click()
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'PNG', exact: true }).click()
+  await page.getByRole('button', { name: 'Export PNG plans' }).click()
   await download
-  await expect(page.getByRole('button', { name: 'PNG', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Export PNG plans' })).toBeEnabled()
 
   expect(await page.evaluate(() => (window as Window & { __pngSelectionCounts?: number[] }).__pngSelectionCounts)).toEqual([0])
   expect(await page.evaluate(() => ({ url: location.href, length: history.length }))).toEqual(before)
@@ -207,7 +269,7 @@ test('loads stored projects and requested levels through Back and Forward', asyn
     return '/project/second-project/level/second-upper'
   })
 
-  await page.getByRole('button', { name: 'Spine', exact: true }).click()
+  await paintSpineCells(page)
   await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
   await pushRoute(page, secondPath)
   await expect(page).toHaveURL(new RegExp(`${secondPath}$`))
@@ -235,19 +297,16 @@ test('loads stored projects and requested levels through Back and Forward', asyn
   await expect(page.getByText('Second Project', { exact: true })).toBeVisible()
 })
 
-test('scrolls bottom panels into view on a short desktop viewport', async ({ page }) => {
+test('opens project output without document overflow on a short desktop viewport', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 601 })
   await page.goto('/')
 
   const bottom = page.getByRole('region', { name: 'Project output' })
   await expect(bottom).toBeVisible()
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight)).toBe(true)
-  expect((await bottom.boundingBox())!.y + (await bottom.boundingBox())!.height).toBeGreaterThan(601)
-
-  await bottom.evaluate((element) => element.scrollIntoView({ block: 'end' }))
-  await expect.poll(() => page.evaluate(() => window.scrollY > 0)).toBe(true)
-  await expect.poll(async () => {
-    const bounds = await bottom.boundingBox()
-    return bounds !== null && bounds.y >= 0 && bounds.y + bounds.height <= 601
-  }).toBe(true)
+  await page.getByRole('button', { name: 'Issues' }).click()
+  await expect(page.getByRole('heading', { name: 'Issues' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true)
+  const bounds = await bottom.boundingBox()
+  expect(bounds).not.toBeNull()
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(601)
 })

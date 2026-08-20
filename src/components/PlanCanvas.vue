@@ -21,9 +21,12 @@ import { moduleFill } from './fills.js'
 
 const props = defineProps<{
   mode: 'bay' | 'cell' | 'footprint'
+  tool: 'select' | 'paint' | 'empty'
   moduleId: string
   grain: Grain
 }>()
+
+const emit = defineEmits<{ 'open-bay': [bayKey: string] }>()
 
 const store = useProjectStore()
 const svg = ref<SVGSVGElement | null>(null)
@@ -33,13 +36,18 @@ function getSvgElement(): SVGSVGElement | null {
   return svg.value
 }
 
-defineExpose({ getSvgElement })
+function focusActiveTarget(): void {
+  svg.value?.querySelector<SVGGraphicsElement>('[data-plan-target][tabindex="0"]')?.focus()
+}
+
+defineExpose({ getSvgElement, focusActiveTarget })
 
 /** `"A1"` in bay mode, `"A1:4"` in cell mode. */
 type Target = string
 
 type Stroke =
   | { kind: 'paint'; targets: Set<Target> }
+  | { kind: 'select'; targets: Set<Target> }
   | { kind: 'merge'; grain: Grain; anchor: { u: number; v: number }; head: { u: number; v: number } }
   /** `add` is fixed by the first slot the drag touches, so a stroke never flip-flops. */
   | { kind: 'footprint'; add: boolean; targets: Set<string> }
@@ -63,19 +71,27 @@ const viewBox = computed(() => {
 })
 
 /** §5.1 — column letters across the top, row numbers down the left. */
-const columnHeaders = computed(() =>
-  Array.from({ length: store.project.bayCols }, (_, i) => ({
+const columnHeaders = computed(() => {
+  const columns = Array.from({ length: store.project.bayCols }, (_, i) => ({
     key: bayKeyOf(i, 0).replace(/[0-9]+$/, ''),
     x: BAY_PITCH * i + BAY_PITCH / 2 + 0.5,
-  })),
-)
+    i,
+  }))
+  if (props.mode !== 'cell' || !store.focusedBayKey) return columns
+  const { i } = parseBayKey(store.focusedBayKey)
+  return columns.filter((header) => header.i === i)
+})
 
-const rowHeaders = computed(() =>
-  Array.from({ length: store.project.bayRows }, (_, j) => ({
+const rowHeaders = computed(() => {
+  const rows = Array.from({ length: store.project.bayRows }, (_, j) => ({
     key: String(j + 1),
     y: BAY_PITCH * j + BAY_PITCH / 2 + 0.5,
-  })),
-)
+    j,
+  }))
+  if (props.mode !== 'cell' || !store.focusedBayKey) return rows
+  const { j } = parseBayKey(store.focusedBayKey)
+  return rows.filter((header) => header.j === j)
+})
 
 const bays = computed(() => {
   const level = store.currentLevel
@@ -206,7 +222,8 @@ function selectedCells(bayKey: string): ReadonlySet<number> {
 // Preview
 // --------------------------------------------------------------------------
 
-const previewFill = computed(() => moduleFill(props.moduleId))
+const paintModuleId = computed(() => props.tool === 'empty' ? 'empty' : props.moduleId)
+const previewFill = computed(() => stroke.value?.kind === 'select' ? 'var(--accent)' : moduleFill(paintModuleId.value))
 
 /** Interior rects for whatever the current stroke would touch. */
 const preview = computed(() => {
@@ -248,8 +265,10 @@ function onPointerDown(event: PointerEvent): void {
   const target = targetAt(event.target)
   if (!target) return
   activeTarget.value = target
-  targetElementAt(event.target)?.focus()
   event.preventDefault()
+  const targetElement = targetElementAt(event.target)
+  targetElement?.setAttribute('data-pointer-focus', 'true')
+  targetElement?.focus()
 
   const [bayKey, index] = splitTarget(target)
 
@@ -264,15 +283,21 @@ function onPointerDown(event: PointerEvent): void {
     return
   }
 
+  if (props.tool === 'select') {
+    stroke.value = { kind: 'select', targets: new Set([target]) }
+    startStrokeListeners()
+    return
+  }
+
   // §10 — alt-click a cell edge cycles that face's socket. Single click only.
-  if (event.altKey && index !== null) {
+  if (props.tool === 'paint' && event.altKey && index !== null) {
     const face = nearestFace(event, { levelId: store.currentLevelId, bayKey, cellIndex: index })
     if (face) store.cycleSocket({ levelId: store.currentLevelId, bayKey, cellIndex: index }, face)
     return
   }
 
   // §10 — shift-drag creates a merge group across a rectangle.
-  if (event.shiftKey && index !== null) {
+  if (props.tool === 'paint' && event.shiftKey && index !== null) {
     const grain = grainOf(bayKey)
     const anchor = lattice(bayKey, grain, index)
     stroke.value = { kind: 'merge', grain, anchor, head: anchor }
@@ -281,6 +306,17 @@ function onPointerDown(event: PointerEvent): void {
   }
 
   startStrokeListeners()
+}
+
+function onDoubleClick(event: MouseEvent): void {
+  if (props.mode !== 'bay') return
+  const target = targetAt(event.target)
+  if (!target) return
+  const [bayKey] = splitTarget(target)
+  const levelId = store.currentLevel?.id
+  if (!levelId) return
+  store.select({ kind: 'bay', levelId, bayKey })
+  emit('open-bay', bayKey)
 }
 
 function startStrokeListeners(): void {
@@ -341,10 +377,26 @@ function onPointerUp(): void {
     return
   }
 
+  if (current.kind === 'select') {
+    const targets = [...current.targets]
+    if (props.mode === 'bay') {
+      const last = targets.at(-1)
+      if (last) store.select({ kind: 'bay', levelId, bayKey: last })
+      return
+    }
+    store.selectCells(targets.map((target) => {
+      const [bayKey, index] = splitTarget(target)
+      return { levelId, bayKey, cellIndex: index ?? 0 }
+    }))
+    return
+  }
+
   const targets = [...current.targets]
   if (props.mode === 'bay') {
     store.batch(() => {
-      for (const target of targets) store.paintBay(levelId, target, props.moduleId, props.grain)
+      for (const target of targets) {
+        store.paintBay(levelId, target, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
+      }
     })
     const last = targets.at(-1)
     if (last) store.select({ kind: 'bay', levelId, bayKey: last })
@@ -355,7 +407,7 @@ function onPointerUp(): void {
     const [bayKey, index] = splitTarget(target)
     return { levelId, bayKey, cellIndex: index ?? 0 }
   })
-  store.batch(() => store.paintCells(refs, props.moduleId))
+  store.batch(() => store.paintCells(refs, paintModuleId.value))
   store.selectCells(refs)
 }
 
@@ -416,6 +468,7 @@ function targetElementAt(node: EventTarget | Element | null): SVGGraphicsElement
 function onTargetKeyDown(event: KeyboardEvent): void {
   const current = targetElementAt(event.target)
   if (!current) return
+  current.removeAttribute('data-pointer-focus')
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
     const target = targetAt(current)
@@ -431,6 +484,10 @@ function onTargetKeyDown(event: KeyboardEvent): void {
 function onTargetFocus(event: FocusEvent): void {
   const target = targetAt(event.target)
   if (target) activeTarget.value = target
+}
+
+function onTargetBlur(event: FocusEvent): void {
+  targetElementAt(event.target)?.removeAttribute('data-pointer-focus')
 }
 
 /** Keyboard equivalent of a short ordinary click, without modifier-only tools. */
@@ -451,14 +508,22 @@ function activateTarget(target: Target): void {
   }
 
   if (props.mode === 'bay') {
-    store.paintBay(levelId, bayKey, props.moduleId, props.grain)
+    if (props.tool === 'select') {
+      store.select({ kind: 'bay', levelId, bayKey })
+      return
+    }
+    store.paintBay(levelId, bayKey, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
     store.select({ kind: 'bay', levelId, bayKey })
     return
   }
 
   if (index === null) return
   const ref = { levelId, bayKey, cellIndex: index }
-  store.paintCell(ref, props.moduleId)
+  if (props.tool === 'select') {
+    store.selectCells([ref])
+    return
+  }
+  store.paintCell(ref, paintModuleId.value)
   store.selectCells([ref])
 }
 
@@ -555,16 +620,20 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 
 <template>
   <svg
+    id="floor-plan-editor"
     ref="svg"
     class="plan"
     :viewBox="viewBox"
     preserveAspectRatio="xMidYMid meet"
+    tabindex="-1"
     role="group"
     aria-labelledby="plan-title"
     aria-describedby="plan-description"
     @pointerdown="onPointerDown"
+    @dblclick="onDoubleClick"
     @keydown="onTargetKeyDown"
     @focusin="onTargetFocus"
+    @focusout="onTargetBlur"
     @contextmenu.prevent
   >
     <title id="plan-title">Floor plan editor</title>
@@ -641,6 +710,7 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
   display: block;
   touch-action: none;
   user-select: none;
+  overflow: hidden;
 }
 
 .ground {

@@ -154,7 +154,7 @@ describe('V3 — connectivity', () => {
     const issues = only(validate(p), 'V3')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.severity).toBe('warning')
-    expect(issues[0]!.message).toBe('C1 cell 0 has no path to a spine')
+    expect(issues[0]!.message).toBe('C1 cell 1 has no path to a spine')
   })
 
   it('stays quiet when every cell chains back to the spine', () => {
@@ -181,8 +181,11 @@ describe('V3 — connectivity', () => {
     expect(only(validate(p), 'V3').map((issue) => issue.refs[0]!.bayKey)).toEqual(['B1', 'C1'])
   })
 
-  it('reports every cell when the project has no spine', () => {
-    expect(only(validate(row({}, {}, {})), 'V3')).toHaveLength(3)
+  it('reports the missing spine once when connectivity cannot be checked', () => {
+    const issues = only(validate(row({}, {}, {})), 'V3')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.message).toBe('Add a spine to check connectivity')
+    expect(issues[0]!.refs).toHaveLength(3)
   })
 
   it('walks cells inside a bay, not just across bay seams', () => {
@@ -195,8 +198,11 @@ describe('V3 — connectivity', () => {
         }),
       }),
     ])
-    // Cells 0 and 1 are joined; the other seven are sealed.
-    expect(only(validate(p), 'V3')).toHaveLength(7)
+    // Cells 0 and 1 are joined; the other seven are sealed and grouped by bay.
+    const issues = only(validate(p), 'V3')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.refs).toHaveLength(7)
+    expect(issues[0]!.message).toBe('7 cells in Bay A1 have no path to a spine')
   })
 
   it('walks a shaft between levels', () => {
@@ -249,7 +255,7 @@ describe('V5 — plenum reachability', () => {
     const issues = only(validate(p), 'V5')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.severity).toBe('warning')
-    expect(issues[0]!.message).toBe('Plenum island of 1 cell starting at C1 cell 0 has no route to a spine')
+    expect(issues[0]!.message).toBe('Plenum island of 1 cell starting at C1 cell 1 has no route to a spine')
     expect(issues[0]!.levelId).toBe('L1')
   })
 
@@ -298,7 +304,7 @@ describe('V5 — plenum reachability', () => {
     )
     const issues = only(validate(p), 'V5')
     expect(issues).toHaveLength(1)
-    expect(issues[0]!.message).toBe('Plenum island of 2 cells starting at C1 cell 0 has no route to a spine')
+    expect(issues[0]!.message).toBe('Plenum island of 2 cells starting at C1 cell 1 has no route to a spine')
     expect(issues[0]!.refs.map((ref) => ref.bayKey)).toEqual(['C1', 'D1'])
   })
 

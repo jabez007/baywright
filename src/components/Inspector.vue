@@ -1,13 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { allCellRefs, resolveCell } from '../domain/geometry.js'
 import { MODULE_LIST } from '../domain/modules.js'
 import type { Ceiling, Face, Grain, Socket } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 
-const emit = defineEmits<{ error: [message: string] }>()
+const emit = defineEmits<{
+  error: [message: string]
+  close: []
+}>()
+const props = defineProps<{
+  sheetMode: boolean
+  sheetOpen: boolean
+}>()
 const store = useProjectStore()
+const closeButton = ref<HTMLButtonElement | null>(null)
+
+watch(
+  () => props.sheetOpen,
+  async (open) => {
+    if (!open) return
+    await nextTick()
+    closeButton.value?.focus()
+  },
+)
 
 const FACES: readonly { id: Face; label: string }[] = [
   { id: 'n', label: 'North' },
@@ -144,13 +161,22 @@ function mergeSelected(): void {
 </script>
 
 <template>
-  <aside class="inspector" aria-labelledby="inspector-title">
+  <aside
+    id="inspector-panel"
+    class="inspector"
+    aria-labelledby="inspector-title"
+    :aria-hidden="sheetMode && !sheetOpen ? 'true' : undefined"
+    :inert="sheetMode && !sheetOpen ? true : undefined"
+  >
     <header class="panel-heading">
       <div>
         <p class="eyebrow">Selection</p>
         <h2 id="inspector-title">Inspector</h2>
       </div>
-      <span class="selection-kind mono">{{ inspectorKind }}</span>
+      <div class="heading-actions">
+        <span class="selection-kind mono">{{ inspectorKind }}</span>
+        <button ref="closeButton" type="button" class="mobile-close" aria-label="Close inspector" @click="emit('close')">Close</button>
+      </div>
     </header>
 
     <div v-if="level" class="inspector-body">
@@ -330,6 +356,16 @@ function mergeSelected(): void {
   font-size: 11px;
 }
 
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-close {
+  display: none;
+}
+
 .inspector-body {
   min-height: 0;
   overflow: auto;
@@ -394,8 +430,35 @@ legend {
 
 @media (max-width: 900px) {
   .inspector {
-    border-top: 1px solid var(--border);
-    border-left: 0;
+    position: fixed;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    z-index: 60;
+    max-height: min(72dvh, 620px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 18px 48px rgb(0 0 0 / 0.28);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 20px));
+    transition: transform 160ms ease, opacity 160ms ease;
+  }
+
+  .inspector.mobile-open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .mobile-close {
+    display: inline-flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector {
+    transition: none;
   }
 }
 

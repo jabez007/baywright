@@ -158,24 +158,35 @@ const keyAnchor = computed(() => ({ x: bayX.value + BAY_PITCH / 2 + 0.5, y: bayZ
 .selection-overlay {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 0.5;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 
 .focus-overlay {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 0.7;
+  stroke-width: 2px;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
   opacity: 0;
   pointer-events: none;
 }
 
-.bay-tile:focus-visible {
+.bay-tile:focus {
   outline: none;
 }
 
 .bay-tile:focus-visible .focus-overlay {
   opacity: 1;
+}
+
+.bay-tile[data-pointer-focus='true'] .focus-overlay {
+  opacity: 0;
+}
+
+.bay-tile:focus-visible .selection-overlay {
+  opacity: 0;
 }
 
 .bay-tile:hover .interior {
