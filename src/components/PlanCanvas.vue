@@ -741,14 +741,15 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 .slot {
   fill: transparent;
   cursor: pointer;
+  vector-effect: non-scaling-stroke;
 }
 
 .slot.vacant {
   fill: var(--panel-2);
   fill-opacity: 0.5;
   stroke: var(--border);
-  stroke-width: 0.3;
-  stroke-dasharray: 1 1;
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
 }
 
 .slot.vacant:hover {
@@ -761,11 +762,25 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
   fill-opacity: 0.15;
 }
 
-.slot:focus-visible {
+.slot:focus {
   outline: none;
+}
+
+.slot:focus-visible {
   stroke: var(--accent);
-  stroke-width: 0.65;
+  stroke-width: 2px;
   fill-opacity: 0.35;
+}
+
+.slot.vacant[data-pointer-focus='true'] {
+  fill-opacity: 0.5;
+  stroke: var(--border);
+  stroke-width: 1px;
+}
+
+.slot.filled[data-pointer-focus='true'] {
+  fill: transparent;
+  stroke: none;
 }
 
 .footprint-preview rect {
