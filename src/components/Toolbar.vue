@@ -75,6 +75,17 @@ function statusTitle(): string {
   return props.saveError ? props.saveError.message : STATUS_TEXT[props.saveStatus]
 }
 
+/**
+ * What the live region announces. It has to live in the region's content:
+ * screen readers announce a live region from the text that changed, and an
+ * `aria-label` swap is not reliably treated as such a change.
+ */
+function statusAnnouncement(): string {
+  return props.saveStatus === 'error'
+    ? `Autosave failed: ${props.saveError?.message ?? 'The project could not be saved.'}`
+    : `Autosave status: ${STATUS_TEXT[props.saveStatus]}`
+}
+
 function chooseModule(event: Event): void {
   emit('set-module', (event.target as HTMLSelectElement).value)
 }
@@ -96,9 +107,9 @@ function chooseModule(event: Event): void {
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          :aria-label="saveStatus === 'error' ? `Autosave error: ${saveError?.message ?? 'Save failed'}` : `Autosave status: ${STATUS_TEXT[saveStatus]}`"
         >
-          {{ STATUS_TEXT[saveStatus] }}
+          <span aria-hidden="true">{{ STATUS_TEXT[saveStatus] }}</span>
+          <span class="visually-hidden">{{ statusAnnouncement() }}</span>
         </span>
         <button type="button" :disabled="pngBusy || !store.canUndo" title="Undo (Ctrl/Cmd+Z)" @click="store.undo()">Undo</button>
         <button type="button" :disabled="pngBusy || !store.canRedo" title="Redo (Ctrl/Cmd+Shift+Z)" @click="store.redo()">Redo</button>
@@ -194,7 +205,6 @@ function chooseModule(event: Event): void {
       </details>
     </div>
 
-    <span v-if="saveStatus === 'error'" class="visually-hidden" role="alert">Autosave failed: {{ saveError?.message ?? 'The project could not be saved.' }}</span>
   </header>
 </template>
 

@@ -26,7 +26,7 @@ const props = defineProps<{
   grain: Grain
 }>()
 
-const emit = defineEmits<{ 'open-bay': [bayKey: string] }>()
+const emit = defineEmits<{ 'open-bay': [bayKey: string]; error: [message: string] }>()
 
 const store = useProjectStore()
 const svg = ref<SVGSVGElement | null>(null)
@@ -141,6 +141,20 @@ const slots = computed(() => {
   }
   return out
 })
+
+/**
+ * A level with no bays is a deleted level, not a shape, so the last one stays.
+ * Every path that can run into that rule reports it with the same words.
+ */
+const LAST_BAY_REFUSAL = 'A level keeps at least one bay, so this one cannot be removed'
+
+const canRemoveBays = computed(() => Object.keys(store.currentLevel?.bays ?? {}).length > 1)
+
+function slotLabel(slot: { bayKey: string; present: boolean }): string {
+  if (!slot.present) return `Bay ${slot.bayKey}, absent; press Enter or Space to add`
+  if (!canRemoveBays.value) return `Bay ${slot.bayKey}, present; the only bay on this level, so it cannot be removed`
+  return `Bay ${slot.bayKey}, present; press Enter or Space to remove`
+}
 
 const visibleTargets = computed<Target[]>(() => {
   if (props.mode === 'footprint') return slots.value.map((slot) => slot.bayKey)
@@ -429,7 +443,10 @@ function commitFootprint(current: Extract<Stroke, { kind: 'footprint' }>, levelI
   const targets = [...current.targets]
 
   if (!current.add && targets.length >= Object.keys(level.bays).length) targets.pop()
-  if (targets.length === 0) return
+  if (targets.length === 0) {
+    if (!current.add) emit('error', LAST_BAY_REFUSAL)
+    return
+  }
 
   store.batch(() => {
     for (const bayKey of targets) {
@@ -501,6 +518,7 @@ function activateTarget(target: Target): void {
     if (!level) return
     if (level.bays[bayKey]) {
       if (Object.keys(level.bays).length > 1) store.removeBay(levelId, bayKey)
+      else emit('error', LAST_BAY_REFUSAL)
     } else {
       store.addBay(levelId, bayKey, props.grain)
     }
@@ -688,7 +706,7 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
         data-plan-target="footprint"
         :tabindex="targetTabIndex(slot.bayKey)"
         role="button"
-        :aria-label="`Bay ${slot.bayKey}, ${slot.present ? 'present; press Enter or Space to remove' : 'absent; press Enter or Space to add'}`"
+        :aria-label="slotLabel(slot)"
         :class="slot.present ? 'slot filled' : 'slot vacant'"
         :x="slot.x"
         :y="slot.y"

@@ -516,6 +516,7 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
             :module-id="moduleId"
             :grain="grain"
             @open-bay="view = 'cell'"
+            @error="notice = $event"
           />
           <p v-else class="muted loading">Loading…</p>
         </div>

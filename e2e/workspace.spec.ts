@@ -49,7 +49,9 @@ test('paints and restores a Spine cell at the canonical route', async ({ page })
   await paintSpineCells(page)
   await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
   await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
-  await expect(page.getByRole('status')).toHaveAccessibleName('Autosave status: Saved')
+  // The announcement lives in the region's content, which is what a screen
+  // reader reads out when the region changes.
+  await expect(page.getByRole('status')).toContainText('Autosave status: Saved')
   await expect(page).toHaveURL(/\/project\/[^/]+\/level\/[^/?#]+$/)
 
   const canonicalUrl = page.url()
@@ -244,6 +246,28 @@ test('PNG export preserves selection and browser history without exporting its o
   expect(await page.evaluate(() => (window as Window & { __pngSelectionCounts?: number[] }).__pngSelectionCounts)).toEqual([0])
   expect(await page.evaluate(() => ({ url: location.href, length: history.length }))).toEqual(before)
   await expect(page.locator('.selection-overlay')).toHaveCount(1)
+})
+
+test('says why the last bay cannot be removed, and says so when asked to', async ({ page }) => {
+  await page.goto('/')
+
+  // Shrink the field to a single bay so removing it is the guarded case.
+  await page.getByText('Project', { exact: true }).click()
+  await page.getByRole('button', { name: 'Resize field' }).click()
+  await page.getByLabel('Bays across').fill('1')
+  await page.getByLabel('Bays deep').fill('1')
+  await page.getByRole('button', { name: 'Resize', exact: true }).click()
+
+  await page.getByRole('button', { name: 'Footprint', exact: true }).click()
+  const slot = page.locator('[data-plan-target="footprint"][data-bay="A1"]')
+
+  // The label has to promise what activation will actually do.
+  await expect(slot).toHaveAttribute('aria-label', /present; the only bay on this level, so it cannot be removed/)
+
+  await slot.click()
+  await expect(page.getByRole('alert')).toContainText('A level keeps at least one bay')
+  // Still there: the refusal is a refusal, not a silent partial.
+  await expect(slot).toHaveClass(/filled/)
 })
 
 test('locks project edits while a PNG export is running', async ({ page }) => {
