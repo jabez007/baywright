@@ -54,7 +54,7 @@ describe('the shipped presets', () => {
 
   it('never drops a ceiling on a cell too short to hold a plenum', () => {
     for (const module of MODULE_LIST) {
-      if (module.ceiling === 'dropped') expect(module.heightCells).toBeGreaterThanOrEqual(2)
+      if (module.ceiling === 'dropped') expect(module.heightCells).toBe(2)
     }
   })
 
@@ -62,6 +62,9 @@ describe('the shipped presets', () => {
     for (const module of MODULE_LIST) {
       for (const face of ['n', 'e', 's', 'w'] as const) {
         expect(module.sockets[face]).not.toBe('shaft')
+      }
+      for (const face of ['up', 'down'] as const) {
+        expect(['solid', 'shaft']).toContain(module.sockets[face])
       }
     }
   })
@@ -129,11 +132,11 @@ describe('cellFromModule', () => {
 })
 
 describe('presets against the validator', () => {
-  it('produces no errors when painted on its own', () => {
+  it('produces only the expected orphan-shaft error when painted on its own', () => {
     for (const id of MODULE_IDS) {
       const p = project([level('L1', 0, { A1: bay('merged', () => cellFromModule(id)) })])
       const errors = validate(p).filter((issue) => issue.severity === 'error')
-      expect(errors, `${id} should paint clean`).toEqual([])
+      expect(errors.map((issue) => issue.id), `${id} should satisfy its local invariants`).toEqual(id === 'stair' ? ['V4'] : [])
     }
   })
 
@@ -155,7 +158,7 @@ describe('presets against the validator', () => {
       [
         level('L1', 0, {
           A1: bay('merged', () => cellFromModule(SPINE_MODULE_ID)),
-          B1: bay('merged', () => cellFromModule('plenum-access')),
+          B1: bay('merged', () => cellFromModule('plenum-access', { sockets: { w: 'corridor' } })),
         }),
       ],
       { bayCols: 2, bayRows: 1 },
@@ -174,7 +177,9 @@ describe('presets against the validator', () => {
   it('clears once the cell above opens its shaft down', () => {
     const p = project([
       level('lower', 0, { A1: bay('merged', () => cellFromModule('stair')) }),
-      level('upper', 8, { A1: bay('merged', () => cellFromModule('stair', { sockets: { down: 'shaft' } })) }),
+      level('upper', 8, {
+        A1: bay('merged', () => cellFromModule('stair', { sockets: { up: 'solid', down: 'shaft' } })),
+      }),
     ])
     expect(validate(p).filter((issue) => issue.id === 'V4')).toEqual([])
   })
