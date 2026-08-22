@@ -9,7 +9,9 @@ export default defineConfig(({ mode }) => ({
   // Playwright runs on loopback, which browsers already treat as trustworthy.
   plugins: [vue(), ...(mode === 'playwright' ? [] : [basicSsl()])],
   server: {
-    // Listen on every interface so the dev host is reachable from other machines.
-    host: true,
+    // Loopback only. Binding every interface publishes the dev server, and
+    // everything it serves, to the whole network — opt into that per run with
+    // `npm run dev:lan` when another device genuinely needs to reach it.
+    host: 'localhost',
   },
 }))

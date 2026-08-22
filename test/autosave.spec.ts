@@ -284,7 +284,14 @@ describe('the autosave debounce', () => {
     store.renameProject('Still editing')
     await nextTick()
     browser.fire('document', 'visibilitychange')
+
+    // Asserting straight after the fire would pass without the guard too, since
+    // the flush reaches the write a microtask later. Give it a real chance to
+    // land, while staying inside the debounce that would write it legitimately.
+    await wait(DELAY / 2)
+
     expect(spy).not.toHaveBeenCalled()
+    expect(autosave.status.value).toBe('pending')
     autosave.stop()
   })
 

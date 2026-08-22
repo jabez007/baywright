@@ -16,6 +16,8 @@ npm run dev
 
 Open the URL that Vite prints. The development server uses a self-signed HTTPS certificate, so the browser may ask you to accept it on the first visit.
 
+`npm run dev` listens on loopback only. To open a project from a phone or another machine on the network, run `npm run dev:lan` instead, which binds every interface. That makes the server, and any project it is serving, reachable by anyone who can route to the host, so prefer it on trusted networks and stop it when you are done.
+
 ## Run the checks
 
 Install Playwright's Chromium build once before the first end-to-end test run:

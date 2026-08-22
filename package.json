@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "vite",
+    "dev:lan": "vite --host",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
