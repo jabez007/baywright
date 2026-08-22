@@ -515,6 +515,7 @@ async function onSized(options: { bayCols: number; bayRows: number }): Promise<v
             :tool="tool === 'footprint' ? 'select' : tool"
             :module-id="moduleId"
             :grain="grain"
+            :frozen="pngBusy"
             @open-bay="view = 'cell'"
             @error="notice = $event"
           />

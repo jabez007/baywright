@@ -24,6 +24,8 @@ const props = defineProps<{
   tool: 'select' | 'paint' | 'empty'
   moduleId: string
   grain: Grain
+  /** Held true while a PNG run owns the canvas, so gestures cannot disturb it. */
+  frozen?: boolean
 }>()
 
 const emit = defineEmits<{ 'open-bay': [bayKey: string]; error: [message: string] }>()
@@ -276,6 +278,7 @@ function cellInteriorRect(ref: CellRef) {
 // --------------------------------------------------------------------------
 
 function onPointerDown(event: PointerEvent): void {
+  if (props.frozen) return
   const target = targetAt(event.target)
   if (!target) return
   activeTarget.value = target
@@ -323,6 +326,7 @@ function onPointerDown(event: PointerEvent): void {
 }
 
 function onDoubleClick(event: MouseEvent): void {
+  if (props.frozen) return
   if (props.mode !== 'bay') return
   const target = targetAt(event.target)
   if (!target) return
@@ -483,6 +487,7 @@ function targetElementAt(node: EventTarget | Element | null): SVGGraphicsElement
 }
 
 function onTargetKeyDown(event: KeyboardEvent): void {
+  if (props.frozen) return
   const current = targetElementAt(event.target)
   if (!current) return
   current.removeAttribute('data-pointer-focus')

@@ -238,6 +238,23 @@ describe('levels', () => {
     expect(level.bays['A1']!.cells.every((cell) => cell.module === 'empty')).toBe(true)
   })
 
+  it('gives a level added below everything the full rectangle, not the footprint above it', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    s.setBayGrain(ground, 'A1', 'coarse')
+
+    const basement = s.addLevel(-4, 'Basement')
+    const level = s.project.levels.find((entry) => entry.id === basement)!
+    // A base carries what is above it and may be wider than it; there is no
+    // level below to inherit from, so nothing is carved out of it.
+    expect(Object.keys(level.bays).sort()).toEqual(['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'])
+    expect(level.bays['A1']!.grain).toBe('fine')
+  })
+
   it('refuses a y off the 4-block lattice', () => {
     const s = store()
     expect(() => s.addLevel(6)).toThrow(/multiple of 4/)

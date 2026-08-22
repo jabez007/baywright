@@ -341,10 +341,15 @@ export const useProjectStore = defineStore('project', () => {
    * The footprint of the level below, so stacking onto a carved base does not
    * hang a full rectangle over the parts that were taken out. Grain comes along
    * too: re-cutting a bay is one click, redrawing a footprint is not.
+   *
+   * Nothing to inherit when the new level goes underneath everything: that
+   * reasoning is about what a level rests on, and a base is free to be wider
+   * than what it carries. It starts as the full rectangle `createLevel` makes.
    */
   function footprintBelow(y: number): Level | undefined {
-    const below = sortedLevels(project.value).filter((level) => level.y < y)
-    return below.at(-1) ?? sortedLevels(project.value)[0]
+    return sortedLevels(project.value)
+      .filter((level) => level.y < y)
+      .at(-1)
   }
 
   function addLevel(y: number, name?: string): string {

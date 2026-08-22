@@ -315,6 +315,11 @@ test('locks project edits while a PNG export is running', async ({ page }) => {
   // The keyboard reaches past the menu, so it is guarded separately.
   await page.keyboard.press('ControlOrMeta+z')
 
+  // So does the canvas. A double-click would normally expand the bay, which
+  // would change the view the remaining plans are rendered in.
+  await page.locator('[data-plan-target="bay"][data-bay="A1"]').dblclick()
+  await expect(page.getByRole('button', { name: 'Bays', exact: true })).toHaveAttribute('aria-pressed', 'true')
+
   await download
   await expect(page.getByRole('button', { name: 'Import project', exact: true })).toBeEnabled()
   await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
