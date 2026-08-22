@@ -414,6 +414,11 @@ function sharesValidMergeGroup(a: CellNode, b: CellNode, valid: ReadonlySet<stri
  *
  * Without a spine there is no useful reachability result. Report the missing
  * prerequisite once instead of flooding the UI with one warning per cell.
+ *
+ * It carries no refs on purpose. Nothing is wrong with any particular cell —
+ * the project is missing a spine — so pointing at every cell in the stack would
+ * both span levels, which the issue list cannot navigate, and imply that the
+ * cells it happened to land on are at fault.
  */
 export function checkConnectivity(project: Project): Issue[] {
   const nodes = buildCellNodes(project)
@@ -423,7 +428,7 @@ export function checkConnectivity(project: Project): Issue[] {
       id: 'V3',
       severity: 'warning',
       message: 'Add a spine to check connectivity',
-      refs: nodes.map((node) => node.ref),
+      refs: [],
     }]
   }
 

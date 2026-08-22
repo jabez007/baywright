@@ -4,8 +4,16 @@ import { useProjectStore } from '../stores/project.js'
 
 const store = useProjectStore()
 
+/**
+ * Where clicking the row would take you, if anywhere. A project-wide issue
+ * names no level and no cells, so its row is a message rather than a control.
+ */
+function targetLevel(issue: Issue): string | undefined {
+  return issue.levelId ?? issue.refs[0]?.levelId
+}
+
 function showIssue(issue: Issue): void {
-  const targetLevelId = issue.levelId ?? issue.refs[0]?.levelId
+  const targetLevelId = targetLevel(issue)
   if (!targetLevelId) return
 
   store.setCurrentLevel(targetLevelId)
@@ -35,7 +43,13 @@ function showIssue(issue: Issue): void {
 
     <ol v-else class="issue-list">
       <li v-for="(issue, index) in store.issues" :key="`${issue.id}-${index}-${issue.message}`">
-        <button type="button" class="issue" :class="issue.severity" @click="showIssue(issue)">
+        <button
+          type="button"
+          class="issue"
+          :class="issue.severity"
+          :disabled="!targetLevel(issue)"
+          @click="showIssue(issue)"
+        >
           <span class="severity">{{ issue.severity }}</span>
           <strong class="issue-id mono">{{ issue.id }}</strong>
           <span class="message">{{ issue.message }}</span>
@@ -112,6 +126,12 @@ function showIssue(issue: Issue): void {
 
 .issue.warning {
   border-left: 3px solid var(--accent);
+}
+
+/* Not actionable, but not degraded either: it still reads as a live warning. */
+.issue:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .severity {

@@ -185,7 +185,22 @@ describe('V3 — connectivity', () => {
     const issues = only(validate(row({}, {}, {})), 'V3')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.message).toBe('Add a spine to check connectivity')
-    expect(issues[0]!.refs).toHaveLength(3)
+    // No cell is at fault, so the issue points at none of them.
+    expect(issues[0]!.refs).toEqual([])
+  })
+
+  it('still reports the missing spine once across a stack, and pins it to no level', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('merged') }),
+      level('upper', 4, { A1: bay('merged') }),
+    ])
+    const issues = only(validate(p), 'V3')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.message).toBe('Add a spine to check connectivity')
+    // Refs spanning levels is what the issue list cannot navigate, so there are
+    // none, and no `levelId` either — the whole project is missing a spine.
+    expect(issues[0]!.refs).toEqual([])
+    expect(issues[0]!.levelId).toBeUndefined()
   })
 
   it('walks cells inside a bay, not just across bay seams', () => {

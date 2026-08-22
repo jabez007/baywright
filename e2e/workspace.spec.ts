@@ -172,6 +172,17 @@ test('keeps pointer focus unobtrusive while editing the footprint', async ({ pag
   expect(focusStyle.strokeWidth).toBeLessThanOrEqual(2)
 })
 
+test('offers no jump for an issue that belongs to no level', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Issues' }).click()
+
+  const spine = page.getByRole('button', { name: /Add a spine to check connectivity/ })
+  await expect(spine).toBeVisible()
+  // A starter project has no spine anywhere, so there is no level to jump to
+  // and no cell at fault. The row states that; it does not offer to travel.
+  await expect(spine).toBeDisabled()
+})
+
 test('limits issue selection to one bay across mode changes', async ({ page }) => {
   await page.goto('/')
   await expect(page).toHaveURL(/\/project\//)
