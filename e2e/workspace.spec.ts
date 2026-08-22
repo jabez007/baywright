@@ -246,6 +246,66 @@ test('PNG export preserves selection and browser history without exporting its o
   await expect(page.locator('.selection-overlay')).toHaveCount(1)
 })
 
+test('locks project edits while a PNG export is running', async ({ page }) => {
+  await page.goto('/')
+  await paintSpineCells(page)
+  await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
+  await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
+
+  // The run walks the level list across several ticks. Stall the encode so the
+  // window it is vulnerable in stays open long enough to click into.
+  await page.evaluate(() => {
+    const encode = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function (
+      this: HTMLCanvasElement,
+      callback: BlobCallback,
+      type?: string,
+      quality?: number,
+    ): void {
+      window.setTimeout(() => encode.call(this, callback, type, quality), 1200)
+    }
+  })
+
+  await page.getByText('Project', { exact: true }).click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export PNG plans' }).click()
+
+  for (const name of ['Import project', 'Resize field', 'New project', 'Undo', 'Redo']) {
+    await expect(page.getByRole('button', { name, exact: true })).toBeDisabled()
+  }
+  // Reading the project cannot disturb the run, so this one stays available.
+  await expect(page.getByRole('button', { name: 'Export JSON', exact: true })).toBeEnabled()
+
+  // The keyboard reaches past the menu, so it is guarded separately.
+  await page.keyboard.press('ControlOrMeta+z')
+
+  await download
+  await expect(page.getByRole('button', { name: 'Import project', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
+})
+
+test('puts the stored level name back when a rename resolves to no change', async ({ page }) => {
+  await page.goto('/')
+
+  const name = page.getByRole('textbox', { name: 'Name' })
+  await expect(name).toHaveValue('Ground')
+
+  // Blank: the store keeps the old name, so the field has to catch up by itself.
+  await name.fill('')
+  await name.blur()
+  await expect(name).toHaveValue('Ground')
+
+  // Same name in wider spacing: also a no-op write, and also a stale field.
+  await name.fill('   Ground   ')
+  await name.blur()
+  await expect(name).toHaveValue('Ground')
+
+  await name.fill('  Mezzanine  ')
+  await name.blur()
+  await expect(name).toHaveValue('Mezzanine')
+})
+
 test('loads stored projects and requested levels through Back and Forward', async ({ page }) => {
   await page.goto('/')
   await expect(page).toHaveURL(/\/project\//)

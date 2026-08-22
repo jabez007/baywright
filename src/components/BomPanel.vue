@@ -11,13 +11,22 @@ const error = ref<string | null>(null)
 const pending = ref(true)
 let timer: ReturnType<typeof setTimeout> | undefined
 
+/**
+ * `v-model.number` writes on every keystroke and leaves what it cannot parse as
+ * a string, so mid-edit values like '', '-' and '2e' reach here. `change` fires
+ * too late to help. Clamp on the way in rather than trust the `min` attribute.
+ */
+function furnaceCount(): number {
+  return Math.max(1, Math.floor(Number(furnaces.value) || 1))
+}
+
 function scheduleBom(): void {
   if (timer !== undefined) clearTimeout(timer)
   pending.value = true
   timer = setTimeout(() => {
     timer = undefined
     try {
-      bom.value = computeBom(store.toJSON(), { furnaces: furnaces.value })
+      bom.value = computeBom(store.toJSON(), { furnaces: furnaceCount() })
       error.value = null
     } catch (cause) {
       error.value = (cause as Error).message
@@ -28,7 +37,7 @@ function scheduleBom(): void {
 }
 
 function normalizeFurnaces(): void {
-  furnaces.value = Math.max(1, Math.floor(Number(furnaces.value) || 1))
+  furnaces.value = furnaceCount()
 }
 
 const stopProjectWatch = watch(() => store.project, scheduleBom, { deep: true, immediate: true })
@@ -63,7 +72,7 @@ function blockName(blockId: string): string {
         <h3>Placed materials</h3>
         <p v-if="bom.blocks.length === 0" class="muted">Paint a module to start a material list.</p>
         <ol v-else class="materials">
-          <li v-for="entry in bom.blocks.slice(0, 6)" :key="entry.blockId">
+          <li v-for="entry in bom.blocks" :key="entry.blockId">
             <span :title="entry.blockId">{{ blockName(entry.blockId) }}</span>
             <strong class="mono">{{ entry.stacks.label }}</strong>
           </li>

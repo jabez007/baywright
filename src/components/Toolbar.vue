@@ -100,16 +100,16 @@ function chooseModule(event: Event): void {
         >
           {{ STATUS_TEXT[saveStatus] }}
         </span>
-        <button type="button" :disabled="!store.canUndo" title="Undo (Ctrl/Cmd+Z)" @click="store.undo()">Undo</button>
-        <button type="button" :disabled="!store.canRedo" title="Redo (Ctrl/Cmd+Shift+Z)" @click="store.redo()">Redo</button>
+        <button type="button" :disabled="pngBusy || !store.canUndo" title="Undo (Ctrl/Cmd+Z)" @click="store.undo()">Undo</button>
+        <button type="button" :disabled="pngBusy || !store.canRedo" title="Redo (Ctrl/Cmd+Shift+Z)" @click="store.redo()">Redo</button>
         <details class="project-menu">
           <summary>Project</summary>
           <div class="menu-panel">
             <button type="button" @click="emit('export')">Export JSON</button>
             <button type="button" :disabled="pngBusy" @click="emit('png')">{{ pngBusy ? 'Rendering plans…' : 'Export PNG plans' }}</button>
-            <button type="button" @click="emit('import')">Import project</button>
-            <button type="button" @click="emit('resize')">Resize field</button>
-            <button type="button" class="danger" @click="emit('reset')">New project</button>
+            <button type="button" :disabled="pngBusy" @click="emit('import')">Import project</button>
+            <button type="button" :disabled="pngBusy" @click="emit('resize')">Resize field</button>
+            <button type="button" class="danger" :disabled="pngBusy" @click="emit('reset')">New project</button>
           </div>
         </details>
       </div>
@@ -124,6 +124,7 @@ function chooseModule(event: Event): void {
             :key="option.id"
             type="button"
             :aria-pressed="view === option.id"
+            :disabled="pngBusy"
             @click="emit('set-view', option.id)"
           >
             {{ option.label }}
@@ -140,6 +141,7 @@ function chooseModule(event: Event): void {
             type="button"
             :aria-pressed="tool === option.id"
             :title="option.title"
+            :disabled="pngBusy"
             @click="emit('set-tool', option.id)"
           >
             {{ option.label }}
@@ -151,7 +153,7 @@ function chooseModule(event: Event): void {
         <span class="group-label">Module</span>
         <span class="module-control">
           <span class="swatch" :style="{ background: `var(--cat-${categoryOf(moduleId)})` }" />
-          <select aria-label="Module" :value="moduleId" @change="chooseModule">
+          <select aria-label="Module" :value="moduleId" :disabled="pngBusy" @change="chooseModule">
             <optgroup v-for="category in MODULE_GROUPS" :key="category.id" :label="category.label">
               <option v-for="module in category.modules" :key="module.id" :value="module.id">{{ module.name }}</option>
             </optgroup>
@@ -162,7 +164,7 @@ function chooseModule(event: Event): void {
       <div v-if="tool === 'footprint' || (tool === 'paint' && view === 'bay')" class="labelled-group">
         <span class="group-label">Bay detail</span>
         <div class="group" role="group" aria-label="Bay detail">
-          <button v-for="option in GRAINS" :key="option" type="button" :aria-pressed="grain === option" @click="chooseGrain(option)">
+          <button v-for="option in GRAINS" :key="option" type="button" :aria-pressed="grain === option" :disabled="pngBusy" @click="chooseGrain(option)">
             {{ option }}
           </button>
         </div>
@@ -171,7 +173,7 @@ function chooseModule(event: Event): void {
       <button
         v-if="tool === 'footprint'"
         type="button"
-        :disabled="!canApplyFootprint"
+        :disabled="pngBusy || !canApplyFootprint"
         :title="canApplyFootprint ? 'Give every other level the same footprint as this one' : 'There is only one level'"
         @click="emit('apply-footprint')"
       >

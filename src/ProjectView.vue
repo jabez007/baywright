@@ -281,6 +281,12 @@ function onKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
 
+  // A PNG run walks the level list across several ticks and restores the view
+  // afterwards. An edit landing in that window belongs to a project the run has
+  // already read, so the shortcuts that mutate one stay shut until it is done.
+  // Escape still clears the selection, which the run does between levels anyway.
+  if (pngBusy.value && event.key !== 'Escape') return
+
   const accel = event.ctrlKey || event.metaKey
   if (accel && event.key.toLowerCase() === 'z') {
     event.preventDefault()

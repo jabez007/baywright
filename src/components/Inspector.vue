@@ -85,7 +85,15 @@ function run(change: () => void): void {
 
 function renameLevel(event: Event): void {
   const current = level.value
-  if (current) run(() => store.renameLevel(current.id, valueOf(event).trim() || current.name))
+  if (!current) return
+  const input = event.target as HTMLInputElement
+  const next = input.value.trim()
+  // A blank name, an unchanged one, one that differs only by surrounding space,
+  // and one the store rejects all leave `level.name` as it was. The bound value
+  // never changes, so Vue never patches the input, and the field would keep
+  // showing text the level does not have. Write the stored name back by hand.
+  if (next && next !== current.name) run(() => store.renameLevel(current.id, next))
+  input.value = level.value?.name ?? current.name
 }
 
 function moveLevel(event: Event): void {
