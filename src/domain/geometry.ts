@@ -330,8 +330,8 @@ interface MergeBlockMember {
   v: number
 }
 
-/** Remove only vertical shell blocks strictly inside a valid merged rectangle. */
-function carveValidMergeGroups(project: Project, blocks: Map<string, string>): void {
+/** Every merge group in the project, with its members placed on the cell lattice. */
+function mergeGroupMembers(project: Project): Map<string, MergeBlockMember[]> {
   const groups = new Map<string, MergeBlockMember[]>()
   for (const ref of allCellRefs(project)) {
     const { level, bay, cell, a, b } = resolveCell(project, ref)
@@ -343,30 +343,57 @@ function carveValidMergeGroups(project: Project, blocks: Map<string, string>): v
     if (existing) existing.push(member)
     else groups.set(cell.mergeGroup, [member])
   }
+  return groups
+}
 
-  for (const members of groups.values()) {
-    const first = members[0]
-    if (!first || members.length < 2) continue
-    if (
-      members.some(
-        (member) =>
-          member.level.id !== first.level.id ||
-          member.bay.grain !== first.bay.grain ||
-          member.cell.heightCells !== first.cell.heightCells ||
-          member.cell.ceiling !== first.cell.ceiling,
-      )
-    ) {
-      continue
-    }
+/**
+ * Do these members really form one room? Same level, same grain, same height,
+ * same ceiling, and a filled rectangle — the V7 conditions, which is the point:
+ * only a group that passes them gets its shared walls carved away below.
+ */
+function isOneRoom(members: MergeBlockMember[]): boolean {
+  const first = members[0]
+  if (!first || members.length < 2) return false
+  if (
+    members.some(
+      (member) =>
+        member.level.id !== first.level.id ||
+        member.bay.grain !== first.bay.grain ||
+        member.cell.heightCells !== first.cell.heightCells ||
+        member.cell.ceiling !== first.cell.ceiling,
+    )
+  ) {
+    return false
+  }
 
-    const us = members.map((member) => member.u)
-    const vs = members.map((member) => member.v)
-    const minU = Math.min(...us)
-    const maxU = Math.max(...us)
-    const minV = Math.min(...vs)
-    const maxV = Math.max(...vs)
-    const positions = new Set(members.map((member) => `${member.u},${member.v}`))
-    if (positions.size !== members.length || (maxU - minU + 1) * (maxV - minV + 1) !== members.length) continue
+  const us = members.map((member) => member.u)
+  const vs = members.map((member) => member.v)
+  const width = Math.max(...us) - Math.min(...us) + 1
+  const height = Math.max(...vs) - Math.min(...vs) + 1
+  const positions = new Set(members.map((member) => `${member.u},${member.v}`))
+  return positions.size === members.length && width * height === members.length
+}
+
+/**
+ * The merge groups whose shared walls `resolveBlocks` actually removes.
+ *
+ * Validation needs this: two cells in one of these groups are a single room in
+ * the export, so reachability rules must treat the seam as open even though the
+ * cells kept their default `solid` sockets.
+ */
+export function validMergeGroupIds(project: Project): Set<string> {
+  const valid = new Set<string>()
+  for (const [groupId, members] of mergeGroupMembers(project)) {
+    if (isOneRoom(members)) valid.add(groupId)
+  }
+  return valid
+}
+
+/** Remove only vertical shell blocks strictly inside a valid merged rectangle. */
+function carveValidMergeGroups(project: Project, blocks: Map<string, string>): void {
+  for (const members of mergeGroupMembers(project).values()) {
+    if (!isOneRoom(members)) continue
+    const first = members[0]!
 
     const boxes = members.map((member) => cellAABB(project, member.ref))
     const x0 = Math.min(...boxes.map((box) => box.x0))

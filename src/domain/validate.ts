@@ -17,6 +17,7 @@ import {
   resolveBlocks,
   resolveCell,
   sortedLevels,
+  validMergeGroupIds,
   yIntervalsCollide,
 } from './geometry.js'
 import { SPINE_MODULE_ID } from './modules.js'
@@ -389,6 +390,19 @@ function isRoomPassable(face: Face, socket: Socket): boolean {
   return socket === 'corridor' || socket === 'arch'
 }
 
+/**
+ * Are these two cells the same room by merge rather than by socket?
+ *
+ * `resolveBlocks` carves the shared wall out of a valid merge group, so the
+ * seam is open in the export no matter what the sockets say — and merging does
+ * not rewrite them, so members normally keep the default `solid`. An *invalid*
+ * group is carved by nothing and gets no such licence.
+ */
+function sharesValidMergeGroup(a: CellNode, b: CellNode, valid: ReadonlySet<string>): boolean {
+  const group = a.cell.mergeGroup
+  return group !== undefined && group === b.cell.mergeGroup && valid.has(group)
+}
+
 // --------------------------------------------------------------------------
 // V3 — Connectivity (warning)
 // --------------------------------------------------------------------------
@@ -414,13 +428,16 @@ export function checkConnectivity(project: Project): Issue[] {
   }
 
   const byKey = new Map(nodes.map((node) => [node.key, node]))
+  const merged = validMergeGroupIds(project)
   const graph = new Map<string, string[]>()
   for (const link of buildAdjacencies(nodes)) {
     const a = byKey.get(link.a)
     const b = byKey.get(link.b)
     if (!a || !b) continue
-    if (!isRoomPassable(link.faceA, a.cell.sockets[link.faceA])) continue
-    if (!isRoomPassable(link.faceB, b.cell.sockets[link.faceB])) continue
+    if (!sharesValidMergeGroup(a, b, merged)) {
+      if (!isRoomPassable(link.faceA, a.cell.sockets[link.faceA])) continue
+      if (!isRoomPassable(link.faceB, b.cell.sockets[link.faceB])) continue
+    }
     push(graph, a.key, b.key)
     push(graph, b.key, a.key)
   }
@@ -470,6 +487,7 @@ export function checkPlenumReachability(project: Project): Issue[] {
   const byKey = new Map(nodes.map((node) => [node.key, node]))
   const adjacencies = buildAdjacencies(nodes).filter((link) => !link.vertical)
   const blocks = resolveBlocks(project)
+  const merged = validMergeGroupIds(project)
 
   for (const level of sortedLevels(project)) {
     const onLevel = nodes.filter((node) => node.ref.levelId === level.id)
@@ -484,7 +502,7 @@ export function checkPlenumReachability(project: Project): Issue[] {
       const a = byKey.get(link.a)
       const b = byKey.get(link.b)
       if (!a || !b || a.ref.levelId !== level.id || b.ref.levelId !== level.id) continue
-      const passable = hasPhysicalPlenumOpening(a, b, link, blocks)
+      const passable = hasPhysicalPlenumOpening(a, b, link, blocks, merged)
 
       // A plenum next to a spine cell is where the trunk terminates.
       if (passable && plenumKeys.has(a.key) && b.cell.module === SPINE_MODULE_ID) anchors.add(a.key)
@@ -525,8 +543,16 @@ function hasPhysicalPlenumOpening(
   b: CellNode,
   link: Adjacency,
   blocks: ReadonlyMap<string, string>,
+  merged: ReadonlySet<string>,
 ): boolean {
-  if (!isPlenumPassable(a.cell.sockets[link.faceA]) || !isPlenumPassable(b.cell.sockets[link.faceB])) return false
+  // Sockets are the fast path, but they must not pre-empt the block map for a
+  // merged seam the exporter already carved away.
+  if (
+    !sharesValidMergeGroup(a, b, merged) &&
+    (!isPlenumPassable(a.cell.sockets[link.faceA]) || !isPlenumPassable(b.cell.sockets[link.faceB]))
+  ) {
+    return false
+  }
   const plenum = a.plenum ?? b.plenum
   if (!plenum) return false
   const otherPlenum = a.plenum && b.plenum ? b.plenum : plenum

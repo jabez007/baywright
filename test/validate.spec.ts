@@ -4,7 +4,7 @@
  * These assert against the V1/V2/V4 subset of §8 implemented so far.
  */
 import { describe, expect, it } from 'vitest'
-import { blockKey, resolveBlocks } from '../src/domain/geometry.js'
+import { blockKey, resolveBlocks, validMergeGroupIds } from '../src/domain/geometry.js'
 import { validate, type Issue, type IssueId } from '../src/domain/validate.js'
 import type { Cell, Project, Socket } from '../src/domain/types.js'
 import { bay, level, project, sockets } from './factory.js'
@@ -216,6 +216,30 @@ describe('V3 — connectivity', () => {
     expect(only(validate(stacked('shaft')), 'V3')).toHaveLength(0)
     expect(only(validate(stacked('solid')), 'V3')).toHaveLength(1)
   })
+
+  it('walks a valid merge group whose members kept their default solid sockets', () => {
+    const p = row(
+      { module: 'spine', sockets: sockets({ e: 'corridor' }) },
+      { mergeGroup: 'r1', sockets: sockets({ w: 'corridor' }) },
+      { mergeGroup: 'r1' },
+    )
+    // The exporter carves the B1/C1 seam away, so the two are one room.
+    expect(resolveBlocks(p).has(blockKey(24, 3, 6))).toBe(false)
+    expect(only(validate(p), 'V7')).toHaveLength(0)
+    expect(only(validate(p), 'V3')).toHaveLength(0)
+  })
+
+  it('does not open a seam for a merge group the exporter refuses to carve', () => {
+    const p = row(
+      { module: 'spine', sockets: sockets({ e: 'corridor' }) },
+      { mergeGroup: 'r1', sockets: sockets({ w: 'corridor' }) },
+      { mergeGroup: 'r1', heightCells: 2 },
+    )
+    // Mixed heights: V7 rejects the group, the seam stands, sockets still rule.
+    expect(resolveBlocks(p).has(blockKey(24, 3, 6))).toBe(true)
+    expect(only(validate(p), 'V7')).toHaveLength(1)
+    expect(only(validate(p), 'V3')).toHaveLength(1)
+  })
 })
 
 // --------------------------------------------------------------------------
@@ -321,6 +345,22 @@ describe('V5 — plenum reachability', () => {
     const issues = only(validate(p), 'V5')
     expect(issues).toHaveLength(2)
     expect(issues.flatMap((issue) => issue.refs).map((ref) => ref.bayKey)).toEqual(['A1', 'B1'])
+  })
+
+  it('routes a plenum through a valid merge group with default solid sockets', () => {
+    const p = strip({ B1: plenumCell({ mergeGroup: 'r1' }), C1: plenumCell({ mergeGroup: 'r1' }) }, 3)
+    // The carved seam is the opening; the sockets never had to describe it.
+    expect(resolveBlocks(p).has(blockKey(24, 6, 6))).toBe(false)
+    expect(only(validate(p), 'V7')).toHaveLength(0)
+    expect(only(validate(p), 'V5')).toHaveLength(0)
+  })
+
+  it('still requires an opening when the merge group is invalid', () => {
+    const p = strip({ B1: plenumCell({ mergeGroup: 'r1' }), C1: plenumCell({ mergeGroup: 'r1', ceiling: 'flat' }) }, 3)
+    // Mixed ceilings: nothing is carved, and C1 has no plenum of its own.
+    expect(resolveBlocks(p).has(blockKey(24, 6, 6))).toBe(true)
+    expect(only(validate(p), 'V7')).toHaveLength(1)
+    expect(only(validate(p), 'V5')).toHaveLength(0)
   })
 })
 
@@ -434,5 +474,31 @@ describe('V7 — merge group integrity', () => {
     const issues = only(validate(p), 'V7')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.message).toBe("Merge group 'g' spans levels L1, L2 — a merge group is one room on one level")
+  })
+
+  /**
+   * The exporter carves a group's shared walls, and V3/V5 treat those seams as
+   * open, so both must agree with V7 about which groups qualify. Duplicated
+   * copies of that condition are what let them disagree in the first place.
+   */
+  it("carves exactly the groups V7 accepts", () => {
+    const cases: [string, Project][] = [
+      ['contiguous pair', merged([0, 1])],
+      ['2x2 square', merged([0, 1, 3, 4])],
+      ['gap between members', merged([0, 2])],
+      ['L shape', merged([0, 1, 3])],
+      ['mixed heights', merged([0, 1], (index) => ({ heightCells: index === 0 ? 1 : 2 }))],
+      ['mixed ceilings', merged([0, 1], (index) => ({ heightCells: 2, ceiling: index === 0 ? 'flat' : 'dropped' }))],
+    ]
+    for (const [name, p] of cases) {
+      const accepted = only(validate(p), 'V7').length === 0
+      expect([name, validMergeGroupIds(p).has('g')]).toEqual([name, accepted])
+    }
+  })
+
+  it('never carves a lone member, which V7 has nothing to reject', () => {
+    const p = merged([0])
+    expect(only(validate(p), 'V7')).toHaveLength(0)
+    expect(validMergeGroupIds(p).has('g')).toBe(false)
   })
 })
