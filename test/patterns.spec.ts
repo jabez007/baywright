@@ -47,4 +47,10 @@ describe('bay patterns', () => {
   it('gives the feature chamber centred five-wide openings', () => {
     expect(bayFromPattern('feature-chamber').cells[0]!.openingWidths).toEqual({ n: 5, e: 5, s: 5, w: 5 })
   })
+
+  it('offers transport and item-service infrastructure bays', () => {
+    expect(bayFromPattern('rail-line-bay').cells[4]!.module).toBe('rail-line')
+    expect(bayFromPattern('ice-highway-bay').cells[4]!.module).toBe('ice-highway')
+    expect(bayFromPattern('item-trunk-bay').cells[4]!.module).toBe('item-trunk')
+  })
 })

@@ -204,6 +204,24 @@ test('stamps and undoes a multi-bay grand chamber layout', async ({ page }) => {
   await expect(page.locator('[data-plan-target="bay"][data-bay="B2"]')).toHaveAccessibleName(/B2.*fine grain, Empty/)
 })
 
+test('paints infrastructure modules and stamps a rail-line bay', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('super-smelter')
+  const firstBay = page.locator('[data-plan-target="bay"][data-bay="A1"]')
+  await firstBay.click()
+  await expect(firstBay).toHaveAccessibleName(/A1.*fine grain, Super Smelter/)
+
+  await page.getByRole('button', { name: 'Stamp', exact: true }).click()
+  await page.getByLabel('Bay pattern', { exact: true }).selectOption('rail-line-bay')
+  await page.getByRole('button', { name: '0°', exact: true }).click()
+  await page.locator('[data-plan-target="bay"][data-bay="B1"]').click()
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await page.getByRole('button', { name: 'Cells', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^B1 cell 4 · Rail Line/ })).toBeVisible()
+})
+
 test('starts a new project from the layered base example', async ({ page }) => {
   await page.goto('/')
 

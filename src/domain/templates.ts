@@ -24,11 +24,11 @@ type PatternPlacement = readonly [bayKey: string, patternId: string, quarterTurn
 const INFRASTRUCTURE: readonly PatternPlacement[] = [
   ['C3', 'straight-passage', 1],
   ['C4', 'straight-passage', 1],
-  ['A5', 'straight-passage'],
-  ['B5', 'straight-passage'],
+  ['A5', 'rail-line-bay'],
+  ['B5', 'rail-line-bay'],
   ['C5', 't-junction'],
-  ['D5', 'straight-passage'],
-  ['E5', 'straight-passage'],
+  ['D5', 'rail-line-bay'],
+  ['E5', 'rail-line-bay'],
 ]
 
 const MACHINERY: readonly PatternPlacement[] = [

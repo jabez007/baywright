@@ -16,8 +16,8 @@ import type { Cell, Ceiling, Face, Grain, Socket } from './types.js'
 export type ModuleCategory = 'circulation' | 'room' | 'service' | 'storage'
 
 /**
- * Detailing the exporter applies inside a cell. Deliberately a closed set:
- * adding a hint means teaching the exporter to place it.
+ * Builder-facing detailing cues. Exact block placement remains opt-in in the
+ * detail resolver; most hints record architectural intent without simulation.
  */
 export type DecorationHint =
   | 'anvils'
@@ -30,14 +30,21 @@ export type DecorationHint =
   | 'chests'
   | 'farmland'
   | 'hoppers'
+  | 'ice-track'
   | 'ladder'
   | 'lanterns'
   | 'lecterns'
+  | 'mine-head'
   | 'pillars'
   | 'railings'
+  | 'rails'
   | 'shelving'
   | 'stair-flight'
   | 'trapdoor-hatch'
+  | 'portal-frame'
+  | 'furnaces'
+  | 'crafters'
+  | 'trading-stalls'
   | 'water'
   | 'workbenches'
 
@@ -70,7 +77,7 @@ function faces(open: Partial<Record<Face, Socket>> = {}): Record<Face, Socket> {
 }
 
 /**
- * The fourteen shipped presets, in toolbar order: circulation first, since
+ * The shipped presets, in toolbar order: circulation first, since
  * that is what gets painted first.
  *
  * Modules with a single entrance put it on `n` by convention. Orientation is
@@ -107,6 +114,26 @@ export const MODULE_LIST: readonly Module[] = [
     sockets: faces({ n: 'corridor', e: 'corridor', s: 'corridor', w: 'corridor' }),
     hints: ['lanterns'],
     description: 'Open on all four sides.',
+  },
+  {
+    id: 'rail-line',
+    name: 'Rail Line',
+    category: 'circulation',
+    heightCells: 1,
+    ceiling: 'flat',
+    sockets: faces({ n: 'corridor', s: 'corridor' }),
+    hints: ['rails', 'lanterns'],
+    description: 'A minecart route through the infrastructure level.',
+  },
+  {
+    id: 'ice-highway',
+    name: 'Ice Highway',
+    category: 'circulation',
+    heightCells: 1,
+    ceiling: 'flat',
+    sockets: faces({ n: 'corridor', s: 'corridor' }),
+    hints: ['ice-track', 'lanterns'],
+    description: 'A boat route for fast travel between distant branches.',
   },
   {
     id: 'stair',
@@ -186,6 +213,28 @@ export const MODULE_LIST: readonly Module[] = [
     description: 'Crafting stations along the walls.',
   },
   {
+    id: 'nether-portal',
+    name: 'Nether Portal',
+    category: 'room',
+    heightCells: 2,
+    ceiling: 'vaulted',
+    sockets: faces({ n: 'arch' }),
+    hints: ['portal-frame', 'pillars'],
+    suggestedGrain: 'merged',
+    description: 'A tall portal room isolated behind one arched entrance.',
+  },
+  {
+    id: 'trading-hall',
+    name: 'Trading Hall',
+    category: 'room',
+    heightCells: 2,
+    ceiling: 'flat',
+    sockets: faces({ n: 'arch' }),
+    hints: ['trading-stalls', 'lanterns'],
+    suggestedGrain: 'merged',
+    description: 'A large hall for villager stalls and safe circulation.',
+  },
+  {
     id: 'prison-cell',
     name: 'Prison Cell',
     category: 'room',
@@ -204,6 +253,46 @@ export const MODULE_LIST: readonly Module[] = [
     sockets: faces({ n: 'corridor' }),
     hints: ['farmland', 'water', 'lanterns'],
     description: 'Tilled rows and a water channel.',
+  },
+  {
+    id: 'item-trunk',
+    name: 'Item Trunk',
+    category: 'service',
+    heightCells: 2,
+    ceiling: 'dropped',
+    sockets: faces({ n: 'corridor', s: 'corridor' }),
+    hints: ['hoppers', 'barrels'],
+    description: 'A service corridor with an overhead item-transport plenum.',
+  },
+  {
+    id: 'mine-access',
+    name: 'Mine Access',
+    category: 'service',
+    heightCells: 2,
+    ceiling: 'flat',
+    sockets: faces({ n: 'corridor' }),
+    hints: ['mine-head', 'ladder', 'rails'],
+    description: 'A marked transition from the finished base into active workings.',
+  },
+  {
+    id: 'super-smelter',
+    name: 'Super Smelter',
+    category: 'service',
+    heightCells: 2,
+    ceiling: 'flat',
+    sockets: faces({ n: 'corridor' }),
+    hints: ['furnaces', 'hoppers'],
+    description: 'Reserved machinery volume for furnace arrays and item feeds.',
+  },
+  {
+    id: 'auto-crafter',
+    name: 'Auto Crafter',
+    category: 'service',
+    heightCells: 1,
+    ceiling: 'flat',
+    sockets: faces({ n: 'corridor' }),
+    hints: ['crafters', 'hoppers', 'workbenches'],
+    description: 'A compact automation cell for crafters and item routing.',
   },
   {
     id: 'plenum-access',

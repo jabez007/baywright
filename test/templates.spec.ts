@@ -38,6 +38,14 @@ describe('project templates', () => {
     expect(core.bays['B2']).toBeUndefined()
   })
 
+  it('uses rail modules on the mineshaft infrastructure line', () => {
+    const project = projectFromTemplate('layered-base', ids())
+    const infrastructure = project.levels[0]!
+
+    expect(infrastructure.bays['A5']!.cells[4]!.module).toBe('rail-line')
+    expect(infrastructure.bays['E5']!.cells[4]!.module).toBe('rail-line')
+  })
+
   it('does not introduce vertical collisions', () => {
     const project = projectFromTemplate('layered-base', ids())
     expect(validate(project).filter((issue) => issue.id === 'V1')).toEqual([])

@@ -19,6 +19,8 @@ import { bay, level, project } from './factory.js'
 const SHIPPED = [
   'corridor',
   'junction',
+  'rail-line',
+  'ice-highway',
   'stair',
   'spine',
   'storage',
@@ -27,7 +29,13 @@ const SHIPPED = [
   'vault',
   'prison-cell',
   'workshop',
+  'nether-portal',
+  'trading-hall',
   'farm',
+  'item-trunk',
+  'mine-access',
+  'super-smelter',
+  'auto-crafter',
   'plenum-access',
   'vestibule',
   'empty',
@@ -36,7 +44,7 @@ const SHIPPED = [
 const FACES: Face[] = ['n', 'e', 's', 'w', 'up', 'down']
 
 describe('the shipped presets', () => {
-  it('are exactly the fourteen the PRD lists', () => {
+  it('matches the maintained module catalog', () => {
     expect([...MODULE_IDS].sort()).toEqual([...SHIPPED].sort())
   })
 
@@ -79,6 +87,26 @@ describe('the shipped presets', () => {
       up: 'solid',
       down: 'solid',
     })
+  })
+
+  it('keeps infrastructure presets architectural rather than simulated', () => {
+    const ids = [
+      'rail-line',
+      'ice-highway',
+      'item-trunk',
+      'mine-access',
+      'nether-portal',
+      'super-smelter',
+      'auto-crafter',
+      'trading-hall',
+    ]
+    for (const id of ids) {
+      const module = MODULES[id]!
+      expect(module.description).toBeTruthy()
+      expect(module.hints.length).toBeGreaterThan(0)
+      expect(module).not.toHaveProperty('throughput')
+      expect(module).not.toHaveProperty('redstone')
+    }
   })
 })
 
