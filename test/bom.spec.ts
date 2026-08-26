@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { bomFromBlocks, computeBom, formatDuration, formatStacks, rollUpRawInputs, toStacks } from '../src/domain/bom.js'
+import { cellFromModule } from '../src/domain/modules.js'
 import { bay, level, project } from './factory.js'
 
 const shell = (paletteId: string) =>
@@ -52,6 +53,17 @@ describe('block totals', () => {
   it('sorts the biggest pile first and carries its stack label', () => {
     expect(bom.blocks[0]!.blockId).toBe('minecraft:stone_bricks')
     expect(bom.blocks[0]!.stacks.label).toBe('7 stacks + 57')
+  })
+
+  it('includes the arena core trim, pillars, and light', () => {
+    const arena = project([
+      level('L1', 0, { A1: bay('merged', () => cellFromModule('arena')) }, { paletteId: 'tuff-copper' }),
+    ])
+    const detailed = computeBom(arena)
+
+    expect(countOf(detailed.blocks, 'minecraft:tuff_brick_stairs')).toBe(24)
+    expect(countOf(detailed.blocks, 'minecraft:oxidized_copper')).toBe(44)
+    expect(countOf(detailed.blocks, 'minecraft:copper_bulb')).toBe(1)
   })
 })
 

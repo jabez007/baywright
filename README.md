@@ -69,6 +69,8 @@ Baywright measures outer footprints inclusively because adjacent spaces share th
 
 A one-cell height occupies five blocks and has a three-block interior. Taller cells share floor and ceiling planes, so two height cells occupy nine blocks and three occupy thirteen.
 
+Merged Arena cells apply the system inside the bay: a trim outline marks the centred 7×7 purpose core, leaving a two-block circulation ring in the 11×11 interior. Four palette-resolved pillars and a central ceiling light are included in exported blocks and material totals.
+
 The app has two routes: `/` and `/project/:id/level/:levelId`. The root route restores the last valid local project and then changes to its project and level URL. These URLs identify local IndexedDB records. They are not share links.
 
 JSON export writes the complete project document. JSON import checks the schema, field bounds, cells, sockets, opening widths, ceilings, and palette references, then saves the import as a new local project. Projects without opening widths retain full-width passages. Legacy schema-v1 height-3 plenums retain their original geometry; height-1 dropped flags normalize to `flat` because they never affected blocks. PNG export downloads one rendered plan for each level.

@@ -6,6 +6,7 @@
  * both functions of this one module.
  */
 import { PALETTES, SOCKET_BLOCKS } from './palettes.js'
+import { interiorDetailBlocks } from './details.js'
 import {
   BAY_PITCH,
   GRAIN_AXIS_CELLS,
@@ -319,7 +320,19 @@ function computeBlocks(project: Project): Map<string, string> {
     }
   }
   carveValidMergeGroups(project, blocks)
+  placeInteriorDetails(project, blocks)
   return blocks
+}
+
+/** Details land last because floor trim intentionally replaces the shell palette. */
+function placeInteriorDetails(project: Project, blocks: Map<string, string>): void {
+  for (const ref of allCellRefs(project)) {
+    const { level, bay, cell } = resolveCell(project, ref)
+    const palette = paletteFor(project, level, cell)
+    for (const [role, coords] of interiorDetailBlocks(bay, cell, cellInterior(project, ref))) {
+      for (const key of coords) blocks.set(key, palette.blocks[role])
+    }
+  }
 }
 
 interface MergeBlockMember {
