@@ -50,7 +50,7 @@ The domain layer in `src/domain/` has no Vue, Pinia, or browser dependencies. It
 The v1 editor provides:
 
 - multi-level plans with level gaps, custom footprints, named negative space, and fields up to 8 by 8 bays;
-- bay, cell, and footprint editing modes on an SVG plan;
+- bay and cell views, plus Footprint and Space tools on an SVG plan;
 - module painting, connection-aware bay stamps, rotatable multi-bay layouts, grain changes, merge groups, cell heights, ceilings, sockets, centred opening widths, notes, and palette overrides;
 - a sparse four-level starter project with mansion, stronghold, trial, and mineshaft palettes;
 - a level rail, selection inspector, issue list, and bill-of-materials panel;
@@ -75,7 +75,7 @@ Infrastructure planning uses ordinary modules rather than a separate simulator. 
 
 The app has two routes: `/` and `/project/:id/level/:levelId`. The root route restores the last valid local project and then changes to its project and level URL. These URLs identify local IndexedDB records. They are not share links.
 
-JSON export writes the complete project document. JSON import checks the schema, field bounds, cells, sockets, opening widths, ceilings, and palette references, then saves the import as a new local project. Projects without opening widths retain full-width passages. Legacy schema-v1 height-3 plenums retain their original geometry; height-1 dropped flags normalize to `flat` because they never affected blocks. PNG export downloads one rendered plan for each level.
+JSON export writes the complete project document. JSON import checks the schema, field bounds, cells, sockets, opening widths, ceilings, negative-space annotations, and palette references, then saves the import as a new local project. Projects without opening widths retain full-width passages. Legacy schema-v1 height-3 plenums retain their original geometry; height-1 dropped flags normalize to `flat` because they never affected blocks. PNG export downloads one rendered plan for each level.
 
 ## Local persistence
 

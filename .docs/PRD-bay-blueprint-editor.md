@@ -2,7 +2,7 @@
 
 A browser-based floor plan and blueprint tool for designing modular Minecraft bases with 13x13 structural bays, 7x7 rooms, 5x5 utility units, service plenums, and multi-level vertical validation.
 
-**Status:** v1 implemented. v2 is partial: validators V3 and V5 are implemented, while Litematica export and 3D remain planned. v3 remains planned.
+**Status:** v1 implemented. Validators V3 and V5 were completed early. Litematica export and 3D remain planned for v2. Parts of the v3 content catalog are implemented. See [the project direction](PROJECT-DIRECTION.md) for the ordered roadmap.
 **Stack:** Vue 3 + TypeScript + Vite
 
 ## 1. Problem
@@ -102,17 +102,23 @@ Room connectivity depends on direction. Across a horizontal shared face, the mat
 
 ### 5.5 Modules and palettes
 
-A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `sockets`, and decoration hints. Ship with these:
+A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `sockets`, and decoration hints. The catalog contains these modules:
 
-`corridor`, `junction`, `stair`, `spine`, `storage`, `library`, `arena`, `vault`, `prison-cell`, `workshop`, `farm`, `plenum-access`, `vestibule`, `empty`
+`spine`, `corridor`, `junction`, `rail-line`, `ice-highway`, `stair`, `vestibule`, `storage`, `vault`, `library`, `arena`, `workshop`, `nether-portal`, `trading-hall`, `prison-cell`, `farm`, `item-trunk`, `mine-access`, `super-smelter`, `auto-crafter`, `plenum-access`, `empty`
+
+Decoration hints record builder intent. Exact detail kits are optional. The Arena kit currently exports a centred 7x7 core boundary, four pillars, and a central light.
 
 A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`.
 
 Palette resolves per level, overridable per cell.
 
-A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Patterns are catalog data, not persisted project data. Stamping a pattern expands it into ordinary cells, which keeps exported projects independent of the installed pattern catalog. Ship straight, corner, T-junction, four-way, stair hall, library hall, workshop, and feature chamber patterns. Rotate a pattern in 90-degree steps before stamping it.
+A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Patterns are catalog data, not persisted project data. Stamping a pattern expands it into ordinary cells. Exported projects therefore do not depend on the installed pattern catalog.
 
-A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The level spacing lets the tallest rooms touch the next floor plane without colliding.
+The catalog contains straight passage, corner passage, T-junction, four-way junction, stair hall, library hall, workshop bay, feature chamber, rail line, ice highway, and item trunk patterns. Rotate a pattern in 90-degree steps before stamping it. **Auto fit** selects the rotation with the fewest conflicts and the most matching openings against adjacent bays.
+
+A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
+
+A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The mineshaft level includes reusable rail-line bays. The level spacing lets the tallest rooms touch the next floor plane without colliding.
 
 ## 6. Data model
 
@@ -139,12 +145,20 @@ interface Bay {
   cells: Cell[]               // 9 | 4 | 1, row-major
 }
 
+type NegativeSpaceKind = 'courtyard' | 'garden' | 'cave' | 'stair-shaft' | 'reserved'
+
+interface NegativeSpace {
+  kind: NegativeSpaceKind
+  note?: string
+}
+
 interface Level {
   id: string
   y: number                  // INVARIANT: y % 4 === 0
   name: string
   paletteId: string
   bays: Record<string, Bay>  // 'A1' -> Bay
+  negativeSpaces?: Record<string, NegativeSpace> // absent bay positions with planning intent
 }
 
 interface Project {
@@ -340,6 +354,11 @@ src/
   domain/
     types.ts              # interfaces and field limits
     geometry.ts           # §7, pure, no Vue imports
+    details.ts            # exact interior detail kits
+    connections.ts        # pattern-opening compatibility and auto fit
+    patterns.ts           # reusable single-bay patterns
+    layouts.ts            # reusable multi-bay patterns
+    templates.ts          # optional starting projects
     validate.ts           # V1 through V7
     bom.ts                # material and smelting calculations
     modules.ts            # module presets
@@ -400,7 +419,8 @@ The v0 acceptance flow is covered by the current app and persistence tests.
 - Multiple levels at arbitrary multiple-of-4 y values.
 - Level rail with gap display.
 - Level, bay, and cell editing in `ProjectView.vue`, with `LevelRail`, `Inspector`, `IssueList`, and `BomPanel` panels.
-- Bay, cell, and footprint modes, including field resize and custom level footprints.
+- Bay and cell views, plus the Footprint and Space tools for custom level shapes.
+- Connection-aware bay-pattern stamps and rotatable multi-bay layout stamps.
 - Validators V1, V2, V4, V6, and V7. V3 and V5 were also completed ahead of the remaining v2 work.
 - Click-to-select issues and a bill of materials with stack, raw-input, and smelting data.
 - JSON import and export, plus one PNG plan per level.
@@ -416,11 +436,16 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Planned: `.litematic` export.
 - Planned: TresJS 3D preview with instanced meshes.
 
-### v3: content and sharing, planned
+### v3: content and sharing, partial
 
-- Implemented early: rotatable bay-pattern stamps for common passages and feature rooms.
+- Implemented early: connection-aware bay-pattern stamps for passages, feature rooms, and infrastructure routes.
+- Implemented early: rotatable multi-bay layouts for loops, grand chambers, and wings.
+- Implemented early: named negative space for courtyards, gardens, caves, stair shafts, and reserved expansion.
+- Implemented early: exact Arena core-and-ring detailing in block geometry and material totals.
+- Implemented early: infrastructure modules for transport, item flow, machinery, mine access, portals, and trading.
 - Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
-- Planned: detailing kits for each structure family.
+- Planned: multi-level layout patterns and selected exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
+- Planned: a larger pattern catalog, route roles that support checks, and optional procedural assembly.
 - Palette editor.
 - Vanilla structure `.nbt` export with region splitting for the format limit.
 - Shareable project links after choosing a backend. See §15.
