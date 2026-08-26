@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
-import { BAY_PATTERN_LIST, type QuarterTurns } from '../domain/patterns.js'
+import { BAY_PATTERN_LIST, type PatternRotation } from '../domain/patterns.js'
 import { GRAIN_LABELS, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
@@ -13,7 +13,7 @@ const props = defineProps<{
   tool: 'select' | 'paint' | 'stamp' | 'empty' | 'footprint'
   moduleId: string
   patternId: string
-  patternRotation: QuarterTurns
+  patternRotation: PatternRotation
   grain: Grain
   saveStatus: SaveStatus
   saveError?: Error | undefined
@@ -25,7 +25,7 @@ const emit = defineEmits<{
   'set-tool': [value: 'select' | 'paint' | 'stamp' | 'empty' | 'footprint']
   'set-module': [value: string]
   'set-pattern': [value: string]
-  'set-pattern-rotation': [value: QuarterTurns]
+  'set-pattern-rotation': [value: PatternRotation]
   'set-grain': [value: Grain]
   export: []
   png: []
@@ -65,11 +65,12 @@ const MODULE_GROUPS = [
   modules: MODULE_LIST.filter((module) => module.id !== 'empty' && module.category === category.id),
 }))
 
-const ROTATIONS: readonly { value: QuarterTurns; label: string }[] = [
-  { value: 0, label: '0°' },
-  { value: 1, label: '90°' },
-  { value: 2, label: '180°' },
-  { value: 3, label: '270°' },
+const ROTATIONS: readonly { value: PatternRotation; label: string; title: string }[] = [
+  { value: 'auto', label: 'Auto fit', title: 'Choose the rotation that best matches adjacent bay openings' },
+  { value: 0, label: '0°', title: 'Do not rotate the pattern' },
+  { value: 1, label: '90°', title: 'Rotate the pattern 90 degrees clockwise' },
+  { value: 2, label: '180°', title: 'Rotate the pattern 180 degrees' },
+  { value: 3, label: '270°', title: 'Rotate the pattern 270 degrees clockwise' },
 ]
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
@@ -207,6 +208,7 @@ function choosePattern(event: Event): void {
             type="button"
             :aria-pressed="patternRotation === option.value"
             :disabled="pngBusy"
+            :title="option.title"
             @click="emit('set-pattern-rotation', option.value)"
           >
             {{ option.label }}

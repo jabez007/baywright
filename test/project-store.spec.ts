@@ -389,6 +389,18 @@ describe('bays', () => {
     s.undo()
     expect(s.project.levels[0]!.bays['B2']!.cells.every((cell) => cell.module === 'empty')).toBe(true)
   })
+
+  it('auto-fits a pattern to an adjacent opening', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.stampBayPattern(levelId, 'B1', 'straight-passage', 1)
+
+    s.stampBayPattern(levelId, 'B2', 'straight-passage', 'auto')
+
+    const stamped = s.project.levels[0]!.bays['B2']!
+    expect(stamped.cells[1]!.sockets.n).toBe('corridor')
+    expect(stamped.cells[7]!.sockets.s).toBe('corridor')
+  })
 })
 
 describe('cells', () => {

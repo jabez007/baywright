@@ -14,7 +14,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey } from '../domain/geometry.js'
-import type { QuarterTurns } from '../domain/patterns.js'
+import type { PatternRotation } from '../domain/patterns.js'
 import { BAY_PITCH, GRAIN_AXIS_CELLS, type CellRef, type Face, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import BayTile from './BayTile.vue'
@@ -25,7 +25,7 @@ const props = defineProps<{
   tool: 'select' | 'paint' | 'stamp' | 'empty'
   moduleId: string
   patternId: string
-  patternRotation: QuarterTurns
+  patternRotation: PatternRotation
   grain: Grain
   /** Held true while a PNG run owns the canvas, so gestures cannot disturb it. */
   frozen?: boolean

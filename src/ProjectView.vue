@@ -7,7 +7,7 @@ import { downloadProject, parseProject } from './export/json.js'
 import { exportSvgAsPng, pngFilename } from './export/png.js'
 import { parseBayKey } from './domain/geometry.js'
 import { MODULE_LIST } from './domain/modules.js'
-import { BAY_PATTERN_LIST, type QuarterTurns } from './domain/patterns.js'
+import { BAY_PATTERN_LIST, type PatternRotation } from './domain/patterns.js'
 import type { ProjectTemplateId } from './domain/templates.js'
 import type { Grain, Project } from './domain/types.js'
 import { loadLastOpenedProject, loadProject as loadStoredProject } from './persistence/db.js'
@@ -35,7 +35,7 @@ const mode = computed<'bay' | 'cell' | 'footprint'>(() =>
 )
 const moduleId = ref<string>(MODULE_LIST[0]?.id ?? 'empty')
 const patternId = ref<string>(BAY_PATTERN_LIST[0]?.id ?? '')
-const patternRotation = ref<QuarterTurns>(0)
+const patternRotation = ref<PatternRotation>('auto')
 const grain = ref<Grain>('fine')
 
 const booted = ref(false)

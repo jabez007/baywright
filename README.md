@@ -86,7 +86,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Select is the default tool. Click a bay or cell to inspect it without changing the plan. Drag across cells to select a range.
 - Double-click a bay to open its cells. Use the **Bays** and **Cells** controls to change views directly.
 - Choose **Paint** and a module to paint bays or cells. Drag with a mouse, touch, or pen to paint several targets.
-- Choose **Stamp**, a bay pattern, and a rotation to replace whole bays with reusable layouts.
+- Choose **Stamp** and a bay pattern to replace whole bays with reusable layouts. **Auto fit** rotates each stamp to match openings in adjacent bays; fixed rotations remain available when the plan calls for a specific orientation.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
 - Choose **New project** from the **Project** menu to start blank or load the layered base example.

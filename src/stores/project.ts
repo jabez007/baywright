@@ -13,9 +13,10 @@ import { defineStore } from 'pinia'
 import { computed, ref, toRaw } from 'vue'
 
 import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
+import { bestPatternFit } from '../domain/connections.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
-import { bayFromPattern, type QuarterTurns } from '../domain/patterns.js'
+import { bayFromPattern, type PatternRotation } from '../domain/patterns.js'
 import { projectFromTemplate, type ProjectTemplateId } from '../domain/templates.js'
 import { validate, type Issue } from '../domain/validate.js'
 import {
@@ -569,10 +570,13 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   /** Replace one bay with a fresh, rotated copy of a shipped pattern. */
-  function stampBayPattern(levelId: string, bayKey: string, patternId: string, quarterTurns: QuarterTurns): void {
+  function stampBayPattern(levelId: string, bayKey: string, patternId: string, rotation: PatternRotation): void {
     mutate(() => {
       const level = requireLevel(levelId)
       if (!level.bays[bayKey]) throw new Error(`no bay '${bayKey}' on level '${levelId}'`)
+      const quarterTurns = rotation === 'auto'
+        ? bestPatternFit(project.value, levelId, bayKey, patternId).quarterTurns
+        : rotation
       level.bays[bayKey] = bayFromPattern(patternId, quarterTurns)
     })
   }

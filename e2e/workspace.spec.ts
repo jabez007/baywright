@@ -172,6 +172,23 @@ test('stamps a rotated bay pattern and undoes it as one edit', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
 })
 
+test('auto-fits a stamped pattern to an adjacent bay opening', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Stamp', exact: true }).click()
+  await page.getByLabel('Bay pattern', { exact: true }).selectOption('straight-passage')
+  await page.getByRole('button', { name: '90°', exact: true }).click()
+  await page.locator('[data-plan-target="bay"][data-bay="B1"]').click()
+
+  await page.getByRole('button', { name: 'Auto fit', exact: true }).click()
+  await page.locator('[data-plan-target="bay"][data-bay="B2"]').click()
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await page.getByRole('button', { name: 'Cells', exact: true }).click()
+
+  await expect(page.getByRole('button', { name: /^B2 cell 2 · Corridor/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^B2 cell 4 · Empty/ })).toBeVisible()
+})
+
 test('starts a new project from the layered base example', async ({ page }) => {
   await page.goto('/')
 

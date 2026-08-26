@@ -12,6 +12,7 @@ import {
 } from './types.js'
 
 export type QuarterTurns = 0 | 1 | 2 | 3
+export type PatternRotation = QuarterTurns | 'auto'
 
 export interface PatternCell extends CellOverrides {
   moduleId: string
