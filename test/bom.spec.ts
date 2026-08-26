@@ -80,6 +80,18 @@ describe('raw input rollup', () => {
     expect(countOf(bom.rawInputs, 'minecraft:tuff')).toBe(590)
   })
 
+  it('walks deepslate tiles back to cobbled deepslate', () => {
+    const { raw } = rollUpRawInputs(new Map([['minecraft:deepslate_tiles', 13]]))
+    expect(raw.get('minecraft:cobbled_deepslate')).toBe(13)
+  })
+
+  it('rounds wooden stairs and slabs to complete crafting batches', () => {
+    const oneStair = rollUpRawInputs(new Map([['minecraft:dark_oak_stairs', 1]])).raw
+    const sevenSlabs = rollUpRawInputs(new Map([['minecraft:dark_oak_slab', 7]])).raw
+    expect(oneStair.get('minecraft:dark_oak_log')).toBe(2)
+    expect(sevenSlabs.get('minecraft:dark_oak_log')).toBe(2)
+  })
+
   it('does not fold unrelated blocks together', () => {
     const { raw } = rollUpRawInputs(new Map([['minecraft:iron_bars', 40]]))
     expect(raw.get('minecraft:iron_bars')).toBe(40)

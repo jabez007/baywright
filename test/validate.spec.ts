@@ -4,6 +4,7 @@
  * These assert against the V1/V2/V4 subset of §8 implemented so far.
  */
 import { describe, expect, it } from 'vitest'
+import { blockKey, resolveBlocks, validMergeGroupIds } from '../src/domain/geometry.js'
 import { validate, type Issue, type IssueId } from '../src/domain/validate.js'
 import type { Cell, Project, Socket } from '../src/domain/types.js'
 import { bay, level, project, sockets } from './factory.js'
@@ -38,7 +39,7 @@ describe('F6 — no false collision', () => {
   ])
 
   it('treats touching at exactly one shared plane as legal', () => {
-    expect(validate(p)).toEqual([])
+    expect(only(validate(p), 'V1')).toEqual([])
   })
 })
 
@@ -69,8 +70,8 @@ describe('F8 — grain seam, illegal', () => {
     expect(issues[0]!.refs[0]).toEqual({ levelId: 'L1', bayKey: 'A1', cellIndex: 5 })
   })
 
-  it('clears once the socket becomes a window', () => {
-    expect(only(validate(seamProject(5, 'window')), 'V2')).toHaveLength(0)
+  it('rejects a window on the middle fine cell too', () => {
+    expect(only(validate(seamProject(5, 'window')), 'V2')).toHaveLength(1)
   })
 
   it('clears once the coarse bay is converted to merged grain', () => {
@@ -90,7 +91,7 @@ describe('F10 — stair continuity', () => {
     ])
 
   it('accepts a rise of 8 under a heightCells = 2 cell', () => {
-    expect(validate(stairProject(32))).toEqual([])
+    expect(only(validate(stairProject(32)), 'V4')).toEqual([])
   })
 
   it('rejects a rise that does not match the level gap', () => {
@@ -104,6 +105,30 @@ describe('F10 — stair continuity', () => {
       level('lower', 24, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
       level('upper', 32, { A1: bay('merged', () => ({ heightCells: 1 })) }),
     ])
+    expect(only(validate(p), 'V4')).toHaveLength(1)
+  })
+
+  it('rejects an upward shaft with no next level', () => {
+    const p = project([
+      level('roof', 24, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
+    ])
+    expect(only(validate(p), 'V4')).toHaveLength(1)
+  })
+
+  it('rejects an upward shaft when the next level has no matching bay', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
+      level('upper', 8, { B1: bay('merged') }),
+    ])
+    expect(only(validate(p), 'V4')).toHaveLength(1)
+  })
+
+  it('rejects an upward shaft when no cell above overlaps it', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('fine', (index) => (index === 0 ? { heightCells: 2, sockets: sockets({ up: 'shaft' }) } : {})) }),
+      level('upper', 8, { A1: bay('fine', () => ({ sockets: sockets() })) }),
+    ])
+    p.levels[1]!.bays['A1']!.cells = []
     expect(only(validate(p), 'V4')).toHaveLength(1)
   })
 })
@@ -129,7 +154,7 @@ describe('V3 — connectivity', () => {
     const issues = only(validate(p), 'V3')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.severity).toBe('warning')
-    expect(issues[0]!.message).toBe('C1 cell 0 has no path to a spine')
+    expect(issues[0]!.message).toBe('C1 cell 1 has no path to a spine')
   })
 
   it('stays quiet when every cell chains back to the spine', () => {
@@ -146,13 +171,36 @@ describe('V3 — connectivity', () => {
     expect(only(validate(p), 'V3')).toHaveLength(2)
   })
 
+  it('does not treat bars as a path', () => {
+    const p = row({ module: 'spine', sockets: sockets({ e: 'bars' }) }, { sockets: sockets({ w: 'bars' }) }, {})
+    expect(only(validate(p), 'V3')).toHaveLength(2)
+  })
+
   it('needs both sides open, not just one', () => {
     const p = row({ module: 'spine', sockets: sockets({ e: 'corridor' }) }, {}, {})
     expect(only(validate(p), 'V3').map((issue) => issue.refs[0]!.bayKey)).toEqual(['B1', 'C1'])
   })
 
-  it('skips a project with no spine at all rather than flagging every cell', () => {
-    expect(only(validate(row({}, {}, {})), 'V3')).toHaveLength(0)
+  it('reports the missing spine once when connectivity cannot be checked', () => {
+    const issues = only(validate(row({}, {}, {})), 'V3')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.message).toBe('Add a spine to check connectivity')
+    // No cell is at fault, so the issue points at none of them.
+    expect(issues[0]!.refs).toEqual([])
+  })
+
+  it('still reports the missing spine once across a stack, and pins it to no level', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('merged') }),
+      level('upper', 4, { A1: bay('merged') }),
+    ])
+    const issues = only(validate(p), 'V3')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.message).toBe('Add a spine to check connectivity')
+    // Refs spanning levels is what the issue list cannot navigate, so there are
+    // none, and no `levelId` either — the whole project is missing a spine.
+    expect(issues[0]!.refs).toEqual([])
+    expect(issues[0]!.levelId).toBeUndefined()
   })
 
   it('walks cells inside a bay, not just across bay seams', () => {
@@ -165,8 +213,11 @@ describe('V3 — connectivity', () => {
         }),
       }),
     ])
-    // Cells 0 and 1 are joined; the other seven are sealed.
-    expect(only(validate(p), 'V3')).toHaveLength(7)
+    // Cells 0 and 1 are joined; the other seven are sealed and grouped by bay.
+    const issues = only(validate(p), 'V3')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.refs).toHaveLength(7)
+    expect(issues[0]!.message).toBe('7 cells in Bay A1 have no path to a spine')
   })
 
   it('walks a shaft between levels', () => {
@@ -179,6 +230,30 @@ describe('V3 — connectivity', () => {
       ])
     expect(only(validate(stacked('shaft')), 'V3')).toHaveLength(0)
     expect(only(validate(stacked('solid')), 'V3')).toHaveLength(1)
+  })
+
+  it('walks a valid merge group whose members kept their default solid sockets', () => {
+    const p = row(
+      { module: 'spine', sockets: sockets({ e: 'corridor' }) },
+      { mergeGroup: 'r1', sockets: sockets({ w: 'corridor' }) },
+      { mergeGroup: 'r1' },
+    )
+    // The exporter carves the B1/C1 seam away, so the two are one room.
+    expect(resolveBlocks(p).has(blockKey(24, 3, 6))).toBe(false)
+    expect(only(validate(p), 'V7')).toHaveLength(0)
+    expect(only(validate(p), 'V3')).toHaveLength(0)
+  })
+
+  it('does not open a seam for a merge group the exporter refuses to carve', () => {
+    const p = row(
+      { module: 'spine', sockets: sockets({ e: 'corridor' }) },
+      { mergeGroup: 'r1', sockets: sockets({ w: 'corridor' }) },
+      { mergeGroup: 'r1', heightCells: 2 },
+    )
+    // Mixed heights: V7 rejects the group, the seam stands, sockets still rule.
+    expect(resolveBlocks(p).has(blockKey(24, 3, 6))).toBe(true)
+    expect(only(validate(p), 'V7')).toHaveLength(1)
+    expect(only(validate(p), 'V3')).toHaveLength(1)
   })
 })
 
@@ -198,8 +273,17 @@ describe('V5 — plenum reachability', () => {
     project(
       [
         level('L1', 0, {
-          A1: bay('merged', () => ({ module: 'spine' })),
-          ...Object.fromEntries(Object.entries(bays).map(([key, proto]) => [key, bay('merged', () => proto)])),
+          A1: bay('merged', () => plenumCell({ module: 'spine', sockets: sockets({ e: 'corridor' }) })),
+          ...Object.fromEntries(
+            Object.entries(bays).map(([key, proto]) => [
+              key,
+              bay('merged', () =>
+                key === 'B1'
+                  ? { ...proto, sockets: { ...sockets(), ...proto.sockets, w: 'corridor' } }
+                  : proto,
+              ),
+            ]),
+          ),
         }),
       ],
       { bayCols, bayRows: 1 },
@@ -210,7 +294,7 @@ describe('V5 — plenum reachability', () => {
     const issues = only(validate(p), 'V5')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.severity).toBe('warning')
-    expect(issues[0]!.message).toBe('Plenum island of 1 cell starting at C1 cell 0 has no route to a spine')
+    expect(issues[0]!.message).toBe('Plenum island of 1 cell starting at C1 cell 1 has no route to a spine')
     expect(issues[0]!.levelId).toBe('L1')
   })
 
@@ -220,6 +304,32 @@ describe('V5 — plenum reachability', () => {
       3,
     )
     expect(only(validate(p), 'V5')).toHaveLength(0)
+  })
+
+  it('agrees with the block map about passable plenum openings', () => {
+    const connected = project(
+      [
+        level('L1', 0, {
+          A1: bay('merged', () => plenumCell({ module: 'spine', sockets: sockets({ e: 'window' }) })),
+          B1: bay('merged', () => plenumCell({ sockets: sockets({ w: 'window' }) })),
+        }),
+      ],
+      { bayCols: 2, bayRows: 1 },
+    )
+    const blocked = project(
+      [
+        level('L1', 0, {
+          A1: bay('merged', () => plenumCell({ module: 'spine', sockets: sockets({ e: 'bars' }) })),
+          B1: bay('merged', () => plenumCell({ sockets: sockets({ w: 'bars' }) })),
+        }),
+      ],
+      { bayCols: 2, bayRows: 1 },
+    )
+
+    expect(resolveBlocks(connected).has(blockKey(12, 6, 6))).toBe(false)
+    expect(only(validate(connected), 'V5')).toHaveLength(0)
+    expect(resolveBlocks(blocked).has(blockKey(12, 6, 6))).toBe(true)
+    expect(only(validate(blocked), 'V5')).toHaveLength(1)
   })
 
   it('groups an island rather than reporting each of its cells', () => {
@@ -233,7 +343,7 @@ describe('V5 — plenum reachability', () => {
     )
     const issues = only(validate(p), 'V5')
     expect(issues).toHaveLength(1)
-    expect(issues[0]!.message).toBe('Plenum island of 2 cells starting at C1 cell 0 has no route to a spine')
+    expect(issues[0]!.message).toBe('Plenum island of 2 cells starting at C1 cell 1 has no route to a spine')
     expect(issues[0]!.refs.map((ref) => ref.bayKey)).toEqual(['C1', 'D1'])
   })
 
@@ -242,11 +352,29 @@ describe('V5 — plenum reachability', () => {
     expect(only(validate(p), 'V5')).toHaveLength(1)
   })
 
-  it('skips a level with no spine', () => {
+  it('reports plenums on a level with no spine', () => {
     const p = project(
       [level('L1', 0, { A1: bay('merged', () => plenumCell()), B1: bay('merged', () => plenumCell()) })],
       { bayCols: 2, bayRows: 1 },
     )
+    const issues = only(validate(p), 'V5')
+    expect(issues).toHaveLength(2)
+    expect(issues.flatMap((issue) => issue.refs).map((ref) => ref.bayKey)).toEqual(['A1', 'B1'])
+  })
+
+  it('routes a plenum through a valid merge group with default solid sockets', () => {
+    const p = strip({ B1: plenumCell({ mergeGroup: 'r1' }), C1: plenumCell({ mergeGroup: 'r1' }) }, 3)
+    // The carved seam is the opening; the sockets never had to describe it.
+    expect(resolveBlocks(p).has(blockKey(24, 6, 6))).toBe(false)
+    expect(only(validate(p), 'V7')).toHaveLength(0)
+    expect(only(validate(p), 'V5')).toHaveLength(0)
+  })
+
+  it('still requires an opening when the merge group is invalid', () => {
+    const p = strip({ B1: plenumCell({ mergeGroup: 'r1' }), C1: plenumCell({ mergeGroup: 'r1', ceiling: 'flat' }) }, 3)
+    // Mixed ceilings: nothing is carved, and C1 has no plenum of its own.
+    expect(resolveBlocks(p).has(blockKey(24, 6, 6))).toBe(true)
+    expect(only(validate(p), 'V7')).toHaveLength(1)
     expect(only(validate(p), 'V5')).toHaveLength(0)
   })
 })
@@ -361,5 +489,31 @@ describe('V7 — merge group integrity', () => {
     const issues = only(validate(p), 'V7')
     expect(issues).toHaveLength(1)
     expect(issues[0]!.message).toBe("Merge group 'g' spans levels L1, L2 — a merge group is one room on one level")
+  })
+
+  /**
+   * The exporter carves a group's shared walls, and V3/V5 treat those seams as
+   * open, so both must agree with V7 about which groups qualify. Duplicated
+   * copies of that condition are what let them disagree in the first place.
+   */
+  it("carves exactly the groups V7 accepts", () => {
+    const cases: [string, Project][] = [
+      ['contiguous pair', merged([0, 1])],
+      ['2x2 square', merged([0, 1, 3, 4])],
+      ['gap between members', merged([0, 2])],
+      ['L shape', merged([0, 1, 3])],
+      ['mixed heights', merged([0, 1], (index) => ({ heightCells: index === 0 ? 1 : 2 }))],
+      ['mixed ceilings', merged([0, 1], (index) => ({ heightCells: 2, ceiling: index === 0 ? 'flat' : 'dropped' }))],
+    ]
+    for (const [name, p] of cases) {
+      const accepted = only(validate(p), 'V7').length === 0
+      expect([name, validMergeGroupIds(p).has('g')]).toEqual([name, accepted])
+    }
+  })
+
+  it('never carves a lone member, which V7 has nothing to reject', () => {
+    const p = merged([0])
+    expect(only(validate(p), 'V7')).toHaveLength(0)
+    expect(validMergeGroupIds(p).has('g')).toBe(false)
   })
 })

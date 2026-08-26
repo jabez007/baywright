@@ -12,13 +12,15 @@
 import { defineStore } from 'pinia'
 import { computed, ref, toRaw } from 'vue'
 
-import { bayKeyOf, resolveCell, sortedLevels } from '../domain/geometry.js'
+import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
 import { validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
+  MAX_BAY_FIELD,
   cellCount,
+  isSocketValidForFace,
   type Bay,
   type Ceiling,
   type Cell,
@@ -40,6 +42,15 @@ export const HORIZONTAL_SOCKET_CYCLE: readonly Socket[] = ['solid', 'corridor', 
 export const VERTICAL_SOCKET_CYCLE: readonly Socket[] = ['solid', 'shaft']
 
 export const DEFAULT_PALETTE_ID = 'stone-brick'
+
+/** The first 4-block floor plane above every level's occupied height. */
+export function nextLevelY(project: Project): number {
+  const occupiedTop = project.levels.reduce(
+    (highest, level) => Math.max(highest, level.y + LEVEL_PITCH * tallestCell(level)),
+    0,
+  )
+  return Math.ceil(occupiedTop / LEVEL_PITCH) * LEVEL_PITCH
+}
 
 // --------------------------------------------------------------------------
 // Selection
@@ -73,8 +84,25 @@ export interface NewProjectOptions {
   grain?: Grain
 }
 
+/**
+ * `crypto.randomUUID` is secure-context only, so it is missing whenever the dev
+ * host is reached over plain http on a LAN address. `getRandomValues` has no
+ * such restriction, so fall back to hand-rolling the v4 layout.
+ */
 function newId(): string {
-  return crypto.randomUUID()
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+
+  const bytes = new Uint8Array(16)
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40 // version 4
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80 // variant 10
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`
 }
 
 export function createBay(grain: Grain, moduleId: string = DEFAULT_MODULE_ID): Bay {
@@ -89,9 +117,17 @@ export function createLevel(options: { y: number; name: string; bayCols: number;
   return { id: newId(), y: options.y, name: options.name, paletteId: DEFAULT_PALETTE_ID, bays }
 }
 
+/** §15 open question 2 — the bay field is capped until V1 stops being O(n²). */
+function assertFieldExtent(extent: number, label: string): number {
+  if (!Number.isInteger(extent) || extent < 1 || extent > MAX_BAY_FIELD) {
+    throw new RangeError(`${label} must be an integer between 1 and ${MAX_BAY_FIELD}, got ${extent}`)
+  }
+  return extent
+}
+
 export function createProject(options: NewProjectOptions = {}): Project {
-  const bayCols = options.bayCols ?? 3
-  const bayRows = options.bayRows ?? 3
+  const bayCols = assertFieldExtent(options.bayCols ?? 3, 'bayCols')
+  const bayRows = assertFieldExtent(options.bayRows ?? 3, 'bayRows')
   return {
     schemaVersion: 1,
     id: newId(),
@@ -164,8 +200,10 @@ export const useProjectStore = defineStore('project', () => {
     depth++
     try {
       const result = change()
-      pushCapped(undoStack, before)
-      redoStack.length = 0
+      if (JSON.stringify(before) !== JSON.stringify(snapshot())) {
+        pushCapped(undoStack, before)
+        redoStack.length = 0
+      }
       return result
     } catch (error) {
       project.value = before
@@ -285,6 +323,10 @@ export const useProjectStore = defineStore('project', () => {
     clearHistory()
   }
 
+  function loadImportedProjectAsCopy(document: Project): void {
+    loadProject({ ...document, id: newId() })
+  }
+
   function newProject(options: NewProjectOptions = {}): void {
     loadProject(createProject(options))
   }
@@ -293,6 +335,21 @@ export const useProjectStore = defineStore('project', () => {
     mutate(() => {
       project.value.name = name
     })
+  }
+
+  /**
+   * The footprint of the level below, so stacking onto a carved base does not
+   * hang a full rectangle over the parts that were taken out. Grain comes along
+   * too: re-cutting a bay is one click, redrawing a footprint is not.
+   *
+   * Nothing to inherit when the new level goes underneath everything: that
+   * reasoning is about what a level rests on, and a base is free to be wider
+   * than what it carries. It starts as the full rectangle `createLevel` makes.
+   */
+  function footprintBelow(y: number): Level | undefined {
+    return sortedLevels(project.value)
+      .filter((level) => level.y < y)
+      .at(-1)
   }
 
   function addLevel(y: number, name?: string): string {
@@ -304,6 +361,11 @@ export const useProjectStore = defineStore('project', () => {
         bayCols: project.value.bayCols,
         bayRows: project.value.bayRows,
       })
+      const source = footprintBelow(y)
+      if (source) {
+        level.bays = {}
+        for (const [bayKey, bay] of Object.entries(source.bays)) level.bays[bayKey] = createBay(bay.grain)
+      }
       project.value.levels.push(level)
       sortLevels()
       return level.id
@@ -311,6 +373,10 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function removeLevel(levelId: string): void {
+    requireLevel(levelId)
+    if (project.value.levels.length === 1) {
+      throw new RangeError('cannot remove the final level')
+    }
     mutate(() => {
       requireLevel(levelId)
       // Spliced in place: assigning a filtered copy would write proxies into
@@ -351,6 +417,131 @@ export const useProjectStore = defineStore('project', () => {
    * not map onto 4. A bay painted uniformly keeps its module, which is the case
    * where the intent is obvious.
    */
+  /**
+   * §6 keys bays into a map rather than a dense grid, so a level's footprint is
+   * a subset of its field: removing bays is how an I, H or C plan is drawn. The
+   * field extent stays the bounding box and keeps addressing bays the same way,
+   * so §5.1's letters and numbers do not shift under an edit.
+   */
+  function assertInField(bayKey: string): void {
+    const { i, j } = parseBayKey(bayKey)
+    const { bayCols, bayRows } = project.value
+    if (i < 0 || j < 0 || i >= bayCols || j >= bayRows) {
+      throw new RangeError(`bay '${bayKey}' is outside the ${bayCols}×${bayRows} field`)
+    }
+  }
+
+  /**
+   * Grows or shrinks the field every level sits in. The extent is the bounding
+   * box, not the footprint, so the two edits stay separable: growing fills only
+   * the positions that did not exist before, leaving alone the bays the footprint
+   * editor deliberately dropped. Shrinking discards whatever falls outside it.
+   */
+  function setFieldExtent(bayCols: number, bayRows: number, grain: Grain = 'fine'): void {
+    mutate(() => {
+      const cols = assertFieldExtent(bayCols, 'bayCols')
+      const rows = assertFieldExtent(bayRows, 'bayRows')
+      const { bayCols: oldCols, bayRows: oldRows } = project.value
+
+      for (const level of project.value.levels) {
+        for (const bayKey of Object.keys(level.bays)) {
+          const { i, j } = parseBayKey(bayKey)
+          if (i >= cols || j >= rows) delete level.bays[bayKey]
+        }
+
+        for (let j = 0; j < rows; j++) {
+          for (let i = 0; i < cols; i++) {
+            if (i < oldCols && j < oldRows) continue
+            // Never overwrite: a bay already standing at a position the field is
+            // only now growing into came from somewhere, and filling would
+            // destroy whatever is painted in it.
+            const bayKey = bayKeyOf(i, j)
+            if (level.bays[bayKey]) continue
+            level.bays[bayKey] = createBay(grain)
+          }
+        }
+
+        // Checked after filling: shrinking one axis while growing the other can
+        // hand a level its new bays even as it loses all of its old ones.
+        if (Object.keys(level.bays).length === 0) {
+          throw new RangeError(`a ${cols}×${rows} field would leave level '${level.name}' with no bays`)
+        }
+      }
+
+      project.value.bayCols = cols
+      project.value.bayRows = rows
+      reconcile()
+    })
+  }
+
+  function addBay(levelId: string, bayKey: string, grain: Grain = 'fine'): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      assertInField(bayKey)
+      // Idempotent on purpose: a drag across the footprint re-enters bays it has
+      // already added, and re-cutting them would wipe whatever is painted there.
+      if (level.bays[bayKey]) return
+      level.bays[bayKey] = createBay(grain)
+    })
+  }
+
+  function removeBay(levelId: string, bayKey: string): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      if (!level.bays[bayKey]) return
+      if (Object.keys(level.bays).length === 1) {
+        throw new RangeError(`cannot remove the last bay of level '${level.name}'`)
+      }
+      delete level.bays[bayKey]
+      // The selection may have been pointing into it.
+      reconcile()
+    })
+  }
+
+  /**
+   * Stamps one level's footprint onto every other level. Bays common to both
+   * are left exactly as they are — this squares up the outline of the stack,
+   * it does not repaint it — so only the bays being added are new and empty.
+   *
+   * Returns how many levels changed, so a caller can tell a no-op from work.
+   */
+  function applyFootprintToAllLevels(sourceLevelId: string): number {
+    return mutate(() => {
+      const source = requireLevel(sourceLevelId)
+      let changed = 0
+
+      for (const level of project.value.levels) {
+        if (level.id === source.id) continue
+        let touched = false
+
+        for (const bayKey of Object.keys(level.bays)) {
+          if (source.bays[bayKey]) continue
+          delete level.bays[bayKey]
+          touched = true
+        }
+        for (const [bayKey, bay] of Object.entries(source.bays)) {
+          if (level.bays[bayKey]) continue
+          level.bays[bayKey] = createBay(bay.grain)
+          touched = true
+        }
+
+        if (touched) changed++
+      }
+
+      // The source is never empty, so no level can be emptied by this.
+      reconcile()
+      return changed
+    })
+  }
+
+  /** Returns whether the bay is present afterwards, so the canvas can drag-fill. */
+  function toggleBay(levelId: string, bayKey: string, grain: Grain = 'fine'): boolean {
+    const present = requireLevel(levelId).bays[bayKey] !== undefined
+    if (present) removeBay(levelId, bayKey)
+    else addBay(levelId, bayKey, grain)
+    return !present
+  }
+
   function setBayGrain(levelId: string, bayKey: string, grain: Grain): void {
     mutate(() => {
       const bay = requireBay(levelId, bayKey)
@@ -408,7 +599,11 @@ export const useProjectStore = defineStore('project', () => {
 
   function setCellHeight(refs: CellRef[], heightCells: 1 | 2 | 3): void {
     mutate(() => {
-      for (const ref of refs) requireCell(ref).heightCells = heightCells
+      for (const ref of refs) {
+        const cell = requireCell(ref)
+        cell.heightCells = heightCells
+        if (heightCells !== 2 && cell.ceiling === 'dropped') cell.ceiling = 'flat'
+      }
     })
   }
 
@@ -418,18 +613,29 @@ export const useProjectStore = defineStore('project', () => {
       for (const ref of refs) {
         const cell = requireCell(ref)
         cell.heightCells = Math.min(3, Math.max(1, cell.heightCells + delta)) as 1 | 2 | 3
+        if (cell.heightCells !== 2 && cell.ceiling === 'dropped') cell.ceiling = 'flat'
       }
     })
   }
 
   function setCeiling(refs: CellRef[], ceiling: Ceiling): void {
     mutate(() => {
-      for (const ref of refs) requireCell(ref).ceiling = ceiling
+      for (const ref of refs) {
+        const cell = requireCell(ref)
+        if (ceiling === 'dropped' && cell.heightCells !== 2) {
+          throw new Error(`a dropped ceiling requires heightCells 2, got ${cell.heightCells}`)
+        }
+        cell.ceiling = ceiling
+      }
     })
   }
 
   function setSocket(ref: CellRef, face: Face, socket: Socket): void {
     mutate(() => {
+      if (!isSocketValidForFace(face, socket)) {
+        const direction = face === 'up' || face === 'down' ? 'vertical' : 'horizontal'
+        throw new Error(`socket '${socket}' is not valid on ${direction} face '${face}'`)
+      }
       requireCell(ref).sockets[face] = socket
     })
   }
@@ -486,14 +692,21 @@ export const useProjectStore = defineStore('project', () => {
   function setCurrentLevel(levelId: string): void {
     requireLevel(levelId)
     currentLevelId.value = levelId
+    if (selectionLevelId(selection.value) !== levelId) selection.value = { kind: 'none' }
   }
 
   function select(next: Selection): void {
+    if (!selectionExists(next)) throw new Error('selection points outside the project')
+    const levelId = selectionLevelId(next)
+    if (next.kind === 'cells' && next.refs.some((ref) => ref.levelId !== levelId)) {
+      throw new Error('selected cells must belong to one level')
+    }
+    if (levelId) currentLevelId.value = levelId
     selection.value = next
   }
 
   function selectCells(refs: CellRef[]): void {
-    selection.value = refs.length > 0 ? { kind: 'cells', refs } : { kind: 'none' }
+    select(refs.length > 0 ? { kind: 'cells', refs } : { kind: 'none' })
   }
 
   /** Escape (§10). */
@@ -503,6 +716,24 @@ export const useProjectStore = defineStore('project', () => {
 
   /** The cells an action like `[` or a paint should apply to. */
   const selectedRefs = computed<CellRef[]>(() => (selection.value.kind === 'cells' ? selection.value.refs : []))
+
+  /** Cell mode keeps one bay expanded. Follow selection, then fall back to the first bay. */
+  const focusedBayKey = computed<string | undefined>(() => {
+    const level = currentLevel.value
+    if (!level) return undefined
+    if (selection.value.kind === 'bay' && selection.value.levelId === level.id && level.bays[selection.value.bayKey]) {
+      return selection.value.bayKey
+    }
+    if (selection.value.kind === 'cells') {
+      const bayKey = selection.value.refs.find((ref) => ref.levelId === level.id)?.bayKey
+      if (bayKey && level.bays[bayKey]) return bayKey
+    }
+    return Object.keys(level.bays).sort((left, right) => {
+      const a = parseBayKey(left)
+      const b = parseBayKey(right)
+      return a.j - b.j || a.i - b.i
+    })[0]
+  })
 
   // -- derived ------------------------------------------------------------
 
@@ -560,6 +791,7 @@ export const useProjectStore = defineStore('project', () => {
     issues,
     issuesByLevel,
     selectedRefs,
+    focusedBayKey,
     canUndo,
     canRedo,
     undoDepth,
@@ -571,6 +803,7 @@ export const useProjectStore = defineStore('project', () => {
     clearHistory,
     // document
     loadProject,
+    loadImportedProjectAsCopy,
     newProject,
     renameProject,
     toJSON,
@@ -579,6 +812,11 @@ export const useProjectStore = defineStore('project', () => {
     setLevelY,
     renameLevel,
     setLevelPalette,
+    setFieldExtent,
+    addBay,
+    removeBay,
+    toggleBay,
+    applyFootprintToAllLevels,
     setBayGrain,
     paintBay,
     paintCell,
@@ -606,4 +844,16 @@ function tallestCell(level: Level): number {
     for (const cell of bay.cells) tallest = Math.max(tallest, cell.heightCells)
   }
   return tallest
+}
+
+function selectionLevelId(selection: Selection): string | undefined {
+  switch (selection.kind) {
+    case 'none':
+      return undefined
+    case 'level':
+    case 'bay':
+      return selection.levelId
+    case 'cells':
+      return selection.refs[0]?.levelId
+  }
 }

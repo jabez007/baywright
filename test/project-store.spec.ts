@@ -3,7 +3,7 @@
  */
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { HISTORY_LIMIT, createProject, useProjectStore } from '../src/stores/project.js'
+import { HISTORY_LIMIT, createProject, nextLevelY, useProjectStore } from '../src/stores/project.js'
 import { toRaw } from 'vue'
 import type { CellRef } from '../src/domain/types.js'
 
@@ -156,9 +156,50 @@ describe('the undo ring buffer', () => {
     expect(s.canUndo).toBe(false)
     expect(s.project.name).toBe('Fresh')
   })
+
+  it('does not record a no-op or clear the redo branch', () => {
+    const s = store()
+    s.paintCell(firstCell(), 'spine')
+    s.undo()
+    expect(s.canRedo).toBe(true)
+
+    s.renameProject(s.project.name)
+
+    expect(s.undoDepth).toBe(0)
+    expect(s.canRedo).toBe(true)
+  })
+
+  it('loads an imported document as a copy with a fresh project id', () => {
+    const s = store()
+    const imported = createProject({ name: 'Imported' })
+    const importedId = imported.id
+
+    s.loadImportedProjectAsCopy(imported)
+
+    expect(s.project.name).toBe('Imported')
+    expect(s.project.id).not.toBe(importedId)
+    expect(imported.id).toBe(importedId)
+    expect(s.canUndo).toBe(false)
+  })
 })
 
 describe('levels', () => {
+  it('refuses to remove the final level', () => {
+    const s = store()
+    expect(() => s.removeLevel(s.currentLevelId)).toThrow(/final level/)
+    expect(s.project.levels).toHaveLength(1)
+    expect(s.canUndo).toBe(false)
+  })
+
+  it('places the next level above the tallest occupied height on the 4-block lattice', () => {
+    const s = store()
+    s.setCellHeight([firstCell()], 3)
+    expect(nextLevelY(s.project)).toBe(12)
+
+    s.addLevel(16)
+    expect(nextLevelY(s.project)).toBe(20)
+  })
+
   it('keeps levels sorted ascending by y', () => {
     const s = store()
     s.addLevel(16, 'Attic')
@@ -179,6 +220,39 @@ describe('levels', () => {
     expect(s.levelGaps).toHaveLength(1)
     expect(s.levelGaps[0]!.delta).toBe(8)
     expect(s.levelGaps[0]!.headroom).toBe(-4)
+  })
+
+  it('stacks a new level on the footprint of the one below', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    s.setBayGrain(ground, 'A1', 'coarse')
+
+    const upper = s.addLevel(8, 'Upper')
+    const level = s.project.levels.find((entry) => entry.id === upper)!
+    expect(Object.keys(level.bays).sort()).toEqual(['A1', 'A2', 'A3', 'B1', 'B3', 'C1', 'C3'])
+    expect(level.bays['A1']!.grain).toBe('coarse')
+    expect(level.bays['A1']!.cells.every((cell) => cell.module === 'empty')).toBe(true)
+  })
+
+  it('gives a level added below everything the full rectangle, not the footprint above it', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    s.setBayGrain(ground, 'A1', 'coarse')
+
+    const basement = s.addLevel(-4, 'Basement')
+    const level = s.project.levels.find((entry) => entry.id === basement)!
+    // A base carries what is above it and may be wider than it; there is no
+    // level below to inherit from, so nothing is carved out of it.
+    expect(Object.keys(level.bays).sort()).toEqual(['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'])
+    expect(level.bays['A1']!.grain).toBe('fine')
   })
 
   it('refuses a y off the 4-block lattice', () => {
@@ -202,6 +276,27 @@ describe('levels', () => {
     expect(s.currentLevelId).toBe(s.project.levels[0]!.id)
   })
 
+  it('clears a cell selection when switching to another level', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(8)
+    s.selectCells([{ levelId: ground, bayKey: 'A1', cellIndex: 0 }])
+
+    s.setCurrentLevel(upper)
+
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+
+  it('switches to the level that owns a new cell selection', () => {
+    const s = store()
+    const upper = s.addLevel(8)
+
+    s.selectCells([{ levelId: upper, bayKey: 'A1', cellIndex: 0 }])
+
+    expect(s.currentLevelId).toBe(upper)
+    expect(s.selection.kind).toBe('cells')
+  })
+
   it('restores the current level and selection when undo brings a level back', () => {
     const s = store()
     const upper = s.addLevel(8)
@@ -223,6 +318,20 @@ describe('levels', () => {
 })
 
 describe('bays', () => {
+  it('focuses cell mode on the selected bay and otherwise falls back to the first bay', () => {
+    const s = store()
+    expect(s.focusedBayKey).toBe('A1')
+
+    s.select({ kind: 'bay', levelId: s.currentLevelId, bayKey: 'B2' })
+    expect(s.focusedBayKey).toBe('B2')
+
+    s.selectCells([{ levelId: s.currentLevelId, bayKey: 'C3', cellIndex: 4 }])
+    expect(s.focusedBayKey).toBe('C3')
+
+    s.clearSelection()
+    expect(s.focusedBayKey).toBe('A1')
+  })
+
   it('re-cuts the cells when the grain changes', () => {
     const s = store()
     s.setBayGrain(s.currentLevelId, 'B2', 'coarse')
@@ -298,6 +407,30 @@ describe('cells', () => {
     expect(s.project.levels[0]!.bays['A1']!.cells[0]!.heightCells).toBe(3)
   })
 
+  it('normalizes a dropped ceiling when a height action leaves height two', () => {
+    const s = store()
+    const ref = firstCell()
+    s.paintCell(ref, 'spine')
+    s.setCellHeight([ref], 3)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('flat')
+
+    s.paintCell(ref, 'spine')
+    s.nudgeCellHeight([ref], -1)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('flat')
+  })
+
+  it('rejects a dropped ceiling on a non-height-two cell and rolls back all refs', () => {
+    const s = store()
+    const refs = [0, 1].map((cellIndex) => ({ ...firstCell(), cellIndex }))
+    s.setCellHeight([refs[0]!], 2)
+    s.clearHistory()
+
+    expect(() => s.setCeiling(refs, 'dropped')).toThrow(/heightCells 2/)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.ceiling).toBe('flat')
+    expect(s.project.levels[0]!.bays['A1']!.cells[1]!.ceiling).toBe('flat')
+    expect(s.canUndo).toBe(false)
+  })
+
   it('cycles a horizontal face through the openings', () => {
     const s = store()
     const ref = firstCell()
@@ -313,6 +446,22 @@ describe('cells', () => {
     const ref = firstCell()
     expect(s.cycleSocket(ref, 'up')).toBe('shaft')
     expect(s.cycleSocket(ref, 'up')).toBe('solid')
+  })
+
+  it('rejects sockets that are invalid for the named face without changing the cell', () => {
+    const s = store()
+    const ref = firstCell()
+    expect(() => s.setSocket(ref, 'n', 'shaft')).toThrow(/horizontal face/)
+    expect(() => s.setSocket(ref, 'up', 'corridor')).toThrow(/vertical face/)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.sockets).toEqual({
+      n: 'solid',
+      e: 'solid',
+      s: 'solid',
+      w: 'solid',
+      up: 'solid',
+      down: 'solid',
+    })
+    expect(s.canUndo).toBe(false)
   })
 
   it('gives one merge group to a whole rectangle, and takes it away again', () => {
@@ -351,8 +500,8 @@ describe('validation wiring', () => {
 
     const collisions = s.issues.filter((issue) => issue.id === 'V1')
     expect(collisions).toHaveLength(1)
-    expect(s.issuesByLevel[ground]).toHaveLength(1)
-    expect(s.issuesByLevel[upper]).toHaveLength(1)
+    expect(s.issuesByLevel[ground]!.filter((issue) => issue.id === 'V1')).toHaveLength(1)
+    expect(s.issuesByLevel[upper]!.filter((issue) => issue.id === 'V1')).toHaveLength(1)
   })
 
   it('clears the issue when the mistake is undone', () => {
@@ -373,5 +522,312 @@ describe('toJSON', () => {
     s.paintCell(firstCell(), 'spine')
     expect(copy.levels[0]!.bays['A1']!.cells[0]!.module).toBe('empty')
     expect(JSON.parse(JSON.stringify(copy)).schemaVersion).toBe(1)
+  })
+})
+
+/**
+ * §6 stores bays in a map, not a dense grid, so a level's footprint need not
+ * fill its field: an I, H or C plan is a field with bays taken out of it.
+ */
+describe('the footprint', () => {
+  it('removes a bay from the level', () => {
+    const s = store()
+    s.removeBay(s.currentLevelId, 'B2')
+    expect(s.project.levels[0]!.bays['B2']).toBeUndefined()
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(8)
+  })
+
+  it('puts a bay back, empty and at the requested grain', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.paintBay(levelId, 'B2', 'storage')
+    s.removeBay(levelId, 'B2')
+    s.addBay(levelId, 'B2', 'coarse')
+    const bay = s.project.levels[0]!.bays['B2']!
+    expect(bay.grain).toBe('coarse')
+    expect(bay.cells).toHaveLength(4)
+    expect(bay.cells.every((cell) => cell.module === 'empty')).toBe(true)
+  })
+
+  it('toggles a bay in and out', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    expect(s.toggleBay(levelId, 'A1')).toBe(false)
+    expect(s.project.levels[0]!.bays['A1']).toBeUndefined()
+    expect(s.toggleBay(levelId, 'A1')).toBe(true)
+    expect(s.project.levels[0]!.bays['A1']).toBeDefined()
+  })
+
+  it('carves a C without disturbing the rest of the level', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      s.removeBay(levelId, 'B2')
+      s.removeBay(levelId, 'C2')
+    })
+    expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A1', 'A2', 'A3', 'B1', 'B3', 'C1', 'C3'])
+    expect(s.canUndo).toBe(true)
+    s.undo()
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(9)
+  })
+
+  it('refuses a bay outside the field', () => {
+    const s = store()
+    expect(() => s.addBay(s.currentLevelId, 'D1')).toThrow(/outside the 3×3 field/)
+    expect(() => s.addBay(s.currentLevelId, 'A4')).toThrow(/outside the 3×3 field/)
+  })
+
+  it('refuses to empty a level', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      for (const bayKey of Object.keys(s.project.levels[0]!.bays)) {
+        if (bayKey !== 'A1') s.removeBay(levelId, bayKey)
+      }
+    })
+    expect(() => s.removeBay(levelId, 'A1')).toThrow(/last bay/)
+    expect(s.project.levels[0]!.bays['A1']).toBeDefined()
+  })
+
+  it('drops a selection that pointed into the removed bay', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.select({ kind: 'bay', levelId, bayKey: 'B2' })
+    s.removeBay(levelId, 'B2')
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+
+  it('leaves an unrelated selection alone', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.selectCells([{ levelId, bayKey: 'A1', cellIndex: 0 }])
+    s.removeBay(levelId, 'B2')
+    expect(s.selection.kind).toBe('cells')
+  })
+
+  it('adding a bay that is already there changes nothing', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.paintBay(levelId, 'B2', 'storage')
+    s.addBay(levelId, 'B2', 'merged')
+    expect(s.project.levels[0]!.bays['B2']!.cells[0]!.module).toBe('storage')
+  })
+})
+
+describe('applying a footprint across levels', () => {
+  /** Two levels, both full, so each test only has to say how they differ. */
+  function stacked() {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(8, 'Upper')
+    return { s, ground, upper }
+  }
+
+  it('copies the holes downward and upward alike', () => {
+    const { s, ground, upper } = stacked()
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    expect(Object.keys(s.project.levels.find((l) => l.id === upper)!.bays)).toHaveLength(9)
+
+    s.applyFootprintToAllLevels(ground)
+    expect(Object.keys(s.project.levels.find((l) => l.id === upper)!.bays).sort()).toEqual([
+      'A1',
+      'A2',
+      'A3',
+      'B1',
+      'B3',
+      'C1',
+      'C3',
+    ])
+  })
+
+  it('leaves the source level untouched', () => {
+    const { s, ground } = stacked()
+    s.paintBay(ground, 'B2', 'storage')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === ground)!.bays['B2']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('keeps what is painted in the bays that survive', () => {
+    const { s, ground, upper } = stacked()
+    s.paintBay(upper, 'A1', 'storage')
+    s.removeBay(ground, 'C3')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['A1']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('adds missing bays at the grain the source uses', () => {
+    const { s, ground, upper } = stacked()
+    s.setBayGrain(ground, 'B2', 'coarse')
+    s.removeBay(upper, 'B2')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['B2']!.grain).toBe('coarse')
+  })
+
+  it('does not re-cut a bay that is already there', () => {
+    const { s, ground, upper } = stacked()
+    s.setBayGrain(ground, 'B2', 'coarse')
+    s.setBayGrain(upper, 'B2', 'merged')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['B2']!.grain).toBe('merged')
+  })
+
+  it('reports how many levels it changed', () => {
+    const { s, ground } = stacked()
+    expect(s.applyFootprintToAllLevels(ground)).toBe(0)
+    s.removeBay(ground, 'B2')
+    expect(s.applyFootprintToAllLevels(ground)).toBe(1)
+  })
+
+  it('is one undo step', () => {
+    const { s, ground, upper } = stacked()
+    s.batch(() => {
+      s.removeBay(ground, 'B2')
+      s.removeBay(ground, 'C2')
+    })
+    s.applyFootprintToAllLevels(ground)
+    s.undo()
+    expect(Object.keys(s.project.levels.find((l) => l.id === upper)!.bays)).toHaveLength(9)
+    expect(Object.keys(s.project.levels.find((l) => l.id === ground)!.bays)).toHaveLength(7)
+  })
+
+  it('drops a selection left on a bay it removed', () => {
+    const { s, ground, upper } = stacked()
+    s.select({ kind: 'bay', levelId: upper, bayKey: 'B2' })
+    s.removeBay(ground, 'B2')
+    s.applyFootprintToAllLevels(ground)
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+
+  it('refuses a level that is not there', () => {
+    const { s } = stacked()
+    expect(() => s.applyFootprintToAllLevels('nope')).toThrow(/no level/)
+  })
+})
+
+describe('resizing the field', () => {
+  it('fills the positions the field grew into', () => {
+    const s = store()
+    s.setFieldExtent(5, 3)
+    expect(s.project.bayCols).toBe(5)
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(15)
+    expect(s.project.levels[0]!.bays['E3']).toBeDefined()
+  })
+
+  it('leaves what was already painted alone', () => {
+    const s = store()
+    s.paintBay(s.currentLevelId, 'B2', 'storage')
+    s.setFieldExtent(5, 5)
+    expect(s.project.levels[0]!.bays['B2']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('does not refill bays the footprint deliberately dropped', () => {
+    const s = store()
+    s.removeBay(s.currentLevelId, 'B2')
+    s.setFieldExtent(5, 3)
+    expect(s.project.levels[0]!.bays['B2']).toBeUndefined()
+    expect(s.project.levels[0]!.bays['D2']).toBeDefined()
+  })
+
+  it('drops the bays that fall outside a shrunk field', () => {
+    const s = store()
+    s.setFieldExtent(2, 2)
+    expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A1', 'A2', 'B1', 'B2'])
+  })
+
+  it('resizes every level, not just the current one', () => {
+    const s = store()
+    s.addLevel(8, 'Upper')
+    s.setFieldExtent(4, 1)
+    for (const level of s.project.levels) {
+      expect(Object.keys(level.bays).sort()).toEqual(['A1', 'B1', 'C1', 'D1'])
+    }
+  })
+
+  it('takes the new grain only for the bays it adds', () => {
+    const s = store()
+    s.setBayGrain(s.currentLevelId, 'A1', 'merged')
+    s.setFieldExtent(4, 3, 'coarse')
+    expect(s.project.levels[0]!.bays['A1']!.grain).toBe('merged')
+    expect(s.project.levels[0]!.bays['D1']!.grain).toBe('coarse')
+  })
+
+  it('is one undo step', () => {
+    const s = store()
+    s.setFieldExtent(6, 6)
+    s.undo()
+    expect(s.project.bayCols).toBe(3)
+    expect(Object.keys(s.project.levels[0]!.bays)).toHaveLength(9)
+  })
+
+  it('refuses a size that would empty a level', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      for (const bayKey of Object.keys(s.project.levels[0]!.bays)) {
+        if (bayKey !== 'C3') s.removeBay(levelId, bayKey)
+      }
+    })
+    expect(() => s.setFieldExtent(2, 2)).toThrow(/would leave level 'Ground' with no bays/)
+    expect(s.project.bayCols).toBe(3)
+    expect(s.project.levels[0]!.bays['C3']).toBeDefined()
+  })
+
+  it('shrinking one way while growing the other can keep a level alive', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.batch(() => {
+      for (const bayKey of Object.keys(s.project.levels[0]!.bays)) {
+        if (bayKey !== 'C3') s.removeBay(levelId, bayKey)
+      }
+    })
+    s.setFieldExtent(1, 5)
+    expect(Object.keys(s.project.levels[0]!.bays).sort()).toEqual(['A4', 'A5'])
+  })
+
+  it('never overwrites a bay already standing where the field grew', () => {
+    const s = store()
+    // Reachable only from a document that predates the import check, but the
+    // fill loop is what would destroy it, so it guards itself.
+    s.project.levels[0]!.bays['E1'] = { grain: 'merged', cells: [{ module: 'vault', heightCells: 1, ceiling: 'flat', sockets: { n: 'solid', e: 'solid', s: 'solid', w: 'solid', up: 'solid', down: 'solid' } }] }
+    s.setFieldExtent(6, 3)
+    expect(s.project.levels[0]!.bays['E1']!.cells[0]!.module).toBe('vault')
+    expect(s.project.levels[0]!.bays['D1']!.cells[0]!.module).toBe('empty')
+  })
+
+  it('honours the §15 cap', () => {
+    const s = store()
+    expect(() => s.setFieldExtent(9, 3)).toThrow(/bayCols must be an integer between 1 and 8/)
+    expect(() => s.setFieldExtent(3, 0)).toThrow(RangeError)
+    expect(s.project.bayCols).toBe(3)
+  })
+
+  it('drops a selection left outside the field', () => {
+    const s = store()
+    s.select({ kind: 'bay', levelId: s.currentLevelId, bayKey: 'C3' })
+    s.setFieldExtent(2, 2)
+    expect(s.selection).toEqual({ kind: 'none' })
+  })
+})
+
+/** PRD §15 open question 2 — the field is capped while V1 is still O(n²). */
+describe('the bay field cap', () => {
+  it('accepts a field up to 8x8', () => {
+    expect(Object.keys(createProject({ bayCols: 8, bayRows: 8 }).levels[0]!.bays)).toHaveLength(64)
+  })
+
+  it('rejects a field wider than the cap', () => {
+    expect(() => createProject({ bayCols: 9 })).toThrow(/bayCols must be an integer between 1 and 8/)
+  })
+
+  it('rejects a field taller than the cap', () => {
+    expect(() => createProject({ bayRows: 12 })).toThrow(/bayRows must be an integer between 1 and 8/)
+  })
+
+  it('rejects a non-integer or empty field', () => {
+    expect(() => createProject({ bayCols: 2.5 })).toThrow(RangeError)
+    expect(() => createProject({ bayRows: 0 })).toThrow(RangeError)
   })
 })

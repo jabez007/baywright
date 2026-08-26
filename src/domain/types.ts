@@ -17,6 +17,13 @@ export type Face = 'n' | 'e' | 's' | 'w' | 'up' | 'down'
 /** §5.4 — what opening (if any) a face carries. */
 export type Socket = 'solid' | 'corridor' | 'arch' | 'window' | 'bars' | 'shaft'
 
+/** Runtime guard for project imports and store actions. */
+export function isSocketValidForFace(face: Face, socket: Socket): boolean {
+  return face === 'up' || face === 'down'
+    ? socket === 'solid' || socket === 'shaft'
+    : socket !== 'shaft'
+}
+
 /** §5.5 — abstract material roles a palette binds to concrete block IDs. */
 export type MaterialRole = 'floor' | 'wall' | 'ceiling' | 'accent' | 'trim' | 'light'
 
@@ -86,6 +93,12 @@ export interface AABB {
 
 /** §5.1 — bays sit on a 12-block pitch and span local 0..12 inclusive. */
 export const BAY_PITCH = 12
+
+/**
+ * §15 open question 2 — the field is capped while the collision check is still
+ * O(n²) per bay. An 8x8 field at 3 levels is 192 bays, up to 1728 fine cells.
+ */
+export const MAX_BAY_FIELD = 8
 
 /** §5.3 — level y values and cell heights are quantised to 4 blocks. */
 export const LEVEL_PITCH = 4

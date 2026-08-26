@@ -172,8 +172,8 @@ export function sortedLevels(project: Project): Level[] {
 // --------------------------------------------------------------------------
 
 /**
- * A dropped ceiling inserts a solid plane at `y + 4`, which only means anything
- * when the cell is at least 2 cells tall. `flat` and `vaulted` share an AABB.
+ * A dropped ceiling inserts a solid plane at `y + 4`. New edits restrict this
+ * to 2-cell-high rooms, while height-3 schema-v1 rooms retain their old plenum.
  */
 export function hasDroppedCeiling(cell: Cell): boolean {
   return cell.ceiling === 'dropped' && cell.heightCells >= 2
@@ -253,7 +253,7 @@ export function shellBlocks(project: Project, ref: CellRef): Map<ShellRole, Set<
   const interior = cellInterior(project, ref)
   const plenum = cellPlenum(project, ref)
   const dropped = droppedCeilingY(level, cell)
-  const { voids, bars } = socketOpenings(outer, interior, cell.sockets)
+  const { voids, bars } = socketOpenings(outer, interior, plenum, cell.sockets)
 
   const out = new Map<ShellRole, Set<string>>()
   for (let y = outer.y0; y <= outer.y1; y++) {
@@ -286,19 +286,19 @@ export function shellBlocks(project: Project, ref: CellRef): Map<ShellRole, Set<
 /**
  * Whole-project block map: `"x,y,z"` -> blockId. Used by exporters and the BOM.
  *
- * Memoised on a hash of the project document — recompute on mutation, not on
- * every render. The returned map is shared with the cache; treat it as read-only.
+ * Memoised on the exact serialized project document. Every return value is a
+ * detached map so callers cannot modify the cached copy.
  */
 export function resolveBlocks(project: Project): Map<string, string> {
-  const hash = hashProject(project)
+  const serialized = hashProject(project)
   const hit = blockCache.get(project)
-  if (hit && hit.hash === hash) return hit.blocks
+  if (hit && hit.serialized === serialized) return new Map(hit.blocks)
   const blocks = computeBlocks(project)
-  blockCache.set(project, { hash, blocks })
-  return blocks
+  blockCache.set(project, { serialized, blocks })
+  return new Map(blocks)
 }
 
-const blockCache = new WeakMap<Project, { hash: string; blocks: Map<string, string> }>()
+const blockCache = new WeakMap<Project, { serialized: string; blocks: Map<string, string> }>()
 
 function computeBlocks(project: Project): Map<string, string> {
   const blocks = new Map<string, string>()
@@ -317,7 +317,100 @@ function computeBlocks(project: Project): Map<string, string> {
       }
     }
   }
+  carveValidMergeGroups(project, blocks)
   return blocks
+}
+
+interface MergeBlockMember {
+  ref: CellRef
+  level: Level
+  bay: Bay
+  cell: Cell
+  u: number
+  v: number
+}
+
+/** Every merge group in the project, with its members placed on the cell lattice. */
+function mergeGroupMembers(project: Project): Map<string, MergeBlockMember[]> {
+  const groups = new Map<string, MergeBlockMember[]>()
+  for (const ref of allCellRefs(project)) {
+    const { level, bay, cell, a, b } = resolveCell(project, ref)
+    if (!cell.mergeGroup) continue
+    const { i, j } = parseBayKey(ref.bayKey)
+    const n = GRAIN_AXIS_CELLS[bay.grain]
+    const member = { ref, level, bay, cell, u: i * n + a, v: j * n + b }
+    const existing = groups.get(cell.mergeGroup)
+    if (existing) existing.push(member)
+    else groups.set(cell.mergeGroup, [member])
+  }
+  return groups
+}
+
+/**
+ * Do these members really form one room? Same level, same grain, same height,
+ * same ceiling, and a filled rectangle — the V7 conditions, which is the point:
+ * only a group that passes them gets its shared walls carved away below.
+ */
+function isOneRoom(members: MergeBlockMember[]): boolean {
+  const first = members[0]
+  if (!first || members.length < 2) return false
+  if (
+    members.some(
+      (member) =>
+        member.level.id !== first.level.id ||
+        member.bay.grain !== first.bay.grain ||
+        member.cell.heightCells !== first.cell.heightCells ||
+        member.cell.ceiling !== first.cell.ceiling,
+    )
+  ) {
+    return false
+  }
+
+  const us = members.map((member) => member.u)
+  const vs = members.map((member) => member.v)
+  const width = Math.max(...us) - Math.min(...us) + 1
+  const height = Math.max(...vs) - Math.min(...vs) + 1
+  const positions = new Set(members.map((member) => `${member.u},${member.v}`))
+  return positions.size === members.length && width * height === members.length
+}
+
+/**
+ * The merge groups whose shared walls `resolveBlocks` actually removes.
+ *
+ * Validation needs this: two cells in one of these groups are a single room in
+ * the export, so reachability rules must treat the seam as open even though the
+ * cells kept their default `solid` sockets.
+ */
+export function validMergeGroupIds(project: Project): Set<string> {
+  const valid = new Set<string>()
+  for (const [groupId, members] of mergeGroupMembers(project)) {
+    if (isOneRoom(members)) valid.add(groupId)
+  }
+  return valid
+}
+
+/** Remove only vertical shell blocks strictly inside a valid merged rectangle. */
+function carveValidMergeGroups(project: Project, blocks: Map<string, string>): void {
+  for (const members of mergeGroupMembers(project).values()) {
+    if (!isOneRoom(members)) continue
+    const first = members[0]!
+
+    const boxes = members.map((member) => cellAABB(project, member.ref))
+    const x0 = Math.min(...boxes.map((box) => box.x0))
+    const x1 = Math.max(...boxes.map((box) => box.x1))
+    const z0 = Math.min(...boxes.map((box) => box.z0))
+    const z1 = Math.max(...boxes.map((box) => box.z1))
+    const y0 = boxes[0]!.y0
+    const y1 = boxes[0]!.y1
+    const dropped = droppedCeilingY(first.level, first.cell)
+
+    for (let y = y0 + 1; y < y1; y++) {
+      if (y === dropped) continue
+      for (let z = z0 + 1; z < z1; z++) {
+        for (let x = x0 + 1; x < x1; x++) blocks.delete(blockKey(x, y, z))
+      }
+    }
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -337,6 +430,7 @@ const HORIZONTAL_FACES = ['n', 'e', 's', 'w'] as const
 function socketOpenings(
   outer: AABB,
   interior: AABB,
+  plenum: AABB | null,
   sockets: Record<Face, Socket>,
 ): { voids: Set<string>; bars: Set<string> } {
   const voids = new Set<string>()
@@ -346,14 +440,17 @@ function socketOpenings(
     const socket = sockets[face]
     if (socket === 'solid' || socket === 'shaft') continue
     const target = socket === 'bars' ? bars : voids
-    const [yLo, yHi] = openingYSpan(socket, interior)
     const eastWest = face === 'e' || face === 'w'
     const [cLo, cHi] = openingCrossSpan(socket, eastWest ? [interior.z0, interior.z1] : [interior.x0, interior.x1])
     const plane = face === 'e' ? outer.x1 : face === 'w' ? outer.x0 : face === 'n' ? outer.z0 : outer.z1
-    for (let y = yLo; y <= yHi; y++) {
-      for (let c = cLo; c <= cHi; c++) {
-        target.add(eastWest ? blockKey(plane, y, c) : blockKey(c, y, plane))
-      }
+    addHorizontalOpening(target, plane, eastWest, cLo, cHi, openingYSpan(socket, interior))
+
+    if (plenum && socket !== 'bars') {
+      const ySpan: [number, number] =
+        socket === 'window'
+          ? [midpoint(plenum.y0, plenum.y1), midpoint(plenum.y0, plenum.y1)]
+          : [plenum.y0, plenum.y1]
+      addHorizontalOpening(target, plane, eastWest, cLo, cHi, ySpan)
     }
   }
 
@@ -368,6 +465,21 @@ function socketOpenings(
   }
 
   return { voids, bars }
+}
+
+function addHorizontalOpening(
+  target: Set<string>,
+  plane: number,
+  eastWest: boolean,
+  cLo: number,
+  cHi: number,
+  [yLo, yHi]: [number, number],
+): void {
+  for (let y = yLo; y <= yHi; y++) {
+    for (let c = cLo; c <= cHi; c++) {
+      target.add(eastWest ? blockKey(plane, y, c) : blockKey(c, y, plane))
+    }
+  }
 }
 
 function openingYSpan(socket: Socket, interior: AABB): [number, number] {
@@ -463,15 +575,9 @@ function blockForRole(role: ShellRole, palette: Palette): string {
 }
 
 /**
- * Cheap content hash of the document, used only to invalidate the block cache.
- * Key reordering produces a different hash and so a harmless recompute.
+ * Exact serialized content key for block-cache invalidation. Key reordering
+ * produces a different key and therefore a harmless recompute.
  */
 export function hashProject(project: Project): string {
-  const json = JSON.stringify(project)
-  let h = 0x811c9dc5
-  for (let i = 0; i < json.length; i++) {
-    h ^= json.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return `${json.length}:${(h >>> 0).toString(16)}`
+  return JSON.stringify(project)
 }
