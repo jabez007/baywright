@@ -401,6 +401,42 @@ describe('bays', () => {
     expect(stamped.cells[1]!.sockets.n).toBe('corridor')
     expect(stamped.cells[7]!.sockets.s).toBe('corridor')
   })
+
+  it('stamps a sparse multi-bay layout and grows into absent slots', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.removeBay(levelId, 'C3')
+    s.clearHistory()
+
+    const stamped = s.stampLayoutPattern(levelId, 'A1', 'stronghold-loop', 0)
+
+    expect(stamped).toHaveLength(8)
+    expect(s.project.levels[0]!.bays['C3']).toBeDefined()
+    expect(s.project.levels[0]!.bays['B2']!.cells.every((cell) => cell.module === 'empty')).toBe(true)
+    expect(s.undoDepth).toBe(1)
+  })
+
+  it('assigns one merge group across a grand chamber layout', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+
+    s.stampLayoutPattern(levelId, 'A1', 'grand-chamber', 0)
+
+    const groupIds = ['A1', 'B1', 'A2', 'B2'].map((bayKey) =>
+      s.project.levels[0]!.bays[bayKey]!.cells[0]!.mergeGroup,
+    )
+    expect(new Set(groupIds).size).toBe(1)
+    expect(groupIds[0]).toBeTruthy()
+  })
+
+  it('rejects an out-of-bounds layout without changing the project', () => {
+    const s = store()
+    const before = s.toJSON()
+
+    expect(() => s.stampLayoutPattern(s.currentLevelId, 'C3', 'grand-chamber', 0)).toThrow(/outside/)
+    expect(s.toJSON()).toStrictEqual(before)
+    expect(s.undoDepth).toBe(0)
+  })
 })
 
 describe('cells', () => {

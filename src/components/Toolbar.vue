@@ -2,18 +2,21 @@
 /** PRD §10: project commands above, contextual canvas controls below. */
 import { computed } from 'vue'
 
+import { LAYOUT_PATTERN_LIST } from '../domain/layouts.js'
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
-import { BAY_PATTERN_LIST, type PatternRotation } from '../domain/patterns.js'
+import { BAY_PATTERN_LIST, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
 import { GRAIN_LABELS, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
 
 const props = defineProps<{
   view: 'bay' | 'cell'
-  tool: 'select' | 'paint' | 'stamp' | 'empty' | 'footprint'
+  tool: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint'
   moduleId: string
   patternId: string
   patternRotation: PatternRotation
+  layoutId: string
+  layoutRotation: QuarterTurns
   grain: Grain
   saveStatus: SaveStatus
   saveError?: Error | undefined
@@ -22,10 +25,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'set-view': [value: 'bay' | 'cell']
-  'set-tool': [value: 'select' | 'paint' | 'stamp' | 'empty' | 'footprint']
+  'set-tool': [value: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint']
   'set-module': [value: string]
   'set-pattern': [value: string]
   'set-pattern-rotation': [value: PatternRotation]
+  'set-layout': [value: string]
+  'set-layout-rotation': [value: QuarterTurns]
   'set-grain': [value: Grain]
   export: []
   png: []
@@ -51,6 +56,7 @@ const TOOLS = [
   { id: 'select', label: 'Select', title: 'Inspect the plan without changing it' },
   { id: 'paint', label: 'Paint', title: 'Apply the chosen module' },
   { id: 'stamp', label: 'Stamp', title: 'Apply a reusable pattern to a whole bay' },
+  { id: 'layout', label: 'Layout', title: 'Apply a reusable arrangement from its north-west anchor' },
   { id: 'empty', label: 'Empty', title: 'Clear modules without changing bay detail' },
   { id: 'footprint', label: 'Footprint', title: 'Add and remove bays' },
 ] as const
@@ -71,6 +77,13 @@ const ROTATIONS: readonly { value: PatternRotation; label: string; title: string
   { value: 1, label: '90°', title: 'Rotate the pattern 90 degrees clockwise' },
   { value: 2, label: '180°', title: 'Rotate the pattern 180 degrees' },
   { value: 3, label: '270°', title: 'Rotate the pattern 270 degrees clockwise' },
+]
+
+const LAYOUT_ROTATIONS: readonly { value: QuarterTurns; label: string }[] = [
+  { value: 0, label: '0°' },
+  { value: 1, label: '90°' },
+  { value: 2, label: '180°' },
+  { value: 3, label: '270°' },
 ]
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
@@ -106,6 +119,10 @@ function chooseModule(event: Event): void {
 
 function choosePattern(event: Event): void {
   emit('set-pattern', (event.target as HTMLSelectElement).value)
+}
+
+function chooseLayout(event: Event): void {
+  emit('set-layout', (event.target as HTMLSelectElement).value)
 }
 </script>
 
@@ -145,7 +162,7 @@ function choosePattern(event: Event): void {
     </div>
 
     <div class="canvas-bar">
-      <div v-if="tool !== 'footprint' && tool !== 'stamp'" class="labelled-group">
+      <div v-if="tool !== 'footprint' && tool !== 'stamp' && tool !== 'layout'" class="labelled-group">
         <span class="group-label">View</span>
         <div class="group" role="group" aria-label="View">
           <button
@@ -199,6 +216,15 @@ function choosePattern(event: Event): void {
         </select>
       </label>
 
+      <label v-if="tool === 'layout'" class="module-picker">
+        <span class="group-label">Layout pattern</span>
+        <select aria-label="Layout pattern" :value="layoutId" :disabled="pngBusy" @change="chooseLayout">
+          <option v-for="layout in LAYOUT_PATTERN_LIST" :key="layout.id" :value="layout.id">
+            {{ layout.name }}
+          </option>
+        </select>
+      </label>
+
       <div v-if="tool === 'stamp'" class="labelled-group">
         <span class="group-label">Rotation</span>
         <div class="group" role="group" aria-label="Pattern rotation">
@@ -210,6 +236,22 @@ function choosePattern(event: Event): void {
             :disabled="pngBusy"
             :title="option.title"
             @click="emit('set-pattern-rotation', option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="tool === 'layout'" class="labelled-group">
+        <span class="group-label">Rotation</span>
+        <div class="group" role="group" aria-label="Layout rotation">
+          <button
+            v-for="option in LAYOUT_ROTATIONS"
+            :key="option.value"
+            type="button"
+            :aria-pressed="layoutRotation === option.value"
+            :disabled="pngBusy"
+            @click="emit('set-layout-rotation', option.value)"
           >
             {{ option.label }}
           </button>

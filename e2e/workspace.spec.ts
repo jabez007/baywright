@@ -189,6 +189,21 @@ test('auto-fits a stamped pattern to an adjacent bay opening', async ({ page }) 
   await expect(page.getByRole('button', { name: /^B2 cell 4 · Empty/ })).toBeVisible()
 })
 
+test('stamps and undoes a multi-bay grand chamber layout', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Layout', exact: true }).click()
+  await page.getByLabel('Layout pattern', { exact: true }).selectOption('grand-chamber')
+  await page.locator('[data-plan-target="bay"][data-bay="A1"]').click()
+
+  await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*merged grain, Arena/)
+  await expect(page.locator('[data-plan-target="bay"][data-bay="B2"]')).toHaveAccessibleName(/B2.*merged grain, Arena/)
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*fine grain, Empty/)
+  await expect(page.locator('[data-plan-target="bay"][data-bay="B2"]')).toHaveAccessibleName(/B2.*fine grain, Empty/)
+})
+
 test('starts a new project from the layered base example', async ({ page }) => {
   await page.goto('/')
 

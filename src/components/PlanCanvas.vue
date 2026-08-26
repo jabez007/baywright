@@ -14,7 +14,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey } from '../domain/geometry.js'
-import type { PatternRotation } from '../domain/patterns.js'
+import type { PatternRotation, QuarterTurns } from '../domain/patterns.js'
 import { BAY_PITCH, GRAIN_AXIS_CELLS, type CellRef, type Face, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import BayTile from './BayTile.vue'
@@ -22,10 +22,12 @@ import { moduleFill } from './fills.js'
 
 const props = defineProps<{
   mode: 'bay' | 'cell' | 'footprint'
-  tool: 'select' | 'paint' | 'stamp' | 'empty'
+  tool: 'select' | 'paint' | 'stamp' | 'layout' | 'empty'
   moduleId: string
   patternId: string
   patternRotation: PatternRotation
+  layoutId: string
+  layoutRotation: QuarterTurns
   grain: Grain
   /** Held true while a PNG run owns the canvas, so gestures cannot disturb it. */
   frozen?: boolean
@@ -418,12 +420,18 @@ function onPointerUp(): void {
 
   const targets = [...current.targets]
   if (props.mode === 'bay') {
-    store.batch(() => {
-      for (const target of targets) {
-        if (props.tool === 'stamp') store.stampBayPattern(levelId, target, props.patternId, props.patternRotation)
-        else store.paintBay(levelId, target, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
-      }
-    })
+    try {
+      store.batch(() => {
+        for (const target of targets) {
+          if (props.tool === 'stamp') store.stampBayPattern(levelId, target, props.patternId, props.patternRotation)
+          else if (props.tool === 'layout') store.stampLayoutPattern(levelId, target, props.layoutId, props.layoutRotation)
+          else store.paintBay(levelId, target, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
+        }
+      })
+    } catch (cause) {
+      emit('error', (cause as Error).message)
+      return
+    }
     const last = targets.at(-1)
     if (last) store.select({ kind: 'bay', levelId, bayKey: last })
     return
@@ -550,8 +558,14 @@ function activateTarget(target: Target): void {
       store.select({ kind: 'bay', levelId, bayKey })
       return
     }
-    if (props.tool === 'stamp') store.stampBayPattern(levelId, bayKey, props.patternId, props.patternRotation)
-    else store.paintBay(levelId, bayKey, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
+    try {
+      if (props.tool === 'stamp') store.stampBayPattern(levelId, bayKey, props.patternId, props.patternRotation)
+      else if (props.tool === 'layout') store.stampLayoutPattern(levelId, bayKey, props.layoutId, props.layoutRotation)
+      else store.paintBay(levelId, bayKey, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
+    } catch (cause) {
+      emit('error', (cause as Error).message)
+      return
+    }
     store.select({ kind: 'bay', levelId, bayKey })
     return
   }

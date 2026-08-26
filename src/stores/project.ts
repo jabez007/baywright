@@ -14,9 +14,10 @@ import { computed, ref, toRaw } from 'vue'
 
 import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
+import { rotatedLayout } from '../domain/layouts.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
-import { bayFromPattern, type PatternRotation } from '../domain/patterns.js'
+import { bayFromPattern, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
 import { projectFromTemplate, type ProjectTemplateId } from '../domain/templates.js'
 import { validate, type Issue } from '../domain/validate.js'
 import {
@@ -581,6 +582,38 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /** Stamp a whole bay arrangement relative to its north-west anchor. */
+  function stampLayoutPattern(
+    levelId: string,
+    anchorBayKey: string,
+    layoutId: string,
+    quarterTurns: QuarterTurns,
+  ): string[] {
+    return mutate(() => {
+      const level = requireLevel(levelId)
+      const anchor = parseBayKey(anchorBayKey)
+      const layout = rotatedLayout(layoutId, quarterTurns)
+      const targets = layout.placements.map((placement) => ({
+        placement,
+        bayKey: bayKeyOf(anchor.i + placement.i, anchor.j + placement.j),
+      }))
+
+      // Resolve every address before painting so an out-of-bounds layout is atomic.
+      for (const { bayKey } of targets) assertInField(bayKey)
+      const mergeGroups = new Map<string, string>()
+      for (const { placement, bayKey } of targets) {
+        const bay = bayFromPattern(placement.patternId, placement.quarterTurns)
+        if (placement.mergeSlot) {
+          const groupId = mergeGroups.get(placement.mergeSlot) ?? newId()
+          mergeGroups.set(placement.mergeSlot, groupId)
+          for (const cell of bay.cells) cell.mergeGroup = groupId
+        }
+        level.bays[bayKey] = bay
+      }
+      return targets.map(({ bayKey }) => bayKey)
+    })
+  }
+
   function uniformModule(bay: Bay): string | null {
     const first = bay.cells[0]?.module
     if (first === undefined) return null
@@ -858,6 +891,7 @@ export const useProjectStore = defineStore('project', () => {
     setBayGrain,
     paintBay,
     stampBayPattern,
+    stampLayoutPattern,
     paintCell,
     paintCells,
     setCellHeight,

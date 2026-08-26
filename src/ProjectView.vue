@@ -6,8 +6,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { downloadProject, parseProject } from './export/json.js'
 import { exportSvgAsPng, pngFilename } from './export/png.js'
 import { parseBayKey } from './domain/geometry.js'
+import { LAYOUT_PATTERN_LIST } from './domain/layouts.js'
 import { MODULE_LIST } from './domain/modules.js'
-import { BAY_PATTERN_LIST, type PatternRotation } from './domain/patterns.js'
+import { BAY_PATTERN_LIST, type PatternRotation, type QuarterTurns } from './domain/patterns.js'
 import type { ProjectTemplateId } from './domain/templates.js'
 import type { Grain, Project } from './domain/types.js'
 import { loadLastOpenedProject, loadProject as loadStoredProject } from './persistence/db.js'
@@ -27,15 +28,17 @@ const route = useRoute()
 const router = useRouter()
 
 const view = ref<'bay' | 'cell'>('bay')
-type Tool = 'select' | 'paint' | 'stamp' | 'empty' | 'footprint'
+type Tool = 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint'
 
 const tool = ref<Tool>('select')
 const mode = computed<'bay' | 'cell' | 'footprint'>(() =>
-  tool.value === 'footprint' ? 'footprint' : tool.value === 'stamp' ? 'bay' : view.value,
+  tool.value === 'footprint' ? 'footprint' : tool.value === 'stamp' || tool.value === 'layout' ? 'bay' : view.value,
 )
 const moduleId = ref<string>(MODULE_LIST[0]?.id ?? 'empty')
 const patternId = ref<string>(BAY_PATTERN_LIST[0]?.id ?? '')
 const patternRotation = ref<PatternRotation>('auto')
+const layoutId = ref<string>(LAYOUT_PATTERN_LIST[0]?.id ?? '')
+const layoutRotation = ref<QuarterTurns>(0)
 const grain = ref<Grain>('fine')
 
 const booted = ref(false)
@@ -76,6 +79,8 @@ const hint = computed(() =>
     ? 'Click or drag to add and remove bays. Ctrl/Cmd+Z undoes the last change.'
     : tool.value === 'stamp'
       ? 'Click or drag to stamp the chosen pattern onto whole bays.'
+    : tool.value === 'layout'
+      ? 'Click a bay to use it as the north-west anchor for the chosen layout.'
     : tool.value === 'select'
       ? mode.value === 'bay'
         ? 'Click a bay to inspect it. Double-click to edit its cells.'
@@ -470,6 +475,8 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       :module-id="moduleId"
       :pattern-id="patternId"
       :pattern-rotation="patternRotation"
+      :layout-id="layoutId"
+      :layout-rotation="layoutRotation"
       :grain="grain"
       :save-status="autosave.status.value"
       :save-error="autosave.error.value"
@@ -479,6 +486,8 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       @set-module="moduleId = $event"
       @set-pattern="patternId = $event"
       @set-pattern-rotation="patternRotation = $event"
+      @set-layout="layoutId = $event"
+      @set-layout-rotation="layoutRotation = $event"
       @set-grain="grain = $event"
       @export="onExport"
       @png="onExportPng"
@@ -530,6 +539,8 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
             :module-id="moduleId"
             :pattern-id="patternId"
             :pattern-rotation="patternRotation"
+            :layout-id="layoutId"
+            :layout-rotation="layoutRotation"
             :grain="grain"
             :frozen="pngBusy"
             @open-bay="view = 'cell'"
