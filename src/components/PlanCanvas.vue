@@ -14,6 +14,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey } from '../domain/geometry.js'
+import type { QuarterTurns } from '../domain/patterns.js'
 import { BAY_PITCH, GRAIN_AXIS_CELLS, type CellRef, type Face, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import BayTile from './BayTile.vue'
@@ -21,8 +22,10 @@ import { moduleFill } from './fills.js'
 
 const props = defineProps<{
   mode: 'bay' | 'cell' | 'footprint'
-  tool: 'select' | 'paint' | 'empty'
+  tool: 'select' | 'paint' | 'stamp' | 'empty'
   moduleId: string
+  patternId: string
+  patternRotation: QuarterTurns
   grain: Grain
   /** Held true while a PNG run owns the canvas, so gestures cannot disturb it. */
   frozen?: boolean
@@ -239,7 +242,11 @@ function selectedCells(bayKey: string): ReadonlySet<number> {
 // --------------------------------------------------------------------------
 
 const paintModuleId = computed(() => props.tool === 'empty' ? 'empty' : props.moduleId)
-const previewFill = computed(() => stroke.value?.kind === 'select' ? 'var(--accent)' : moduleFill(paintModuleId.value))
+const previewFill = computed(() =>
+  stroke.value?.kind === 'select' || props.tool === 'stamp'
+    ? 'var(--accent)'
+    : moduleFill(paintModuleId.value),
+)
 
 /** Interior rects for whatever the current stroke would touch. */
 const preview = computed(() => {
@@ -413,7 +420,8 @@ function onPointerUp(): void {
   if (props.mode === 'bay') {
     store.batch(() => {
       for (const target of targets) {
-        store.paintBay(levelId, target, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
+        if (props.tool === 'stamp') store.stampBayPattern(levelId, target, props.patternId, props.patternRotation)
+        else store.paintBay(levelId, target, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
       }
     })
     const last = targets.at(-1)
@@ -542,7 +550,8 @@ function activateTarget(target: Target): void {
       store.select({ kind: 'bay', levelId, bayKey })
       return
     }
-    store.paintBay(levelId, bayKey, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
+    if (props.tool === 'stamp') store.stampBayPattern(levelId, bayKey, props.patternId, props.patternRotation)
+    else store.paintBay(levelId, bayKey, paintModuleId.value, props.tool === 'empty' ? undefined : props.grain)
     store.select({ kind: 'bay', levelId, bayKey })
     return
   }

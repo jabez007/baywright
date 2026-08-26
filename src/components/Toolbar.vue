@@ -3,14 +3,17 @@
 import { computed } from 'vue'
 
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
+import { BAY_PATTERN_LIST, type QuarterTurns } from '../domain/patterns.js'
 import { GRAIN_LABELS, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
 
 const props = defineProps<{
   view: 'bay' | 'cell'
-  tool: 'select' | 'paint' | 'empty' | 'footprint'
+  tool: 'select' | 'paint' | 'stamp' | 'empty' | 'footprint'
   moduleId: string
+  patternId: string
+  patternRotation: QuarterTurns
   grain: Grain
   saveStatus: SaveStatus
   saveError?: Error | undefined
@@ -19,8 +22,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'set-view': [value: 'bay' | 'cell']
-  'set-tool': [value: 'select' | 'paint' | 'empty' | 'footprint']
+  'set-tool': [value: 'select' | 'paint' | 'stamp' | 'empty' | 'footprint']
   'set-module': [value: string]
+  'set-pattern': [value: string]
+  'set-pattern-rotation': [value: QuarterTurns]
   'set-grain': [value: Grain]
   export: []
   png: []
@@ -45,6 +50,7 @@ const VIEWS = [
 const TOOLS = [
   { id: 'select', label: 'Select', title: 'Inspect the plan without changing it' },
   { id: 'paint', label: 'Paint', title: 'Apply the chosen module' },
+  { id: 'stamp', label: 'Stamp', title: 'Apply a reusable pattern to a whole bay' },
   { id: 'empty', label: 'Empty', title: 'Clear modules without changing bay detail' },
   { id: 'footprint', label: 'Footprint', title: 'Add and remove bays' },
 ] as const
@@ -58,6 +64,13 @@ const MODULE_GROUPS = [
   ...category,
   modules: MODULE_LIST.filter((module) => module.id !== 'empty' && module.category === category.id),
 }))
+
+const ROTATIONS: readonly { value: QuarterTurns; label: string }[] = [
+  { value: 0, label: '0°' },
+  { value: 1, label: '90°' },
+  { value: 2, label: '180°' },
+  { value: 3, label: '270°' },
+]
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
   idle: 'Not saved yet',
@@ -88,6 +101,10 @@ function statusAnnouncement(): string {
 
 function chooseModule(event: Event): void {
   emit('set-module', (event.target as HTMLSelectElement).value)
+}
+
+function choosePattern(event: Event): void {
+  emit('set-pattern', (event.target as HTMLSelectElement).value)
 }
 </script>
 
@@ -127,7 +144,7 @@ function chooseModule(event: Event): void {
     </div>
 
     <div class="canvas-bar">
-      <div v-if="tool !== 'footprint'" class="labelled-group">
+      <div v-if="tool !== 'footprint' && tool !== 'stamp'" class="labelled-group">
         <span class="group-label">View</span>
         <div class="group" role="group" aria-label="View">
           <button
@@ -171,6 +188,31 @@ function chooseModule(event: Event): void {
           </select>
         </span>
       </label>
+
+      <label v-if="tool === 'stamp'" class="module-picker">
+        <span class="group-label">Bay pattern</span>
+        <select aria-label="Bay pattern" :value="patternId" :disabled="pngBusy" @change="choosePattern">
+          <option v-for="pattern in BAY_PATTERN_LIST" :key="pattern.id" :value="pattern.id">
+            {{ pattern.name }}
+          </option>
+        </select>
+      </label>
+
+      <div v-if="tool === 'stamp'" class="labelled-group">
+        <span class="group-label">Rotation</span>
+        <div class="group" role="group" aria-label="Pattern rotation">
+          <button
+            v-for="option in ROTATIONS"
+            :key="option.value"
+            type="button"
+            :aria-pressed="patternRotation === option.value"
+            :disabled="pngBusy"
+            @click="emit('set-pattern-rotation', option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
 
       <div v-if="tool === 'footprint' || (tool === 'paint' && view === 'bay')" class="labelled-group">
         <span class="group-label">Bay detail</span>

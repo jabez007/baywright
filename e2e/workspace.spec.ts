@@ -144,7 +144,7 @@ test('clears a bay with Empty without changing its grain', async ({ page }) => {
   await page.getByRole('button', { name: 'Paint', exact: true }).click()
   await page.getByLabel('Module', { exact: true }).selectOption('spine')
   await expect(page.getByLabel('Module', { exact: true }).locator('option[value="empty"]')).toHaveCount(0)
-  await page.getByRole('button', { name: 'coarse', exact: true }).click()
+  await page.getByRole('button', { name: 'Coarse · 7×7 rooms', exact: true }).click()
 
   const bay = page.locator('[data-plan-target="bay"][data-bay="A1"]')
   await bay.click()
@@ -153,6 +153,23 @@ test('clears a bay with Empty without changing its grain', async ({ page }) => {
   await page.getByRole('button', { name: 'Empty', exact: true }).click()
   await bay.click()
   await expect(bay).toHaveAccessibleName(/A1.*coarse grain, Empty/)
+})
+
+test('stamps a rotated bay pattern and undoes it as one edit', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Stamp', exact: true }).click()
+  await page.getByLabel('Bay pattern', { exact: true }).selectOption('t-junction')
+  await page.getByRole('button', { name: '90°', exact: true }).click()
+  await expect(page.getByRole('button', { name: '90°', exact: true })).toHaveAttribute('aria-pressed', 'true')
+
+  const bay = page.locator('[data-plan-target="bay"][data-bay="B2"]')
+  await bay.click()
+  await expect(bay).toHaveAccessibleName(/B2.*fine grain, mixed/)
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(bay).toHaveAccessibleName(/B2.*fine grain, Empty/)
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
 })
 
 test('keeps pointer focus unobtrusive while editing the footprint', async ({ page }) => {

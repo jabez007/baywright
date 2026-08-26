@@ -108,6 +108,8 @@ A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, 
 
 Palette resolves per level, overridable per cell.
 
+A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Patterns are catalog data, not persisted project data. Stamping a pattern expands it into ordinary cells, which keeps exported projects independent of the installed pattern catalog. Ship straight, corner, T-junction, four-way, stair hall, library hall, workshop, and feature chamber patterns. Rotate a pattern in 90-degree steps before stamping it.
+
 ## 6. Data model
 
 ```ts
@@ -269,7 +271,7 @@ The BOM panel recomputes 200ms after the latest document change.
 Four regions:
 
 - **Left rail.** List levels by descending y, highest first. Each entry shows its y value and name. Show the vertical gap in blocks between entries because that gap exposes collisions. Mark levels that have errors. Users edit y in the inspector rather than dragging levels to reorder them.
-- **Plan canvas.** Use SVG with separate view and tool controls. Bay view shows the full level. Cell view expands one bay and subdivides it by grain. Select is the default tool and never changes the plan. Paint applies a module. Empty clears modules without changing bay grain. Footprint adds or removes bays.
+- **Plan canvas.** Use SVG with separate view and tool controls. Bay view shows the full level. Cell view expands one bay and subdivides it by grain. Select is the default tool and never changes the plan. Paint applies a module. Stamp applies a rotated bay pattern. Empty clears modules without changing bay grain. Footprint adds or removes bays.
 
 - **Inspector.** Show properties for the selected level, bay, or cells. Controls include module, `heightCells`, ceiling, palette, sockets, merge groups, and a cell note.
 - **Output drawer.** Keep Issues and Materials collapsed until the user opens one. Group repeated connectivity warnings by bay. Clicking an issue changes to its level and selects the referenced cells. Materials shows placed blocks, raw inputs, and a smelting estimate.
@@ -281,6 +283,7 @@ Four regions:
 - Click or drag with Select to inspect a bay or a cell range without changing it.
 - Double-click a bay to open it in Cell view.
 - Choose Paint and a module, then drag across cells with a mouse, touch, or pen to apply it.
+- Choose Stamp, a bay pattern, and a rotation, then click or drag across bays to apply it.
 - Choose Empty, then click or drag to clear bays or cells. Clearing a bay preserves its grain.
 - Choose Footprint, then drag to add or remove bays.
 - Shift-drag with a mouse to create a merge group across a rectangle. The inspector provides the same merge action for a selected cell range.
@@ -409,7 +412,8 @@ The fixtures in §14 produce the expected geometry and validation results.
 
 ### v3: content and sharing, planned
 
-- Authored module presets matching stronghold, mineshaft, trial chamber, and mansion styles.
+- Implemented early: rotatable bay-pattern stamps for common passages and feature rooms.
+- Planned: starter projects and detailing kits based on stronghold, mineshaft, trial chamber, and mansion layout rules.
 - Palette editor.
 - Vanilla structure `.nbt` export with region splitting for the format limit.
 - Shareable project links after choosing a backend. See §15.

@@ -367,6 +367,21 @@ describe('bays', () => {
     expect(s.project.levels[0]!.bays['B2']!.grain).toBe('merged')
     expect(s.project.levels[0]!.bays['B2']!.cells).toHaveLength(1)
   })
+
+  it('stamps and rotates a complete bay pattern in one undo step', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+
+    s.stampBayPattern(levelId, 'B2', 't-junction', 1)
+
+    const stamped = s.project.levels[0]!.bays['B2']!
+    expect(stamped.grain).toBe('fine')
+    expect(stamped.cells[4]!.sockets).toMatchObject({ n: 'corridor', e: 'corridor', s: 'corridor', w: 'solid' })
+    expect(s.undoDepth).toBe(1)
+
+    s.undo()
+    expect(s.project.levels[0]!.bays['B2']!.cells.every((cell) => cell.module === 'empty')).toBe(true)
+  })
 })
 
 describe('cells', () => {

@@ -15,6 +15,7 @@ import { computed, ref, toRaw } from 'vue'
 import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
+import { bayFromPattern, type QuarterTurns } from '../domain/patterns.js'
 import { validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
@@ -562,6 +563,15 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /** Replace one bay with a fresh, rotated copy of a shipped pattern. */
+  function stampBayPattern(levelId: string, bayKey: string, patternId: string, quarterTurns: QuarterTurns): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      if (!level.bays[bayKey]) throw new Error(`no bay '${bayKey}' on level '${levelId}'`)
+      level.bays[bayKey] = bayFromPattern(patternId, quarterTurns)
+    })
+  }
+
   function uniformModule(bay: Bay): string | null {
     const first = bay.cells[0]?.module
     if (first === undefined) return null
@@ -819,6 +829,7 @@ export const useProjectStore = defineStore('project', () => {
     applyFootprintToAllLevels,
     setBayGrain,
     paintBay,
+    stampBayPattern,
     paintCell,
     paintCells,
     setCellHeight,
