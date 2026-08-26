@@ -1,6 +1,6 @@
 # PRD: Bay Blueprint Editor
 
-A browser-based floor plan and blueprint tool for designing modular Minecraft bases on a 12-block bay grid, with mixed fine and coarse cells, service plenums, and multi-level vertical validation.
+A browser-based floor plan and blueprint tool for designing modular Minecraft bases with 13x13 structural bays, 7x7 rooms, 5x5 utility units, service plenums, and multi-level vertical validation.
 
 **Status:** v1 implemented. v2 is partial: validators V3 and V5 are implemented, while Litematica export and 3D remain planned. v3 remains planned.
 **Stack:** Vue 3 + TypeScript + Vite
@@ -50,11 +50,13 @@ Every coordinate in the app derives from the rules in this section.
 
 A bay has one of three grain values, which determines how it subdivides.
 
-| Grain    | Cells   | Cell pitch | Cell local span | Interior span  | Interior size |
-| -------- | ------- | ---------- | --------------- | -------------- | ------------- |
-| `fine`   | 3x3 = 9 | 4          | `4a .. 4a+4`    | `4a+1 .. 4a+3` | 3x3           |
-| `coarse` | 2x2 = 4 | 6          | `6a .. 6a+6`    | `6a+1 .. 6a+5` | 5x5           |
-| `merged` | 1       | n/a        | `0 .. 12`       | `1 .. 11`      | 11x11         |
+| Grain    | Building role   | Cells   | Cell pitch | Outer size | Interior span  | Interior size |
+| -------- | --------------- | ------- | ---------- | ---------- | -------------- | ------------- |
+| `fine`   | Utility unit    | 3x3 = 9 | 4          | 5x5        | `4a+1 .. 4a+3` | 3x3           |
+| `coarse` | Functional room | 2x2 = 4 | 6          | 7x7        | `6a+1 .. 6a+5` | 5x5           |
+| `merged` | Structural bay  | 1       | n/a        | 13x13      | `1 .. 11`      | 11x11         |
+
+The outer size counts both wall planes. Adjacent cells and bays share the plane where they meet. A run of five bays is therefore 61 blocks across, not 65.
 
 Concretely, along one axis of a bay:
 

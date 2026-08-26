@@ -121,6 +121,13 @@ export const GRAIN_CELL_PITCH: Readonly<Record<Grain, number>> = {
   merged: BAY_PITCH,
 }
 
+/** Builder-facing names include each cell's inclusive outer footprint. */
+export const GRAIN_LABELS: Readonly<Record<Grain, string>> = {
+  fine: 'Fine · 5×5 units',
+  coarse: 'Coarse · 7×7 rooms',
+  merged: 'Merged · 13×13 bay',
+}
+
 /** Number of cells a bay of this grain holds. */
 export function cellCount(grain: Grain): number {
   const n = GRAIN_AXIS_CELLS[grain]

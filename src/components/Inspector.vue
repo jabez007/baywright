@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { allCellRefs, resolveCell } from '../domain/geometry.js'
 import { MODULE_LIST } from '../domain/modules.js'
-import type { Ceiling, Face, Grain, Socket } from '../domain/types.js'
+import { GRAIN_LABELS, type Ceiling, type Face, type Grain, type Socket } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 
 const emit = defineEmits<{
@@ -225,7 +225,7 @@ function mergeSelected(): void {
         <label>
           <span>Grain</span>
           <select :value="selectedBay.grain" @change="setBayGrain">
-            <option v-for="option in GRAINS" :key="option" :value="option">{{ option }}</option>
+            <option v-for="option in GRAINS" :key="option" :value="option">{{ GRAIN_LABELS[option] }}</option>
           </select>
         </label>
         <p class="field-help">Changing grain re-cuts this bay and may replace mixed cell modules.</p>

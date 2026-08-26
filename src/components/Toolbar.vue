@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
-import type { Grain } from '../domain/types.js'
+import { GRAIN_LABELS, type Grain } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
 
@@ -176,7 +176,7 @@ function chooseModule(event: Event): void {
         <span class="group-label">Bay detail</span>
         <div class="group" role="group" aria-label="Bay detail">
           <button v-for="option in GRAINS" :key="option" type="button" :aria-pressed="grain === option" :disabled="pngBusy" @click="chooseGrain(option)">
-            {{ option }}
+            {{ GRAIN_LABELS[option] }}
           </button>
         </div>
       </div>

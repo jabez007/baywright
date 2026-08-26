@@ -1,6 +1,6 @@
 # Baywright
 
-Baywright is a browser-based floor-plan editor for modular Minecraft bases. It uses a 12-block bay grid with fine, coarse, and merged cells. The current code includes the v1 multi-level editor and all seven domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules.
+Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and all seven domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules.
 
 ## Requirements
 
@@ -55,6 +55,18 @@ The v1 editor provides:
 - a level rail, selection inspector, issue list, and bill-of-materials panel;
 - a 50-entry undo and redo history; and
 - layouts for desktop and narrow viewports.
+
+## The 13 / 7 / 5 building system
+
+Baywright measures outer footprints inclusively because adjacent spaces share their wall plane. The three bay details map the building system onto one 12-block pitch:
+
+| Bay detail | Subdivision | Outer footprint | Interior |
+| ---------- | ----------- | --------------- | -------- |
+| Fine       | 3×3 units   | 5×5 each        | 3×3 each |
+| Coarse     | 2×2 rooms   | 7×7 each        | 5×5 each |
+| Merged     | One bay     | 13×13            | 11×11    |
+
+A one-cell height occupies five blocks and has a three-block interior. Taller cells share floor and ceiling planes, so two height cells occupy nine blocks and three occupy thirteen.
 
 The app has two routes: `/` and `/project/:id/level/:levelId`. The root route restores the last valid local project and then changes to its project and level URL. These URLs identify local IndexedDB records. They are not share links.
 
