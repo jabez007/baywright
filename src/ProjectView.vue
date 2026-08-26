@@ -8,6 +8,7 @@ import { exportSvgAsPng, pngFilename } from './export/png.js'
 import { parseBayKey } from './domain/geometry.js'
 import { MODULE_LIST } from './domain/modules.js'
 import { BAY_PATTERN_LIST, type QuarterTurns } from './domain/patterns.js'
+import type { ProjectTemplateId } from './domain/templates.js'
 import type { Grain, Project } from './domain/types.js'
 import { loadLastOpenedProject, loadProject as loadStoredProject } from './persistence/db.js'
 import { useAutosave } from './persistence/autosave.js'
@@ -420,7 +421,7 @@ function onChooseBay(event: Event): void {
   store.select({ kind: 'bay', levelId: store.currentLevel.id, bayKey })
 }
 
-async function onSized(options: { bayCols: number; bayRows: number }): Promise<void> {
+async function onSized(options: { bayCols: number; bayRows: number; templateId?: ProjectTemplateId }): Promise<void> {
   const intent = sizing.value
   sizing.value = null
   if (intent === 'new') {

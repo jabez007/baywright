@@ -10,6 +10,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { parseBayKey } from '../domain/geometry.js'
+import { PROJECT_TEMPLATE_LIST, type ProjectTemplateId } from '../domain/templates.js'
 import { MAX_BAY_FIELD } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 
@@ -21,7 +22,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  submit: [value: { bayCols: number; bayRows: number }]
+  submit: [value: { bayCols: number; bayRows: number; templateId?: ProjectTemplateId }]
   cancel: []
 }>()
 
@@ -32,6 +33,7 @@ const colsInput = ref<HTMLInputElement | null>(null)
 
 const cols = ref(props.bayCols)
 const rows = ref(props.bayRows)
+const startingPoint = ref<'blank' | ProjectTemplateId>('blank')
 
 watch(
   () => props.open,
@@ -44,6 +46,7 @@ watch(
     // from 6x2.
     cols.value = props.bayCols
     rows.value = props.bayRows
+    startingPoint.value = 'blank'
     dialog.value?.showModal()
     await nextTick()
     colsInput.value?.select()
@@ -67,7 +70,12 @@ function commit(field: 'cols' | 'rows'): void {
 }
 
 function onSubmit(): void {
-  emit('submit', { bayCols: clamp(cols.value), bayRows: clamp(rows.value) })
+  const size = { bayCols: clamp(cols.value), bayRows: clamp(rows.value) }
+  if (props.intent === 'new' && startingPoint.value !== 'blank') {
+    emit('submit', { ...size, templateId: startingPoint.value })
+  } else {
+    emit('submit', size)
+  }
 }
 
 /**
@@ -110,7 +118,17 @@ function onClose(): void {
         The field is the box the plan sits in. Use the Footprint tool to say which bays inside it exist.
       </p>
 
-      <div class="fields">
+      <label v-if="intent === 'new'" class="starting-point">
+        Starting point
+        <select v-model="startingPoint">
+          <option value="blank">Blank project</option>
+          <option v-for="template in PROJECT_TEMPLATE_LIST" :key="template.id" :value="template.id">
+            {{ template.name }}
+          </option>
+        </select>
+      </label>
+
+      <div v-if="intent === 'resize' || startingPoint === 'blank'" class="fields">
         <label>
           Bays across
           <input
@@ -137,12 +155,16 @@ function onClose(): void {
         </label>
       </div>
 
-      <p class="muted note">
+      <p v-if="intent === 'resize' || startingPoint === 'blank'" class="muted note">
         <!-- A new project fills its field; an existing one may have bays carved out of it. -->
         {{ clamp(cols) }}×{{ clamp(rows) }} —
         {{ intent === 'new' ? '' : 'up to ' }}{{ clamp(cols) * clamp(rows) }} bays{{
           intent === 'resize' && levelCount > 1 ? ` per level, across ${levelCount} levels` : ''
         }}. Max {{ MAX_BAY_FIELD }} per side.
+      </p>
+
+      <p v-else class="muted note">
+        {{ PROJECT_TEMPLATE_LIST.find((template) => template.id === startingPoint)?.description }}
       </p>
 
       <p v-if="dropped > 0" class="warning note" role="status">
@@ -202,6 +224,19 @@ input {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+select {
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.starting-point {
+  margin-bottom: 12px;
 }
 
 input:focus-visible {

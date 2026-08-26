@@ -38,6 +38,13 @@ describe('a new project', () => {
     expect(s.selection).toEqual({ kind: 'none' })
     expect(s.canUndo).toBe(false)
   })
+
+  it('can start from the layered example without persisting the template id', () => {
+    const document = createProject({ templateId: 'layered-base' })
+    expect(document.name).toBe('Layered base example')
+    expect(document.levels).toHaveLength(4)
+    expect(document).not.toHaveProperty('templateId')
+  })
 })
 
 describe('the undo ring buffer', () => {

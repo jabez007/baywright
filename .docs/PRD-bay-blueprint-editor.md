@@ -110,6 +110,8 @@ Palette resolves per level, overridable per cell.
 
 A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Patterns are catalog data, not persisted project data. Stamping a pattern expands it into ordinary cells, which keeps exported projects independent of the installed pattern catalog. Ship straight, corner, T-junction, four-way, stair hall, library hall, workshop, and feature chamber patterns. Rotate a pattern in 90-degree steps before stamping it.
 
+A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The level spacing lets the tallest rooms touch the next floor plane without colliding.
+
 ## 6. Data model
 
 ```ts
@@ -413,7 +415,8 @@ The fixtures in §14 produce the expected geometry and validation results.
 ### v3: content and sharing, planned
 
 - Implemented early: rotatable bay-pattern stamps for common passages and feature rooms.
-- Planned: starter projects and detailing kits based on stronghold, mineshaft, trial chamber, and mansion layout rules.
+- Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
+- Planned: detailing kits for each structure family.
 - Palette editor.
 - Vanilla structure `.nbt` export with region splitting for the format limit.
 - Shareable project links after choosing a backend. See §15.

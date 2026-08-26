@@ -16,6 +16,7 @@ import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geom
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
 import { bayFromPattern, type QuarterTurns } from '../domain/patterns.js'
+import { projectFromTemplate, type ProjectTemplateId } from '../domain/templates.js'
 import { validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
@@ -83,6 +84,7 @@ export interface NewProjectOptions {
   bayRows?: number
   origin?: { x: number; z: number }
   grain?: Grain
+  templateId?: ProjectTemplateId
 }
 
 /**
@@ -127,6 +129,7 @@ function assertFieldExtent(extent: number, label: string): number {
 }
 
 export function createProject(options: NewProjectOptions = {}): Project {
+  if (options.templateId) return projectFromTemplate(options.templateId, newId)
   const bayCols = assertFieldExtent(options.bayCols ?? 3, 'bayCols')
   const bayRows = assertFieldExtent(options.bayRows ?? 3, 'bayRows')
   return {

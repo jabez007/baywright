@@ -52,6 +52,7 @@ The v1 editor provides:
 - multi-level plans with level gaps, custom footprints, and fields up to 8 by 8 bays;
 - bay, cell, and footprint editing modes on an SVG plan;
 - module painting, rotatable bay-pattern stamps, grain changes, merge groups, cell heights, ceilings, sockets, notes, and palette overrides;
+- a sparse four-level starter project with mansion, stronghold, trial, and mineshaft palettes;
 - a level rail, selection inspector, issue list, and bill-of-materials panel;
 - a 50-entry undo and redo history; and
 - layouts for desktop and narrow viewports.
@@ -88,6 +89,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Choose **Stamp**, a bay pattern, and a rotation to replace whole bays with reusable layouts.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
+- Choose **New project** from the **Project** menu to start blank or load the layered base example.
 - Use the **Skip to plan** link or press `Tab` to enter the plan. Use the arrow keys to move between targets. Press `Enter` or `Space` to apply the active tool.
 - Shift-drag cells to make a rectangular merge group.
 - Alt-click a cell edge to cycle its horizontal socket.

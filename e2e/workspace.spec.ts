@@ -172,6 +172,24 @@ test('stamps a rotated bay pattern and undoes it as one edit', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
 })
 
+test('starts a new project from the layered base example', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByText('Project', { exact: true }).click()
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
+  await page.getByLabel('Starting point').selectOption('layered-base')
+  await expect(page.getByText(/sparse 5×5 field/)).toBeVisible()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+
+  await expect(page.getByRole('banner').getByText('Layered base example', { exact: true })).toBeVisible()
+  const levels = page.getByRole('complementary', { name: 'Levels' })
+  await expect(levels.getByText('Mineshaft infrastructure', { exact: true })).toBeVisible()
+  await expect(levels.getByText('Trial machinery', { exact: true })).toBeVisible()
+  await expect(levels.getByText('Stronghold core', { exact: true })).toBeVisible()
+  await expect(levels.getByText('Mansion living', { exact: true })).toBeVisible()
+  await expect(page.getByText(/5×5 bays/)).toBeVisible()
+})
+
 test('keeps pointer focus unobtrusive while editing the footprint', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Footprint', exact: true }).click()
