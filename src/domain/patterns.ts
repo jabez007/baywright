@@ -115,9 +115,9 @@ export const BAY_PATTERN_LIST: readonly BayPattern[] = [
   {
     id: 'feature-chamber',
     name: 'Feature chamber',
-    description: 'A merged, full-height vaulted chamber open on every side.',
+    description: 'A merged, full-height vaulted chamber with centred five-wide openings.',
     grain: 'merged',
-    cells: [{ moduleId: 'arena' }],
+    cells: [{ moduleId: 'arena', openingWidths: { n: 5, e: 5, s: 5, w: 5 } }],
   },
 ]
 
@@ -146,12 +146,24 @@ export function bayFromPattern(patternId: string, quarterTurns: QuarterTurns = 0
         rotated[a * n + (n - 1 - b)] = {
           ...cell,
           sockets: rotateSocketsClockwise(cell.sockets),
+          ...(cell.openingWidths ? { openingWidths: rotateOpeningWidthsClockwise(cell.openingWidths) } : {}),
         }
       }
     }
     cells.splice(0, cells.length, ...rotated)
   }
   return { grain: pattern.grain, cells }
+}
+
+function rotateOpeningWidthsClockwise(
+  widths: NonNullable<ReturnType<typeof cellFromModule>['openingWidths']>,
+): NonNullable<ReturnType<typeof cellFromModule>['openingWidths']> {
+  return {
+    n: widths.w,
+    e: widths.n,
+    s: widths.e,
+    w: widths.s,
+  }
 }
 
 function rotateSocketsClockwise(sockets: Record<Face, Socket>): Record<Face, Socket> {

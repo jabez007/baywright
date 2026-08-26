@@ -13,6 +13,7 @@ import {
   cellInterior,
   cellPlenum,
   footprintsOverlap,
+  horizontalOpeningSpan,
   parseBayKey,
   resolveBlocks,
   resolveCell,
@@ -442,6 +443,7 @@ export function checkConnectivity(project: Project): Issue[] {
     if (!sharesValidMergeGroup(a, b, merged)) {
       if (!isRoomPassable(link.faceA, a.cell.sockets[link.faceA])) continue
       if (!isRoomPassable(link.faceB, b.cell.sockets[link.faceB])) continue
+      if (!horizontalOpeningsOverlap(a, b, link)) continue
     }
     push(graph, a.key, b.key)
     push(graph, b.key, a.key)
@@ -472,6 +474,21 @@ export function checkConnectivity(project: Project): Issue[] {
       refs,
     }
   })
+}
+
+function horizontalOpeningsOverlap(a: CellNode, b: CellNode, link: Adjacency): boolean {
+  if (link.vertical) return true
+  const spanA = openingSpan(a, link.faceA)
+  const spanB = openingSpan(b, link.faceB)
+  return Boolean(spanA && spanB && spansOverlap(spanA[0], spanA[1], spanB[0], spanB[1]))
+}
+
+function openingSpan(node: CellNode, face: Face): [number, number] | null {
+  if (face === 'up' || face === 'down') return null
+  const crossSpan: [number, number] = face === 'e' || face === 'w'
+    ? [node.interior.z0, node.interior.z1]
+    : [node.interior.x0, node.interior.x1]
+  return horizontalOpeningSpan(node.cell.sockets[face], crossSpan, node.cell.openingWidths?.[face])
 }
 
 // --------------------------------------------------------------------------

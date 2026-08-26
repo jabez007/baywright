@@ -190,6 +190,23 @@ test('starts a new project from the layered base example', async ({ page }) => {
   await expect(page.getByText(/5×5 bays/)).toBeVisible()
 })
 
+test('shows the feature chamber five-wide openings in the inspector', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Stamp', exact: true }).click()
+  await page.getByLabel('Bay pattern', { exact: true }).selectOption('feature-chamber')
+  await page.locator('[data-plan-target="bay"][data-bay="A1"]').click()
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await page.getByRole('button', { name: 'Cells', exact: true }).click()
+  await page.getByRole('button', { name: /^A1 cell 1 · Arena/ }).click()
+
+  for (const face of ['North', 'East', 'South', 'West']) {
+    await expect(page.getByLabel(`${face} opening width`)).toHaveValue('5')
+  }
+  await page.getByLabel('East opening width').selectOption('full')
+  await expect(page.getByLabel('East opening width')).toHaveValue('full')
+})
+
 test('keeps pointer focus unobtrusive while editing the footprint', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Footprint', exact: true }).click()

@@ -7,6 +7,7 @@ import {
   cellAABB,
   cellInterior,
   cellPlenum,
+  horizontalOpeningSpan,
   interiorSpan,
   resolveBlocks,
   shellBlocks,
@@ -211,6 +212,28 @@ describe('§5.4 socket openings', () => {
 
   it('carves the full interior width and height for a corridor', () => {
     expect(resolveBlocks(withEast('corridor')).size).toBe(674 - 11 * 7)
+  })
+
+  it('centres an explicit five-block corridor on a merged face', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('merged', () => ({
+          heightCells: 2,
+          sockets: sockets({ e: 'corridor' }),
+          openingWidths: { e: 5 },
+        })),
+      }),
+    ])
+    const blocks = resolveBlocks(p)
+    expect(blocks.size).toBe(674 - 5 * 7)
+    expect(blocks.has(blockKey(12, 4, 3))).toBe(true)
+    expect(blocks.has(blockKey(12, 4, 4))).toBe(false)
+    expect(blocks.has(blockKey(12, 4, 8))).toBe(false)
+    expect(blocks.has(blockKey(12, 4, 9))).toBe(true)
+  })
+
+  it('refuses an explicit width wider than the cell interior', () => {
+    expect(() => horizontalOpeningSpan('corridor', [1, 3], 5)).toThrow(/exceeds the 3-block cell interior/)
   })
 
   it('carves 2 blocks of height for an arch', () => {

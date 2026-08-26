@@ -17,6 +17,9 @@ export type Face = 'n' | 'e' | 's' | 'w' | 'up' | 'down'
 /** §5.4 — what opening (if any) a face carries. */
 export type Socket = 'solid' | 'corridor' | 'arch' | 'window' | 'bars' | 'shaft'
 
+/** Horizontal passage width. Numeric widths are centred on the cell face. */
+export type OpeningWidth = 'full' | 3 | 5
+
 /** Runtime guard for project imports and store actions. */
 export function isSocketValidForFace(face: Face, socket: Socket): boolean {
   return face === 'up' || face === 'down'
@@ -38,6 +41,8 @@ export interface Cell {
   heightCells: 1 | 2 | 3
   ceiling: Ceiling
   sockets: Record<Face, Socket>
+  /** Omitted faces use the full interior width. Windows remain one block wide. */
+  openingWidths?: Partial<Record<Face, OpeningWidth>>
   /** Cells sharing this id render and export as one room. */
   mergeGroup?: string
   paletteOverride?: string

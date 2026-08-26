@@ -19,6 +19,7 @@ import {
   type Grain,
   type Level,
   type MaterialRole,
+  type OpeningWidth,
   type Palette,
   type Project,
   type Socket,
@@ -253,7 +254,7 @@ export function shellBlocks(project: Project, ref: CellRef): Map<ShellRole, Set<
   const interior = cellInterior(project, ref)
   const plenum = cellPlenum(project, ref)
   const dropped = droppedCeilingY(level, cell)
-  const { voids, bars } = socketOpenings(outer, interior, plenum, cell.sockets)
+  const { voids, bars } = socketOpenings(outer, interior, plenum, cell.sockets, cell.openingWidths)
 
   const out = new Map<ShellRole, Set<string>>()
   for (let y = outer.y0; y <= outer.y1; y++) {
@@ -432,6 +433,7 @@ function socketOpenings(
   interior: AABB,
   plenum: AABB | null,
   sockets: Record<Face, Socket>,
+  openingWidths: Partial<Record<Face, OpeningWidth>> = {},
 ): { voids: Set<string>; bars: Set<string> } {
   const voids = new Set<string>()
   const bars = new Set<string>()
@@ -441,7 +443,13 @@ function socketOpenings(
     if (socket === 'solid' || socket === 'shaft') continue
     const target = socket === 'bars' ? bars : voids
     const eastWest = face === 'e' || face === 'w'
-    const [cLo, cHi] = openingCrossSpan(socket, eastWest ? [interior.z0, interior.z1] : [interior.x0, interior.x1])
+    const crossSpan = horizontalOpeningSpan(
+      socket,
+      eastWest ? [interior.z0, interior.z1] : [interior.x0, interior.x1],
+      openingWidths[face],
+    )
+    if (!crossSpan) continue
+    const [cLo, cHi] = crossSpan
     const plane = face === 'e' ? outer.x1 : face === 'w' ? outer.x0 : face === 'n' ? outer.z0 : outer.z1
     addHorizontalOpening(target, plane, eastWest, cLo, cHi, openingYSpan(socket, interior))
 
@@ -498,10 +506,23 @@ function openingYSpan(socket: Socket, interior: AABB): [number, number] {
   }
 }
 
-function openingCrossSpan(socket: Socket, span: [number, number]): [number, number] {
-  if (socket !== 'window') return span
-  const mid = midpoint(span[0], span[1])
-  return [mid, mid]
+export function horizontalOpeningSpan(
+  socket: Socket,
+  span: [number, number],
+  openingWidth: OpeningWidth = 'full',
+): [number, number] | null {
+  if (socket === 'solid' || socket === 'shaft') return null
+  if (socket === 'window') {
+    const mid = midpoint(span[0], span[1])
+    return [mid, mid]
+  }
+  if (openingWidth === 'full') return span
+  const available = span[1] - span[0] + 1
+  if (openingWidth > available) {
+    throw new RangeError(`opening width ${openingWidth} exceeds the ${available}-block cell interior`)
+  }
+  const lo = span[0] + Math.floor((available - openingWidth) / 2)
+  return [lo, lo + openingWidth - 1]
 }
 
 /** Interior spans are always odd (3, 5 or 11 wide), so the centre is exact. */

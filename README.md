@@ -51,7 +51,7 @@ The v1 editor provides:
 
 - multi-level plans with level gaps, custom footprints, and fields up to 8 by 8 bays;
 - bay, cell, and footprint editing modes on an SVG plan;
-- module painting, rotatable bay-pattern stamps, grain changes, merge groups, cell heights, ceilings, sockets, notes, and palette overrides;
+- module painting, rotatable bay-pattern stamps, grain changes, merge groups, cell heights, ceilings, sockets, centred opening widths, notes, and palette overrides;
 - a sparse four-level starter project with mansion, stronghold, trial, and mineshaft palettes;
 - a level rail, selection inspector, issue list, and bill-of-materials panel;
 - a 50-entry undo and redo history; and
@@ -71,7 +71,7 @@ A one-cell height occupies five blocks and has a three-block interior. Taller ce
 
 The app has two routes: `/` and `/project/:id/level/:levelId`. The root route restores the last valid local project and then changes to its project and level URL. These URLs identify local IndexedDB records. They are not share links.
 
-JSON export writes the complete project document. JSON import checks the schema, field bounds, cells, sockets, ceilings, and palette references, then saves the import as a new local project. Legacy schema-v1 height-3 plenums retain their original geometry; height-1 dropped flags normalize to `flat` because they never affected blocks. PNG export downloads one rendered plan for each level.
+JSON export writes the complete project document. JSON import checks the schema, field bounds, cells, sockets, opening widths, ceilings, and palette references, then saves the import as a new local project. Projects without opening widths retain full-width passages. Legacy schema-v1 height-3 plenums retain their original geometry; height-1 dropped flags normalize to `flat` because they never affected blocks. PNG export downloads one rendered plan for each level.
 
 ## Local persistence
 
@@ -97,7 +97,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Press Ctrl/Cmd+Z to undo and Ctrl/Cmd+Shift+Z to redo.
 - Press `Escape` to clear the selection.
 
-The inspector also exposes module, merge, height, ceiling, and socket controls without modifier keys. On narrow screens, it opens as a sheet over the bottom of the plan.
+The inspector also exposes module, merge, height, ceiling, socket, and opening-width controls without modifier keys. On narrow screens, it opens as a sheet over the bottom of the plan.
 
 ## Tests and CI
 

@@ -43,4 +43,8 @@ describe('bay patterns', () => {
     const center = bayFromPattern('t-junction', 3).cells[4]!
     expect(center.sockets).toMatchObject({ n: 'corridor', e: 'solid', s: 'corridor', w: 'corridor' })
   })
+
+  it('gives the feature chamber centred five-wide openings', () => {
+    expect(bayFromPattern('feature-chamber').cells[0]!.openingWidths).toEqual({ n: 5, e: 5, s: 5, w: 5 })
+  })
 })

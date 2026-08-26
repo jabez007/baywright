@@ -14,12 +14,14 @@ import { parseBayKey } from '../domain/geometry.js'
 import { PALETTES } from '../domain/palettes.js'
 import {
   MAX_BAY_FIELD,
+  GRAIN_CELL_PITCH,
   cellCount,
   isSocketValidForFace,
   type Bay,
   type Cell,
   type Face,
   type Level,
+  type OpeningWidth,
   type Project,
   type Socket,
 } from '../domain/types.js'
@@ -145,11 +147,11 @@ function parseBay(raw: unknown, path: string): Bay {
   }
   return {
     grain: grain as Bay['grain'],
-    cells: cells.map((cell, index) => parseCell(cell, `${path}.cells[${index}]`)),
+    cells: cells.map((cell, index) => parseCell(cell, `${path}.cells[${index}]`, grain as Bay['grain'])),
   }
 }
 
-function parseCell(raw: unknown, path: string): Cell {
+function parseCell(raw: unknown, path: string, grain: Bay['grain']): Cell {
   const doc = object(raw, path)
   const height = integer(doc['heightCells'], `${path}.heightCells`)
   if (height !== 1 && height !== 2 && height !== 3) {
@@ -179,6 +181,37 @@ function parseCell(raw: unknown, path: string): Cell {
     heightCells: height,
     ceiling: ceiling as Cell['ceiling'],
     sockets,
+  }
+  if (doc['openingWidths'] !== undefined) {
+    const rawWidths = object(doc['openingWidths'], `${path}.openingWidths`)
+    const openingWidths: Partial<Record<Face, OpeningWidth>> = {}
+    const interiorWidth = GRAIN_CELL_PITCH[grain] - 1
+    for (const face of ['n', 'e', 's', 'w'] as const) {
+      const value = rawWidths[face]
+      if (value === undefined) continue
+      if (value !== 'full' && value !== 3 && value !== 5) {
+        throw new ProjectParseError(`opening width must be 'full', 3 or 5, got ${JSON.stringify(value)}`, `${path}.openingWidths.${face}`)
+      }
+      if (value !== 'full' && value > interiorWidth) {
+        throw new ProjectParseError(
+          `opening width ${value} exceeds the ${interiorWidth}-block ${grain} interior`,
+          `${path}.openingWidths.${face}`,
+        )
+      }
+      if (sockets[face] !== 'corridor' && sockets[face] !== 'arch' && sockets[face] !== 'bars') {
+        throw new ProjectParseError(
+          `socket '${sockets[face]}' does not accept an opening width`,
+          `${path}.openingWidths.${face}`,
+        )
+      }
+      openingWidths[face] = value
+    }
+    for (const face of ['up', 'down'] as const) {
+      if (rawWidths[face] !== undefined) {
+        throw new ProjectParseError('opening widths are horizontal only', `${path}.openingWidths.${face}`)
+      }
+    }
+    if (Object.keys(openingWidths).length > 0) cell.openingWidths = openingWidths
   }
   // Optional fields are omitted rather than set to undefined, so a round trip
   // through JSON.stringify is byte-identical.

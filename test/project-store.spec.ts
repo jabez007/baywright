@@ -486,6 +486,34 @@ describe('cells', () => {
     expect(s.canUndo).toBe(false)
   })
 
+  it('sets a centred opening width and removes it when restored to full', () => {
+    const s = store()
+    const ref = firstCell()
+    s.setSocket(ref, 'e', 'corridor')
+    s.setOpeningWidth(ref, 'e', 3)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.openingWidths).toEqual({ e: 3 })
+
+    s.setOpeningWidth(ref, 'e', 'full')
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.openingWidths).toBeUndefined()
+  })
+
+  it('rejects a width that does not fit the selected cell grain', () => {
+    const s = store()
+    const ref = firstCell()
+    s.setSocket(ref, 'e', 'corridor')
+    expect(() => s.setOpeningWidth(ref, 'e', 5)).toThrow(/exceeds the 3-block fine interior/)
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.openingWidths).toBeUndefined()
+  })
+
+  it('clears a stored width when the socket no longer accepts one', () => {
+    const s = store()
+    const ref = firstCell()
+    s.setSocket(ref, 'e', 'corridor')
+    s.setOpeningWidth(ref, 'e', 3)
+    s.setSocket(ref, 'e', 'window')
+    expect(s.project.levels[0]!.bays['A1']!.cells[0]!.openingWidths).toBeUndefined()
+  })
+
   it('gives one merge group to a whole rectangle, and takes it away again', () => {
     const s = store()
     const refs = [0, 1, 3, 4].map((cellIndex) => ({ ...firstCell(), cellIndex }))

@@ -25,7 +25,14 @@ describe('round trip', () => {
       level('ground', 0, {
         A1: bay('coarse', (index) =>
           index === 0
-            ? { mergeGroup: 'g1', paletteOverride: 'dark-oak', note: 'the big hall', heightCells: 3 }
+            ? {
+                mergeGroup: 'g1',
+                paletteOverride: 'dark-oak',
+                note: 'the big hall',
+                heightCells: 3,
+                sockets: sockets({ e: 'corridor' }),
+                openingWidths: { e: 3 },
+              }
             : {},
         ),
       }),
@@ -104,6 +111,32 @@ describe('defensive import', () => {
         delete (doc.levels[0]!.bays['A1']!.cells[0]!.sockets as Partial<Record<'up', string>>).up
       }),
     ).toThrow(/sockets\.up/)
+  })
+
+  it('rejects an opening width wider than its grain interior', () => {
+    expect(
+      mangle((doc) => {
+        const cell = doc.levels[0]!.bays['A1']!.cells[0]!
+        cell.sockets.e = 'corridor'
+        cell.openingWidths = { e: 5 }
+      }),
+    ).toThrow(/opening width 5 exceeds the 3-block fine interior/)
+  })
+
+  it('rejects an opening width on a vertical face', () => {
+    expect(
+      mangle((doc) => {
+        doc.levels[0]!.bays['A1']!.cells[0]!.openingWidths = { up: 3 }
+      }),
+    ).toThrow(/opening widths are horizontal only/)
+  })
+
+  it('rejects an opening width on a socket without a passage', () => {
+    expect(
+      mangle((doc) => {
+        doc.levels[0]!.bays['A1']!.cells[0]!.openingWidths = { e: 3 }
+      }),
+    ).toThrow(/socket 'solid' does not accept an opening width/)
   })
 
   it('rejects an out-of-range heightCells', () => {

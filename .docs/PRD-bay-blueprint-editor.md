@@ -87,14 +87,16 @@ The plenum is a first-class volume in the model. It is where hoppers, redstone, 
 
 Each cell has six faces (`n`, `e`, `s`, `w`, `up`, `down`), each carrying a socket type:
 
-| Socket     | Opening                                                      |
-| ---------- | ------------------------------------------------------------ |
-| `solid`    | none                                                         |
-| `corridor` | full interior width, full interior height                    |
-| `arch`     | full interior width, 2 blocks high                           |
-| `window`   | 1 block wide, 1 block high, centred                          |
-| `bars`     | full interior width, iron-bar blocks; visually open but not passable |
-| `shaft`    | `up` and `down` only; full interior footprint opening        |
+| Socket     | Opening                                                        |
+| ---------- | -------------------------------------------------------------- |
+| `solid`    | none                                                           |
+| `corridor` | configured horizontal width, full interior height              |
+| `arch`     | configured horizontal width, 2 blocks high                     |
+| `window`   | 1 block wide, 1 block high, centred                            |
+| `bars`     | configured horizontal width, iron bars; not passable            |
+| `shaft`    | `up` and `down` only; full interior footprint opening          |
+
+Corridor, arch, and bars sockets default to the full cell interior width. A cell can set a horizontal face to a centred width of 3 or 5 blocks. The configured width must fit the cell interior. Fine cells therefore allow 3, coarse cells allow 3 or 5, and merged cells allow 3 or 5. Windows keep their fixed one-block width.
 
 Room connectivity depends on direction. Across a horizontal shared face, the matching opposing faces must both use a room opening: `corridor` or `arch`. The two room-opening sockets may differ, so a corridor facing an arch is passable. Across a vertical shared face, the matching opposing faces must both use `shaft`. A `bars` socket places visually open blocks but does not create a passable room path. A `window` socket also does not create a room path.
 
@@ -119,12 +121,14 @@ type Grain = 'fine' | 'coarse' | 'merged'
 type Ceiling = 'dropped' | 'flat' | 'vaulted'
 type Face = 'n' | 'e' | 's' | 'w' | 'up' | 'down'
 type Socket = 'solid' | 'corridor' | 'arch' | 'window' | 'bars' | 'shaft'
+type OpeningWidth = 'full' | 3 | 5
 
 interface Cell {
   module: string
   heightCells: 1 | 2 | 3
   ceiling: Ceiling
   sockets: Record<Face, Socket>
+  openingWidths?: Partial<Record<Face, OpeningWidth>>
   mergeGroup?: string        // cells sharing this id render and export as one room
   paletteOverride?: string
   note?: string
@@ -275,7 +279,7 @@ Four regions:
 - **Left rail.** List levels by descending y, highest first. Each entry shows its y value and name. Show the vertical gap in blocks between entries because that gap exposes collisions. Mark levels that have errors. Users edit y in the inspector rather than dragging levels to reorder them.
 - **Plan canvas.** Use SVG with separate view and tool controls. Bay view shows the full level. Cell view expands one bay and subdivides it by grain. Select is the default tool and never changes the plan. Paint applies a module. Stamp applies a rotated bay pattern. Empty clears modules without changing bay grain. Footprint adds or removes bays.
 
-- **Inspector.** Show properties for the selected level, bay, or cells. Controls include module, `heightCells`, ceiling, palette, sockets, merge groups, and a cell note.
+- **Inspector.** Show properties for the selected level, bay, or cells. Controls include module, `heightCells`, ceiling, palette, sockets, opening widths, merge groups, and a cell note.
 - **Output drawer.** Keep Issues and Materials collapsed until the user opens one. Group repeated connectivity warnings by bay. Clicking an issue changes to its level and selects the referenced cells. Materials shows placed blocks, raw inputs, and a smelting estimate.
 
 ### Interaction model

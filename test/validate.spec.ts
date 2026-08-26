@@ -181,6 +181,27 @@ describe('V3 — connectivity', () => {
     expect(only(validate(p), 'V3').map((issue) => issue.refs[0]!.bayKey)).toEqual(['B1', 'C1'])
   })
 
+  it('needs the two centred opening spans to overlap', () => {
+    const p = project(
+      [
+        level('L1', 0, {
+          A1: bay('fine', (index) =>
+            index === 2 ? { module: 'spine', sockets: sockets({ e: 'corridor' }) } : {},
+          ),
+          B1: bay('merged', () => ({
+            sockets: sockets({ w: 'corridor' }),
+            openingWidths: { w: 5 },
+          })),
+        }),
+      ],
+      { bayCols: 2, bayRows: 1 },
+    )
+
+    expect(only(validate(p), 'V3').flatMap((issue) => issue.refs).some((ref) => ref.bayKey === 'B1')).toBe(true)
+    delete p.levels[0]!.bays['B1']!.cells[0]!.openingWidths
+    expect(only(validate(p), 'V3').flatMap((issue) => issue.refs).some((ref) => ref.bayKey === 'B1')).toBe(false)
+  })
+
   it('reports the missing spine once when connectivity cannot be checked', () => {
     const issues = only(validate(row({}, {}, {})), 'V3')
     expect(issues).toHaveLength(1)

@@ -265,5 +265,6 @@ export function cellFromModule(moduleId: string, overrides: CellOverrides = {}):
     ...overrides,
     module: module.id,
     sockets: { ...module.sockets, ...overrides.sockets },
+    ...(overrides.openingWidths ? { openingWidths: { ...overrides.openingWidths } } : {}),
   }
 }

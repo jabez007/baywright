@@ -3,7 +3,15 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { allCellRefs, resolveCell } from '../domain/geometry.js'
 import { MODULE_LIST } from '../domain/modules.js'
-import { GRAIN_LABELS, type Ceiling, type Face, type Grain, type Socket } from '../domain/types.js'
+import {
+  GRAIN_CELL_PITCH,
+  GRAIN_LABELS,
+  type Ceiling,
+  type Face,
+  type Grain,
+  type OpeningWidth,
+  type Socket,
+} from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 
 const emit = defineEmits<{
@@ -35,6 +43,8 @@ const FACES: readonly { id: Face; label: string }[] = [
   { id: 'down', label: 'Down' },
 ]
 const HORIZONTAL_SOCKETS: readonly Socket[] = ['solid', 'corridor', 'arch', 'window', 'bars']
+const HORIZONTAL_FACES = FACES.slice(0, 4) as readonly { id: Extract<Face, 'n' | 'e' | 's' | 'w'>; label: string }[]
+const OPENING_WIDTHS: readonly OpeningWidth[] = ['full', 3, 5]
 const VERTICAL_SOCKETS: readonly Socket[] = ['solid', 'shaft']
 const CEILINGS: readonly Ceiling[] = ['flat', 'dropped', 'vaulted']
 const GRAINS: readonly Grain[] = ['fine', 'coarse', 'merged']
@@ -144,6 +154,31 @@ function setSocket(face: Face, event: Event): void {
   if (!socket) return
   run(() => store.batch(() => {
     for (const ref of refs.value) store.setSocket(ref, face, socket)
+  }))
+}
+
+function acceptsOpeningWidth(socket: Socket): boolean {
+  return socket === 'corridor' || socket === 'arch' || socket === 'bars'
+}
+
+function canSetOpeningWidth(face: Extract<Face, 'n' | 'e' | 's' | 'w'>): boolean {
+  return cells.value.length > 0 && cells.value.every((cell) => acceptsOpeningWidth(cell.sockets[face]))
+}
+
+function openingWidthValue(face: Extract<Face, 'n' | 'e' | 's' | 'w'>): OpeningWidth | '' {
+  return common(cells.value.map((cell) => cell.openingWidths?.[face] ?? 'full')) ?? ''
+}
+
+function openingWidthFits(width: OpeningWidth): boolean {
+  if (width === 'full') return true
+  return refs.value.every((ref) => GRAIN_CELL_PITCH[resolveCell(store.project, ref).bay.grain] - 1 >= width)
+}
+
+function setOpeningWidth(face: Extract<Face, 'n' | 'e' | 's' | 'w'>, event: Event): void {
+  const value = valueOf(event)
+  const openingWidth: OpeningWidth = value === 'full' ? 'full' : Number(value) as 3 | 5
+  run(() => store.batch(() => {
+    for (const ref of refs.value) store.setOpeningWidth(ref, face, openingWidth)
   }))
 }
 
@@ -300,6 +335,32 @@ function mergeSelected(): void {
               </select>
             </label>
           </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Opening widths</legend>
+          <div class="socket-grid">
+            <label v-for="face in HORIZONTAL_FACES" :key="face.id">
+              <span>{{ face.label }}</span>
+              <select
+                :aria-label="`${face.label} opening width`"
+                :value="openingWidthValue(face.id)"
+                :disabled="!canSetOpeningWidth(face.id)"
+                @change="setOpeningWidth(face.id, $event)"
+              >
+                <option v-if="!openingWidthValue(face.id)" value="" disabled>Mixed</option>
+                <option
+                  v-for="width in OPENING_WIDTHS"
+                  :key="width"
+                  :value="width"
+                  :disabled="!openingWidthFits(width)"
+                >
+                  {{ width === 'full' ? 'Full cell' : `${width} blocks · centred` }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <p class="field-help">Corridors, arches, and bars can use a centred 3- or 5-block opening.</p>
         </fieldset>
 
         <label v-if="refs.length === 1">

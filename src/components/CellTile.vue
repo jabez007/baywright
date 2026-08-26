@@ -12,7 +12,7 @@
  */
 import { computed } from 'vue'
 
-import { cellAxisIndices, interiorSpan, outerSpan } from '../domain/geometry.js'
+import { cellAxisIndices, horizontalOpeningSpan, interiorSpan, outerSpan } from '../domain/geometry.js'
 import { getModule } from '../domain/modules.js'
 import type { Cell, Face, Grain, Socket } from '../domain/types.js'
 import { moduleFill } from './fills.js'
@@ -81,31 +81,24 @@ const openings = computed(() => {
   const DEPTH = 0.5
   for (const face of ['n', 'e', 's', 'w'] as const) {
     const socket = props.cell.sockets[face]
-    if (socket === 'solid' || socket === 'shaft') continue
     const eastWest = face === 'e' || face === 'w'
+    const span = horizontalOpeningSpan(
+      socket,
+      eastWest ? [y, y + height - 1] : [x, x + width - 1],
+      props.cell.openingWidths?.[face],
+    )
+    if (!span) continue
     // The near edge of this cell's half of the shared wall block.
     const plane =
       face === 'e' ? o.x + o.width - 1 : face === 'w' ? o.x + DEPTH : face === 'n' ? o.y + DEPTH : o.y + o.height - 1
-    if (socket === 'window') {
-      // §5.4 — 1 block, centred. Interior spans are odd, so the centre is exact.
-      const centre = eastWest ? y + Math.floor(height / 2) : x + Math.floor(width / 2)
-      out.push({
-        face,
-        socket,
-        x: eastWest ? plane : centre,
-        y: eastWest ? centre : plane,
-        width: eastWest ? DEPTH : 1,
-        height: eastWest ? 1 : DEPTH,
-      })
-      continue
-    }
+    const crossSize = span[1] - span[0] + 1
     out.push({
       face,
       socket,
-      x: eastWest ? plane : x,
-      y: eastWest ? y : plane,
-      width: eastWest ? DEPTH : width,
-      height: eastWest ? height : DEPTH,
+      x: eastWest ? plane : span[0],
+      y: eastWest ? span[0] : plane,
+      width: eastWest ? DEPTH : crossSize,
+      height: eastWest ? crossSize : DEPTH,
     })
   }
   return out

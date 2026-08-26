@@ -21,6 +21,7 @@ import { validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
   MAX_BAY_FIELD,
+  GRAIN_CELL_PITCH,
   cellCount,
   isSocketValidForFace,
   type Bay,
@@ -30,6 +31,7 @@ import {
   type Face,
   type Grain,
   type Level,
+  type OpeningWidth,
   type Project,
   type Socket,
 } from '../domain/types.js'
@@ -649,7 +651,9 @@ export const useProjectStore = defineStore('project', () => {
         const direction = face === 'up' || face === 'down' ? 'vertical' : 'horizontal'
         throw new Error(`socket '${socket}' is not valid on ${direction} face '${face}'`)
       }
-      requireCell(ref).sockets[face] = socket
+      const cell = requireCell(ref)
+      cell.sockets[face] = socket
+      if (!acceptsOpeningWidth(socket)) clearOpeningWidth(cell, face)
     })
   }
 
@@ -660,7 +664,24 @@ export const useProjectStore = defineStore('project', () => {
       const cycle = face === 'up' || face === 'down' ? VERTICAL_SOCKET_CYCLE : HORIZONTAL_SOCKET_CYCLE
       const next = cycle[(cycle.indexOf(cell.sockets[face]) + 1) % cycle.length]!
       cell.sockets[face] = next
+      if (!acceptsOpeningWidth(next)) clearOpeningWidth(cell, face)
       return next
+    })
+  }
+
+  function setOpeningWidth(ref: CellRef, face: Face, openingWidth: OpeningWidth): void {
+    mutate(() => {
+      if (face === 'up' || face === 'down') throw new Error('opening widths are horizontal only')
+      const { bay, cell } = resolveCell(project.value, ref)
+      if (!acceptsOpeningWidth(cell.sockets[face])) {
+        throw new Error(`socket '${cell.sockets[face]}' does not accept an opening width`)
+      }
+      const interiorWidth = GRAIN_CELL_PITCH[bay.grain] - 1
+      if (openingWidth !== 'full' && openingWidth > interiorWidth) {
+        throw new Error(`opening width ${openingWidth} exceeds the ${interiorWidth}-block ${bay.grain} interior`)
+      }
+      if (openingWidth === 'full') clearOpeningWidth(cell, face)
+      else cell.openingWidths = { ...cell.openingWidths, [face]: openingWidth }
     })
   }
 
@@ -839,6 +860,7 @@ export const useProjectStore = defineStore('project', () => {
     nudgeCellHeight,
     setCeiling,
     setSocket,
+    setOpeningWidth,
     cycleSocket,
     setNote,
     setPaletteOverride,
@@ -858,6 +880,16 @@ function tallestCell(level: Level): number {
     for (const cell of bay.cells) tallest = Math.max(tallest, cell.heightCells)
   }
   return tallest
+}
+
+function acceptsOpeningWidth(socket: Socket): boolean {
+  return socket === 'corridor' || socket === 'arch' || socket === 'bars'
+}
+
+function clearOpeningWidth(cell: Cell, face: Face): void {
+  if (!cell.openingWidths?.[face]) return
+  delete cell.openingWidths[face]
+  if (Object.keys(cell.openingWidths).length === 0) delete cell.openingWidths
 }
 
 function selectionLevelId(selection: Selection): string | undefined {
