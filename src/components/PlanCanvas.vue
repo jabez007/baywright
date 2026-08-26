@@ -11,7 +11,7 @@
  * call, so painting live would cost one undo step per pointer-move; this way a
  * whole drag is one step, which is what §10's ring buffer is for.
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey } from '../domain/geometry.js'
 import { BAY_PITCH, GRAIN_AXIS_CELLS, type CellRef, type Face, type Grain } from '../domain/types.js'
@@ -434,6 +434,13 @@ function onPointerCancel(): void {
   stopStrokeListeners()
   stroke.value = null
 }
+
+watch(
+  () => props.frozen,
+  (frozen) => {
+    if (frozen) onPointerCancel()
+  },
+)
 
 /**
  * A level with no bays left is not a shape, it is a deleted level, and

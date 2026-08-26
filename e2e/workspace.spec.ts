@@ -172,6 +172,27 @@ test('keeps pointer focus unobtrusive while editing the footprint', async ({ pag
   expect(focusStyle.strokeWidth).toBeLessThanOrEqual(2)
 })
 
+test('cancels an active stroke when PNG export freezes the canvas', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('spine')
+
+  const bay = page.locator('[data-plan-target="bay"][data-bay="A1"]')
+  await bay.dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'pen', isPrimary: true })
+
+  await page.evaluate(async () => {
+    const exportButton = [...document.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === 'Export PNG plans')
+    if (!(exportButton instanceof HTMLButtonElement)) throw new Error('PNG export button not found')
+    exportButton.click()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, pointerType: 'pen', isPrimary: true }))
+  })
+
+  await expect(bay).toHaveAccessibleName(/A1.*Empty/)
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+})
+
 test('offers no jump for an issue that belongs to no level', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Issues' }).click()
