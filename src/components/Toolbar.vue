@@ -539,6 +539,15 @@ function chooseNegativeSpace(event: Event): void {
     gap: 7px;
   }
 
+  .labelled-group {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .group {
+    flex-wrap: wrap;
+  }
+
   .module-picker {
     flex: 1 1 150px;
   }
