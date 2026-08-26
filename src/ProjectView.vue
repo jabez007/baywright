@@ -10,7 +10,7 @@ import { LAYOUT_PATTERN_LIST } from './domain/layouts.js'
 import { MODULE_LIST } from './domain/modules.js'
 import { BAY_PATTERN_LIST, type PatternRotation, type QuarterTurns } from './domain/patterns.js'
 import type { ProjectTemplateId } from './domain/templates.js'
-import type { Grain, Project } from './domain/types.js'
+import type { Grain, NegativeSpaceKind, Project } from './domain/types.js'
 import { loadLastOpenedProject, loadProject as loadStoredProject } from './persistence/db.js'
 import { useAutosave } from './persistence/autosave.js'
 import { type Selection, useProjectStore } from './stores/project.js'
@@ -28,17 +28,22 @@ const route = useRoute()
 const router = useRouter()
 
 const view = ref<'bay' | 'cell'>('bay')
-type Tool = 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint'
+type Tool = 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint' | 'space'
 
 const tool = ref<Tool>('select')
-const mode = computed<'bay' | 'cell' | 'footprint'>(() =>
-  tool.value === 'footprint' ? 'footprint' : tool.value === 'stamp' || tool.value === 'layout' ? 'bay' : view.value,
+const mode = computed<'bay' | 'cell' | 'footprint' | 'space'>(() =>
+  tool.value === 'footprint'
+    ? 'footprint'
+    : tool.value === 'space'
+      ? 'space'
+      : tool.value === 'stamp' || tool.value === 'layout' ? 'bay' : view.value,
 )
 const moduleId = ref<string>(MODULE_LIST[0]?.id ?? 'empty')
 const patternId = ref<string>(BAY_PATTERN_LIST[0]?.id ?? '')
 const patternRotation = ref<PatternRotation>('auto')
 const layoutId = ref<string>(LAYOUT_PATTERN_LIST[0]?.id ?? '')
 const layoutRotation = ref<QuarterTurns>(0)
+const negativeSpaceKind = ref<NegativeSpaceKind | 'clear'>('courtyard')
 const grain = ref<Grain>('fine')
 
 const booted = ref(false)
@@ -77,6 +82,8 @@ async function closeInspector(): Promise<void> {
 const hint = computed(() =>
   mode.value === 'footprint'
     ? 'Click or drag to add and remove bays. Ctrl/Cmd+Z undoes the last change.'
+    : mode.value === 'space'
+      ? 'Click or drag across absent bays to name intentional courtyards, gardens, caves, shafts, or future expansion.'
     : tool.value === 'stamp'
       ? 'Click or drag to stamp the chosen pattern onto whole bays.'
     : tool.value === 'layout'
@@ -477,6 +484,7 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       :pattern-rotation="patternRotation"
       :layout-id="layoutId"
       :layout-rotation="layoutRotation"
+      :negative-space-kind="negativeSpaceKind"
       :grain="grain"
       :save-status="autosave.status.value"
       :save-error="autosave.error.value"
@@ -488,6 +496,7 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       @set-pattern-rotation="patternRotation = $event"
       @set-layout="layoutId = $event"
       @set-layout-rotation="layoutRotation = $event"
+      @set-negative-space-kind="negativeSpaceKind = $event"
       @set-grain="grain = $event"
       @export="onExport"
       @png="onExportPng"
@@ -535,12 +544,13 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
             v-if="booted"
             ref="planCanvas"
             :mode="mode"
-            :tool="tool === 'footprint' ? 'select' : tool"
+            :tool="tool === 'footprint' || tool === 'space' ? 'select' : tool"
             :module-id="moduleId"
             :pattern-id="patternId"
             :pattern-rotation="patternRotation"
             :layout-id="layoutId"
             :layout-rotation="layoutRotation"
+            :negative-space-kind="negativeSpaceKind"
             :grain="grain"
             :frozen="pngBusy"
             @open-bay="view = 'cell'"

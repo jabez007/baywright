@@ -41,6 +41,16 @@ describe('round trip', () => {
     expect(round.levels[0]?.bays['A1']?.cells[0]).toEqual(original.levels[0]?.bays['A1']?.cells[0])
   })
 
+  it('preserves named negative space on absent bays', () => {
+    const original = project([
+      level('ground', 0, { A1: bay('fine') }, {
+        negativeSpaces: { B2: { kind: 'courtyard', note: 'open to the sky' } },
+      }),
+    ])
+
+    expect(parseProject(serializeProject(original))).toEqual(original)
+  })
+
   it('omits absent optional fields rather than writing null', () => {
     const round = parseProject(serializeProject(project([level('ground', 0, { A1: bay('merged') })])))
     expect(Object.keys(round.levels[0]!.bays['A1']!.cells[0]!).sort()).toEqual([
@@ -173,6 +183,23 @@ describe('defensive import', () => {
         doc.levels[0]!.bays['a1'] = bay('fine')
       }),
     ).toThrow(/malformed bay key 'a1'/)
+  })
+
+  it('rejects negative space on a present bay', () => {
+    expect(
+      mangle((doc) => {
+        doc.levels[0]!.negativeSpaces = { A1: { kind: 'courtyard' } }
+      }),
+    ).toThrow(/negative space must refer to an absent bay/)
+  })
+
+  it('rejects an unknown negative-space kind', () => {
+    expect(
+      mangle((doc) => {
+        doc.levels[0]!.negativeSpaces = { B2: { kind: 'courtyard' } }
+        ;(doc.levels[0]!.negativeSpaces!.B2!.kind as string) = 'moat'
+      }),
+    ).toThrow(/unknown negative-space kind 'moat'/)
   })
 
   it('rejects duplicate level ids', () => {

@@ -437,6 +437,32 @@ describe('bays', () => {
     expect(s.toJSON()).toStrictEqual(before)
     expect(s.undoDepth).toBe(0)
   })
+
+  it('names and clears an absent bay as planned negative space', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.removeBay(levelId, 'B2')
+    s.clearHistory()
+
+    s.setNegativeSpace(levelId, 'B2', 'courtyard', 'open to the sky')
+    expect(s.project.levels[0]!.negativeSpaces).toEqual({
+      B2: { kind: 'courtyard', note: 'open to the sky' },
+    })
+
+    s.setNegativeSpace(levelId, 'B2', null)
+    expect(s.project.levels[0]!.negativeSpaces).toBeUndefined()
+  })
+
+  it('removes a negative-space annotation when a bay is built there', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.removeBay(levelId, 'B2')
+    s.setNegativeSpace(levelId, 'B2', 'reserved')
+
+    s.addBay(levelId, 'B2')
+
+    expect(s.project.levels[0]!.negativeSpaces).toBeUndefined()
+  })
 })
 
 describe('cells', () => {

@@ -49,7 +49,7 @@ The domain layer in `src/domain/` has no Vue, Pinia, or browser dependencies. It
 
 The v1 editor provides:
 
-- multi-level plans with level gaps, custom footprints, and fields up to 8 by 8 bays;
+- multi-level plans with level gaps, custom footprints, named negative space, and fields up to 8 by 8 bays;
 - bay, cell, and footprint editing modes on an SVG plan;
 - module painting, connection-aware bay stamps, rotatable multi-bay layouts, grain changes, merge groups, cell heights, ceilings, sockets, centred opening widths, notes, and palette overrides;
 - a sparse four-level starter project with mansion, stronghold, trial, and mineshaft palettes;
@@ -90,6 +90,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Choose **Layout** to stamp a Stronghold loop, grand chamber, library wing, or workshop wing from a north-west anchor. Layouts may fill absent footprint slots, and the whole placement is one undo step.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
+- Choose **Space** to name absent bays as courtyards, gardens, caves, stair shafts, or reserved expansion. Building a bay in that slot clears the name.
 - Choose **New project** from the **Project** menu to start blank or load the layered base example.
 - Use the **Skip to plan** link or press `Tab` to enter the plan. Use the arrow keys to move between targets. Press `Enter` or `Space` to apply the active tool.
 - Shift-drag cells to make a rectangular merge group.

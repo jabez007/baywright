@@ -21,6 +21,7 @@ import {
   type Cell,
   type Face,
   type Level,
+  type NegativeSpaceKind,
   type OpeningWidth,
   type Project,
   type Socket,
@@ -32,6 +33,9 @@ const FACES: readonly Face[] = ['n', 'e', 's', 'w', 'up', 'down']
 const SOCKETS: ReadonlySet<string> = new Set<Socket>(['solid', 'corridor', 'arch', 'window', 'bars', 'shaft'])
 const GRAINS: ReadonlySet<string> = new Set(['fine', 'coarse', 'merged'])
 const CEILINGS: ReadonlySet<string> = new Set(['dropped', 'flat', 'vaulted'])
+const NEGATIVE_SPACE_KINDS: ReadonlySet<string> = new Set<NegativeSpaceKind>([
+  'courtyard', 'garden', 'cave', 'stair-shaft', 'reserved',
+])
 
 /** Thrown by {@link parseProject}. `path` locates the offending field. */
 export class ProjectParseError extends Error {
@@ -132,6 +136,35 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
       )
     }
     level.bays[bayKey] = parseBay(bay, `${path}.bays.${bayKey}`)
+  }
+  if (doc['negativeSpaces'] !== undefined) {
+    const spaces = object(doc['negativeSpaces'], `${path}.negativeSpaces`)
+    const parsed: NonNullable<Level['negativeSpaces']> = {}
+    for (const [bayKey, rawSpace] of Object.entries(spaces)) {
+      if (!/^[A-Z]+[1-9][0-9]*$/.test(bayKey)) {
+        throw new ProjectParseError(`malformed bay key '${bayKey}'`, `${path}.negativeSpaces`)
+      }
+      const { i, j } = parseBayKey(bayKey)
+      if (i >= bayCols || j >= bayRows) {
+        throw new ProjectParseError(
+          `bay '${bayKey}' is outside the ${bayCols}×${bayRows} field`,
+          `${path}.negativeSpaces.${bayKey}`,
+        )
+      }
+      if (level.bays[bayKey]) {
+        throw new ProjectParseError('negative space must refer to an absent bay', `${path}.negativeSpaces.${bayKey}`)
+      }
+      const space = object(rawSpace, `${path}.negativeSpaces.${bayKey}`)
+      const kind = string(space['kind'], `${path}.negativeSpaces.${bayKey}.kind`)
+      if (!NEGATIVE_SPACE_KINDS.has(kind)) {
+        throw new ProjectParseError(`unknown negative-space kind '${kind}'`, `${path}.negativeSpaces.${bayKey}.kind`)
+      }
+      parsed[bayKey] = {
+        kind: kind as NegativeSpaceKind,
+        ...(space['note'] !== undefined ? { note: string(space['note'], `${path}.negativeSpaces.${bayKey}.note`) } : {}),
+      }
+    }
+    if (Object.keys(parsed).length > 0) level.negativeSpaces = parsed
   }
   return level
 }

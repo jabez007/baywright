@@ -33,6 +33,7 @@ import {
   type Face,
   type Grain,
   type Level,
+  type NegativeSpaceKind,
   type OpeningWidth,
   type Project,
   type Socket,
@@ -439,6 +440,12 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  function clearNegativeSpace(level: Level, bayKey: string): void {
+    if (!level.negativeSpaces) return
+    delete level.negativeSpaces[bayKey]
+    if (Object.keys(level.negativeSpaces).length === 0) delete level.negativeSpaces
+  }
+
   /**
    * Grows or shrinks the field every level sits in. The extent is the bounding
    * box, not the footprint, so the two edits stay separable: growing fills only
@@ -456,6 +463,11 @@ export const useProjectStore = defineStore('project', () => {
           const { i, j } = parseBayKey(bayKey)
           if (i >= cols || j >= rows) delete level.bays[bayKey]
         }
+        for (const bayKey of Object.keys(level.negativeSpaces ?? {})) {
+          const { i, j } = parseBayKey(bayKey)
+          if (i >= cols || j >= rows) delete level.negativeSpaces![bayKey]
+        }
+        if (level.negativeSpaces && Object.keys(level.negativeSpaces).length === 0) delete level.negativeSpaces
 
         for (let j = 0; j < rows; j++) {
           for (let i = 0; i < cols; i++) {
@@ -490,6 +502,7 @@ export const useProjectStore = defineStore('project', () => {
       // already added, and re-cutting them would wipe whatever is painted there.
       if (level.bays[bayKey]) return
       level.bays[bayKey] = createBay(grain)
+      clearNegativeSpace(level, bayKey)
     })
   }
 
@@ -530,6 +543,7 @@ export const useProjectStore = defineStore('project', () => {
         for (const [bayKey, bay] of Object.entries(source.bays)) {
           if (level.bays[bayKey]) continue
           level.bays[bayKey] = createBay(bay.grain)
+          clearNegativeSpace(level, bayKey)
           touched = true
         }
 
@@ -582,6 +596,25 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  function setNegativeSpace(
+    levelId: string,
+    bayKey: string,
+    kind: NegativeSpaceKind | null,
+    note?: string,
+  ): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      assertInField(bayKey)
+      if (level.bays[bayKey]) throw new Error(`bay '${bayKey}' must be absent before it can be named as negative space`)
+      if (kind === null) {
+        clearNegativeSpace(level, bayKey)
+        return
+      }
+      level.negativeSpaces ??= {}
+      level.negativeSpaces[bayKey] = { kind, ...(note ? { note } : {}) }
+    })
+  }
+
   /** Stamp a whole bay arrangement relative to its north-west anchor. */
   function stampLayoutPattern(
     levelId: string,
@@ -609,6 +642,7 @@ export const useProjectStore = defineStore('project', () => {
           for (const cell of bay.cells) cell.mergeGroup = groupId
         }
         level.bays[bayKey] = bay
+        clearNegativeSpace(level, bayKey)
       }
       return targets.map(({ bayKey }) => bayKey)
     })
@@ -892,6 +926,7 @@ export const useProjectStore = defineStore('project', () => {
     paintBay,
     stampBayPattern,
     stampLayoutPattern,
+    setNegativeSpace,
     paintCell,
     paintCells,
     setCellHeight,

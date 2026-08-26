@@ -15,19 +15,28 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey } from '../domain/geometry.js'
 import type { PatternRotation, QuarterTurns } from '../domain/patterns.js'
-import { BAY_PITCH, GRAIN_AXIS_CELLS, type CellRef, type Face, type Grain } from '../domain/types.js'
+import {
+  BAY_PITCH,
+  GRAIN_AXIS_CELLS,
+  NEGATIVE_SPACE_LABELS,
+  type CellRef,
+  type Face,
+  type Grain,
+  type NegativeSpaceKind,
+} from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import BayTile from './BayTile.vue'
 import { moduleFill } from './fills.js'
 
 const props = defineProps<{
-  mode: 'bay' | 'cell' | 'footprint'
+  mode: 'bay' | 'cell' | 'footprint' | 'space'
   tool: 'select' | 'paint' | 'stamp' | 'layout' | 'empty'
   moduleId: string
   patternId: string
   patternRotation: PatternRotation
   layoutId: string
   layoutRotation: QuarterTurns
+  negativeSpaceKind: NegativeSpaceKind | 'clear'
   grain: Grain
   /** Held true while a PNG run owns the canvas, so gestures cannot disturb it. */
   frozen?: boolean
@@ -55,6 +64,7 @@ type Target = string
 type Stroke =
   | { kind: 'paint'; targets: Set<Target> }
   | { kind: 'select'; targets: Set<Target> }
+  | { kind: 'space'; targets: Set<string> }
   | { kind: 'merge'; grain: Grain; anchor: { u: number; v: number }; head: { u: number; v: number } }
   /** `add` is fixed by the first slot the drag touches, so a stroke never flip-flops. */
   | { kind: 'footprint'; add: boolean; targets: Set<string> }
@@ -134,13 +144,20 @@ const fieldRects = computed(() => shapedRects(0))
  */
 const slots = computed(() => {
   const level = store.currentLevel
-  const out: { bayKey: string; present: boolean; x: number; y: number }[] = []
+  const out: {
+    bayKey: string
+    present: boolean
+    negativeSpace?: { kind: NegativeSpaceKind; note?: string }
+    x: number
+    y: number
+  }[] = []
   for (let j = 0; j < store.project.bayRows; j++) {
     for (let i = 0; i < store.project.bayCols; i++) {
       const bayKey = bayKeyOf(i, j)
       out.push({
         bayKey,
         present: level?.bays[bayKey] !== undefined,
+        ...(level?.negativeSpaces?.[bayKey] ? { negativeSpace: level.negativeSpaces[bayKey] } : {}),
         x: BAY_PITCH * i + 0.5,
         y: BAY_PITCH * j + 0.5,
       })
@@ -158,13 +175,25 @@ const LAST_BAY_REFUSAL = 'A level keeps at least one bay, so this one cannot be 
 const canRemoveBays = computed(() => Object.keys(store.currentLevel?.bays ?? {}).length > 1)
 
 function slotLabel(slot: { bayKey: string; present: boolean }): string {
+  if (props.mode === 'space') {
+    const annotation = store.currentLevel?.negativeSpaces?.[slot.bayKey]
+    if (slot.present) return `Bay ${slot.bayKey}, present; negative space can only name absent bays`
+    if (annotation) return `Bay ${slot.bayKey}, absent; named ${NEGATIVE_SPACE_LABELS[annotation.kind]}`
+    return `Bay ${slot.bayKey}, absent; no negative-space name`
+  }
   if (!slot.present) return `Bay ${slot.bayKey}, absent; press Enter or Space to add`
   if (!canRemoveBays.value) return `Bay ${slot.bayKey}, present; the only bay on this level, so it cannot be removed`
   return `Bay ${slot.bayKey}, present; press Enter or Space to remove`
 }
 
+function shortSpaceLabel(kind: NegativeSpaceKind): string {
+  return kind === 'stair-shaft' ? 'Stair shaft'
+    : kind === 'reserved' ? 'Reserved'
+      : NEGATIVE_SPACE_LABELS[kind]
+}
+
 const visibleTargets = computed<Target[]>(() => {
-  if (props.mode === 'footprint') return slots.value.map((slot) => slot.bayKey)
+  if (props.mode === 'footprint' || props.mode === 'space') return slots.value.map((slot) => slot.bayKey)
   if (props.mode === 'bay') return bays.value.map((entry) => entry.bayKey)
   return bays.value.flatMap((entry) => entry.bay.cells.map((_, index) => `${entry.bayKey}:${index}`))
 })
@@ -180,7 +209,7 @@ function targetTabIndex(target: Target): 0 | -1 {
 }
 
 /** Footprint mode draws bays whole; only the tools below it care about cells. */
-const tileMode = computed(() => (props.mode === 'footprint' ? 'bay' : props.mode))
+const tileMode = computed(() => (props.mode === 'footprint' || props.mode === 'space' ? 'bay' : props.mode))
 
 const footprintPreview = computed(() => {
   const current = stroke.value
@@ -309,6 +338,13 @@ function onPointerDown(event: PointerEvent): void {
     return
   }
 
+  if (props.mode === 'space') {
+    if (store.currentLevel?.bays[bayKey]) return
+    stroke.value = { kind: 'space', targets: new Set([bayKey]) }
+    startStrokeListeners()
+    return
+  }
+
   if (props.tool === 'select') {
     stroke.value = { kind: 'select', targets: new Set([target]) }
     startStrokeListeners()
@@ -374,6 +410,11 @@ function onPointerMove(event: PointerEvent): void {
     return
   }
 
+  if (current.kind === 'space') {
+    if (!store.currentLevel?.bays[bayKey]) current.targets.add(bayKey)
+    return
+  }
+
   if (current.kind === 'merge') {
     if (index === null || grainOf(bayKey) !== current.grain) return
     current.head = lattice(bayKey, current.grain, index)
@@ -393,6 +434,19 @@ function onPointerUp(): void {
 
   if (current.kind === 'footprint') {
     commitFootprint(current, levelId)
+    return
+  }
+
+  if (current.kind === 'space') {
+    store.batch(() => {
+      for (const bayKey of current.targets) {
+        store.setNegativeSpace(
+          levelId,
+          bayKey,
+          props.negativeSpaceKind === 'clear' ? null : props.negativeSpaceKind,
+        )
+      }
+    })
     return
   }
 
@@ -550,6 +604,15 @@ function activateTarget(target: Target): void {
     } else {
       store.addBay(levelId, bayKey, props.grain)
     }
+    return
+  }
+  if (props.mode === 'space') {
+    if (store.currentLevel?.bays[bayKey]) return
+    store.setNegativeSpace(
+      levelId,
+      bayKey,
+      props.negativeSpaceKind === 'clear' ? null : props.negativeSpaceKind,
+    )
     return
   }
 
@@ -724,25 +787,49 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
       :selected-cells="selectedCells(entry.bayKey)"
       :error-cells="errorCells(entry.bayKey)"
       :bay-selected="selectedBayKey === entry.bayKey"
-      :interactive="mode !== 'footprint'"
+      :interactive="mode !== 'footprint' && mode !== 'space'"
       :active-target="activePlanTarget"
     />
+
+    <g class="negative-space-names">
+      <g v-for="slot in slots.filter((entry) => entry.negativeSpace)" :key="`space-${slot.bayKey}`">
+        <rect
+          class="space-marker"
+          :x="slot.x"
+          :y="slot.y"
+          :width="BAY_PITCH"
+          :height="BAY_PITCH"
+        />
+        <text
+          class="space-name"
+          :x="slot.x + BAY_PITCH / 2"
+          :y="slot.y + BAY_PITCH / 2"
+        >
+          {{ shortSpaceLabel(slot.negativeSpace!.kind) }}
+        </text>
+      </g>
+    </g>
 
     <g class="preview" :fill="previewFill">
       <rect v-for="(rect, index) in preview" :key="index" v-bind="rect" />
     </g>
 
     <!-- Above the tiles: in footprint mode every position is a target, present or not. -->
-    <g v-if="mode === 'footprint'" class="slots">
+    <g v-if="mode === 'footprint' || mode === 'space'" class="slots">
       <rect
         v-for="slot in slots"
         :key="slot.bayKey"
         :data-bay="slot.bayKey"
-        data-plan-target="footprint"
+        :data-plan-target="mode"
         :tabindex="targetTabIndex(slot.bayKey)"
         role="button"
         :aria-label="slotLabel(slot)"
-        :class="slot.present ? 'slot filled' : 'slot vacant'"
+        :class="[
+          'slot',
+          slot.present ? 'filled' : 'vacant',
+          mode === 'space' ? 'space-slot' : '',
+          slot.negativeSpace ? 'named' : '',
+        ]"
         :x="slot.x"
         :y="slot.y"
         :width="BAY_PITCH"
@@ -813,6 +900,39 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 .slot.filled:hover {
   fill: var(--danger);
   fill-opacity: 0.15;
+}
+
+.slot.space-slot.filled {
+  cursor: not-allowed;
+}
+
+.slot.space-slot.filled:hover {
+  fill: transparent;
+}
+
+.slot.space-slot.named {
+  fill: var(--accent);
+  fill-opacity: 0.12;
+  stroke: var(--accent);
+}
+
+.space-marker {
+  fill: var(--accent);
+  fill-opacity: 0.12;
+  stroke: var(--accent);
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.space-name {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 1.45px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
 }
 
 .slot:focus {

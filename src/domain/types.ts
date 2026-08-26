@@ -55,6 +55,21 @@ export interface Bay {
   cells: Cell[]
 }
 
+export type NegativeSpaceKind = 'courtyard' | 'garden' | 'cave' | 'stair-shaft' | 'reserved'
+
+export interface NegativeSpace {
+  kind: NegativeSpaceKind
+  note?: string
+}
+
+export const NEGATIVE_SPACE_LABELS: Readonly<Record<NegativeSpaceKind, string>> = {
+  courtyard: 'Courtyard',
+  garden: 'Garden',
+  cave: 'Cave',
+  'stair-shaft': 'Stair shaft',
+  reserved: 'Reserved expansion',
+}
+
 export interface Level {
   id: string
   /** INVARIANT: y % 4 === 0. This is the y of the floor plane. */
@@ -63,6 +78,8 @@ export interface Level {
   paletteId: string
   /** 'A1' -> Bay */
   bays: Record<string, Bay>
+  /** Deliberately absent positions that still carry planning intent. */
+  negativeSpaces?: Record<string, NegativeSpace>
 }
 
 export interface Project {

@@ -256,6 +256,24 @@ test('keeps pointer focus unobtrusive while editing the footprint', async ({ pag
   expect(focusStyle.strokeWidth).toBeLessThanOrEqual(2)
 })
 
+test('names an absent bay as intentional negative space', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Footprint', exact: true }).click()
+  await page.locator('[data-plan-target="footprint"][data-bay="B2"]').click()
+
+  await page.getByRole('button', { name: 'Space', exact: true }).click()
+  await page.getByLabel('Negative space', { exact: true }).selectOption('courtyard')
+  const slot = page.locator('[data-plan-target="space"][data-bay="B2"]')
+  await slot.click()
+
+  await expect(slot).toHaveAccessibleName(/B2.*named Courtyard/)
+  await expect(page.locator('.space-name', { hasText: 'Courtyard' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Footprint', exact: true }).click()
+  await page.locator('[data-plan-target="footprint"][data-bay="B2"]').click()
+  await expect(page.locator('.space-name', { hasText: 'Courtyard' })).toHaveCount(0)
+})
+
 test('cancels an active stroke when PNG export freezes the canvas', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Paint', exact: true }).click()

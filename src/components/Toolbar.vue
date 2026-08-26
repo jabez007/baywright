@@ -5,18 +5,24 @@ import { computed } from 'vue'
 import { LAYOUT_PATTERN_LIST } from '../domain/layouts.js'
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
 import { BAY_PATTERN_LIST, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
-import { GRAIN_LABELS, type Grain } from '../domain/types.js'
+import {
+  GRAIN_LABELS,
+  NEGATIVE_SPACE_LABELS,
+  type Grain,
+  type NegativeSpaceKind,
+} from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
 
 const props = defineProps<{
   view: 'bay' | 'cell'
-  tool: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint'
+  tool: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint' | 'space'
   moduleId: string
   patternId: string
   patternRotation: PatternRotation
   layoutId: string
   layoutRotation: QuarterTurns
+  negativeSpaceKind: NegativeSpaceKind | 'clear'
   grain: Grain
   saveStatus: SaveStatus
   saveError?: Error | undefined
@@ -25,12 +31,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'set-view': [value: 'bay' | 'cell']
-  'set-tool': [value: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint']
+  'set-tool': [value: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint' | 'space']
   'set-module': [value: string]
   'set-pattern': [value: string]
   'set-pattern-rotation': [value: PatternRotation]
   'set-layout': [value: string]
   'set-layout-rotation': [value: QuarterTurns]
+  'set-negative-space-kind': [value: NegativeSpaceKind | 'clear']
   'set-grain': [value: Grain]
   export: []
   png: []
@@ -59,6 +66,7 @@ const TOOLS = [
   { id: 'layout', label: 'Layout', title: 'Apply a reusable arrangement from its north-west anchor' },
   { id: 'empty', label: 'Empty', title: 'Clear modules without changing bay detail' },
   { id: 'footprint', label: 'Footprint', title: 'Add and remove bays' },
+  { id: 'space', label: 'Space', title: 'Name deliberately absent bays' },
 ] as const
 
 const MODULE_GROUPS = [
@@ -85,6 +93,8 @@ const LAYOUT_ROTATIONS: readonly { value: QuarterTurns; label: string }[] = [
   { value: 2, label: '180°' },
   { value: 3, label: '270°' },
 ]
+
+const NEGATIVE_SPACE_OPTIONS = Object.entries(NEGATIVE_SPACE_LABELS) as [NegativeSpaceKind, string][]
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
   idle: 'Not saved yet',
@@ -124,6 +134,10 @@ function choosePattern(event: Event): void {
 function chooseLayout(event: Event): void {
   emit('set-layout', (event.target as HTMLSelectElement).value)
 }
+
+function chooseNegativeSpace(event: Event): void {
+  emit('set-negative-space-kind', (event.target as HTMLSelectElement).value as NegativeSpaceKind | 'clear')
+}
 </script>
 
 <template>
@@ -162,7 +176,7 @@ function chooseLayout(event: Event): void {
     </div>
 
     <div class="canvas-bar">
-      <div v-if="tool !== 'footprint' && tool !== 'stamp' && tool !== 'layout'" class="labelled-group">
+      <div v-if="tool !== 'footprint' && tool !== 'stamp' && tool !== 'layout' && tool !== 'space'" class="labelled-group">
         <span class="group-label">View</span>
         <div class="group" role="group" aria-label="View">
           <button
@@ -257,6 +271,16 @@ function chooseLayout(event: Event): void {
           </button>
         </div>
       </div>
+
+      <label v-if="tool === 'space'" class="module-picker">
+        <span class="group-label">Negative space</span>
+        <select aria-label="Negative space" :value="negativeSpaceKind" :disabled="pngBusy" @change="chooseNegativeSpace">
+          <option v-for="option in NEGATIVE_SPACE_OPTIONS" :key="option[0]" :value="option[0]">
+            {{ option[1] }}
+          </option>
+          <option value="clear">Clear name</option>
+        </select>
+      </label>
 
       <div v-if="tool === 'footprint' || (tool === 'paint' && view === 'bay')" class="labelled-group">
         <span class="group-label">Bay detail</span>
