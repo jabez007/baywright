@@ -1,6 +1,6 @@
 # Baywright
 
-Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and all seven domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules.
+Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and all seven domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
 
 ## Requirements
 
@@ -112,6 +112,8 @@ Vitest covers geometry, every validator, the BOM and recipes, modules, the proje
 GitHub Actions runs on pushes and pull requests. It installs with `npm ci`, runs ESLint, the unit tests, and the production build, audits production dependencies, installs Chromium, and runs the Playwright suite.
 
 ## Not implemented
+
+The [project direction](.docs/PROJECT-DIRECTION.md) explains which design candidates come next and why.
 
 - Litematica export
 - vanilla structure NBT export
