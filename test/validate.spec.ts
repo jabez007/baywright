@@ -4,7 +4,7 @@
  * These assert against the V1/V2/V4 subset of §8 implemented so far.
  */
 import { describe, expect, it } from 'vitest'
-import { blockKey, resolveBlocks, validMergeGroupIds } from '../src/domain/geometry.js'
+import { blockKey, cellAABB, cellPlenum, resolveBlocks, validMergeGroupIds } from '../src/domain/geometry.js'
 import { validate, type Issue, type IssueId } from '../src/domain/validate.js'
 import type { Cell, Project, Socket } from '../src/domain/types.js'
 import { bay, level, project, sockets } from './factory.js'
@@ -421,6 +421,51 @@ describe('V5 — plenum reachability', () => {
     expect(resolveBlocks(p).has(blockKey(24, 6, 6))).toBe(false)
     expect(only(validate(p), 'V7')).toHaveLength(0)
     expect(only(validate(p), 'V5')).toHaveLength(0)
+  })
+
+  it('agrees with the block map at every socket, width, and grain seam', () => {
+    const faces: Socket[] = ['solid', 'corridor', 'arch', 'window', 'bars']
+    for (const grain of ['merged', 'coarse', 'fine'] as const) {
+      for (const east of faces) {
+        for (const west of faces) {
+          for (const width of ['full', 3, 5] as const) {
+            const p = project(
+              [
+                level('L1', 0, {
+                  A1: bay('merged', () =>
+                    plenumCell({ module: 'spine', sockets: sockets({ e: east }), openingWidths: { e: width } }),
+                  ),
+                  B1: bay(grain, () => plenumCell({ sockets: sockets({ w: west }) })),
+                }),
+              ],
+              { bayCols: 2, bayRows: 1 },
+            )
+            // A B1 cell reaches the spine when the shared plane at x 12 has
+            // air somewhere across its plenum.
+            const blocks = resolveBlocks(p)
+            const cells = p.levels[0]!.bays['B1']!.cells
+            let reached = 0
+            cells.forEach((_, cellIndex) => {
+              const ref = { levelId: 'L1', bayKey: 'B1', cellIndex }
+              if (cellAABB(p, ref).x0 !== 12) return
+              const plenum = cellPlenum(p, ref)!
+              for (let y = plenum.y0; y <= plenum.y1; y++) {
+                for (let z = plenum.z0; z <= plenum.z1; z++) {
+                  if (!blocks.has(blockKey(12, y, z))) {
+                    reached++
+                    return
+                  }
+                }
+              }
+            })
+            const islands = only(validate(p), 'V5')
+            expect(islands.flatMap((issue) => issue.refs), `${grain} e:${east} w:${west} width:${width}`).toHaveLength(
+              cells.length - reached,
+            )
+          }
+        }
+      }
+    }
   })
 
   it('still requires an opening when the merge group is invalid', () => {

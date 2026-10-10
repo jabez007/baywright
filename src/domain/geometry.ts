@@ -440,6 +440,23 @@ function carveValidMergeGroups(project: Project, blocks: Map<string, string>): v
 const HORIZONTAL_FACES = ['n', 'e', 's', 'w'] as const
 
 /**
+ * The boundary-plane coordinates a cell's own sockets turn to air. A wall
+ * point is missing from {@link shellBlocks} exactly when it is in this set,
+ * and missing from {@link resolveBlocks} when every cell sharing it voids it
+ * (or a valid merge group carves it).
+ */
+export function socketVoids(project: Project, ref: CellRef): ReadonlySet<string> {
+  const { cell } = resolveCell(project, ref)
+  return socketOpenings(
+    cellAABB(project, ref),
+    cellInterior(project, ref),
+    cellPlenum(project, ref),
+    cell.sockets,
+    cell.openingWidths,
+  ).voids
+}
+
+/**
  * Carve socket openings out of the boundary planes.
  *
  * `voids` are coordinates that become air. `bars` are coordinates that become

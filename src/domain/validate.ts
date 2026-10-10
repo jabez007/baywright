@@ -17,8 +17,8 @@ import {
   footprintsOverlap,
   horizontalOpeningSpan,
   parseBayKey,
-  resolveBlocks,
   resolveCell,
+  socketVoids,
   sortedLevels,
   validMergeGroupIds,
   yIntervalsCollide,
@@ -538,8 +538,16 @@ export function checkPlenumReachability(project: Project): Issue[] {
   const nodes = buildCellNodes(project)
   const byKey = new Map(nodes.map((node) => [node.key, node]))
   const adjacencies = buildAdjacencies(nodes).filter((link) => !link.vertical)
-  const blocks = resolveBlocks(project)
   const merged = validMergeGroupIds(project)
+  const voids = new Map<string, ReadonlySet<string>>()
+  const voidsOf = (node: CellNode): ReadonlySet<string> => {
+    let found = voids.get(node.key)
+    if (!found) {
+      found = socketVoids(project, node.ref)
+      voids.set(node.key, found)
+    }
+    return found
+  }
 
   for (const level of sortedLevels(project)) {
     const onLevel = nodes.filter((node) => node.ref.levelId === level.id)
@@ -554,7 +562,8 @@ export function checkPlenumReachability(project: Project): Issue[] {
       const a = byKey.get(link.a)
       const b = byKey.get(link.b)
       if (!a || !b || a.ref.levelId !== level.id || b.ref.levelId !== level.id) continue
-      const passable = hasPhysicalPlenumOpening(a, b, link, blocks, merged)
+      if (!plenumKeys.has(a.key) && !plenumKeys.has(b.key)) continue
+      const passable = hasPhysicalPlenumOpening(a, b, link, voidsOf, merged)
 
       // A plenum next to a spine cell is where the trunk terminates.
       if (passable && plenumKeys.has(a.key) && b.cell.module === SPINE_MODULE_ID) anchors.add(a.key)
@@ -590,17 +599,26 @@ export function checkPlenumReachability(project: Project): Issue[] {
   return issues
 }
 
+/**
+ * Whether the shared wall has an air block at plenum height, as
+ * `resolveBlocks` would place it, without resolving the whole project.
+ *
+ * A plenum spans from one block above the dropped ceiling to one block below
+ * the top plane, so on the shared wall at those heights only `a` and `b` place
+ * blocks: interior details stay inside interiors, and other levels start at
+ * or above the top plane. A point is open when both cells' sockets void it. A
+ * valid merge group carves every one of those points, whatever the sockets say.
+ */
 function hasPhysicalPlenumOpening(
   a: CellNode,
   b: CellNode,
   link: Adjacency,
-  blocks: ReadonlyMap<string, string>,
+  voidsOf: (node: CellNode) => ReadonlySet<string>,
   merged: ReadonlySet<string>,
 ): boolean {
-  // Sockets are the fast path, but they must not pre-empt the block map for a
-  // merged seam the exporter already carved away.
+  const carved = sharesValidMergeGroup(a, b, merged)
   if (
-    !sharesValidMergeGroup(a, b, merged) &&
+    !carved &&
     (!isPlenumPassable(a.cell.sockets[link.faceA]) || !isPlenumPassable(b.cell.sockets[link.faceB]))
   ) {
     return false
@@ -618,10 +636,13 @@ function hasPhysicalPlenumOpening(
   const plane =
     link.faceA === 'e' ? a.outer.x1 : link.faceA === 'w' ? a.outer.x0 : link.faceA === 'n' ? a.outer.z0 : a.outer.z1
 
+  if (carved) return c0 <= c1
+  const voidsA = voidsOf(a)
+  const voidsB = voidsOf(b)
   for (let y = y0; y <= y1; y++) {
     for (let c = c0; c <= c1; c++) {
       const key = eastWest ? blockKey(plane, y, c) : blockKey(c, y, plane)
-      if (!blocks.has(key)) return true
+      if (voidsA.has(key) && voidsB.has(key)) return true
     }
   }
   return false
