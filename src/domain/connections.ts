@@ -9,7 +9,7 @@ import {
 import { bayFromPattern, type QuarterTurns } from './patterns.js'
 import { GRAIN_AXIS_CELLS, type Bay, type Face, type Project, type Socket } from './types.js'
 
-type HorizontalFace = Extract<Face, 'n' | 'e' | 's' | 'w'>
+export type HorizontalFace = Extract<Face, 'n' | 'e' | 's' | 'w'>
 type ConnectionKind = 'room' | 'window' | 'bars'
 
 interface FaceOpening {
@@ -93,6 +93,13 @@ export function bestPatternFit(
     || right.matchedOpenings - left.matchedOpenings
     || left.quarterTurns - right.quarterTurns,
   )[0]!
+}
+
+/** The bay faces that carry a doorway or arch, in n, e, s, w order. */
+export function bayOpenFaces(bay: Bay): HorizontalFace[] {
+  return NEIGHBOURS
+    .map(({ face }) => face)
+    .filter((face) => faceOpenings(bay, face).some((opening) => opening.kind === 'room'))
 }
 
 function faceOpenings(bay: Bay, face: HorizontalFace): FaceOpening[] {

@@ -51,7 +51,7 @@ The v1 editor provides:
 
 - multi-level plans with level gaps, custom footprints, named negative space, and fields up to 8 by 8 bays;
 - bay and cell views, plus Footprint and Space tools on an SVG plan;
-- module painting, connection-aware bay stamps, rotatable multi-bay layouts, grain changes, merge groups, cell heights, ceilings, sockets, centred opening widths, notes, and palette overrides;
+- module painting, connection-aware bay stamps, rotatable multi-bay layouts, seeded base assembly with a preview, grain changes, merge groups, cell heights, ceilings, sockets, centred opening widths, notes, and palette overrides;
 - a sparse four-level starter project with mansion, stronghold, trial, and mineshaft palettes;
 - a level rail, selection inspector, issue list, and bill-of-materials panel;
 - a 50-entry undo and redo history; and
@@ -94,12 +94,13 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Select is the default tool. Click a bay or cell to inspect it without changing the plan. Drag across cells to select a range.
 - Double-click a bay to open its cells. Use the **Bays** and **Cells** controls to change views directly.
 - Choose **Paint** and a module to paint bays or cells. Drag with a mouse, touch, or pen to paint several targets.
-- Choose **Stamp** and a bay pattern to replace whole bays with reusable layouts. **Auto fit** rotates each stamp to match openings in adjacent bays; fixed rotations remain available when the plan calls for a specific orientation. Besides passages, junctions, and feature rooms, the catalog has exploration pieces: a balcony landing, a dead end, a side chamber, a concealed room behind an arch you hide in the build, a service junction for item trunks, a mine head, a cave mouth, and a compact stair with its matching landing. To use the compact stair, stamp the compact landing in the same bay and rotation on a level 8 blocks up.
+- Choose **Stamp** and a bay pattern to replace whole bays with reusable layouts. **Auto fit** rotates each stamp to match openings in adjacent bays; fixed rotations remain available when the plan calls for a specific orientation. Besides passages, junctions, and feature rooms, the catalog has exploration pieces: a balcony landing, a dead end, a side chamber, a concealed room behind an arch you hide in the build, a service junction for item trunks, a mine head, a cave mouth, and a compact stair with its matching landing. The Compact stair layout stamps the stair and its landing 8 blocks up in one step.
 - Choose **Layout** to stamp a Stronghold loop, grand chamber, library wing, or workshop wing from a north-west anchor. Layouts may fill absent footprint slots, and the whole placement is one undo step.
-- Some layouts build on more than one level, and the picker shows how many. A stair stack, library gallery, atrium, or machinery hall uses a level that already sits at the right height, or adds one. If any part would hit a room on another level, nothing is stamped.
+- Some layouts build on more than one level, and the picker shows how many. A stair stack, compact stair, library gallery, atrium, or machinery hall uses a level that already sits at the right height, or adds one. If any part would hit a room on another level, nothing is stamped.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain. Empty cells are unbuilt: they place no blocks, cost nothing in the materials list, and take no part in the checks.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
 - Choose **Space** to name absent bays as courtyards, gardens, caves, stair shafts, or reserved expansion. Building a bay in that slot clears the name.
+- Choose **Assemble a base** from the **Project** menu to generate a plan inside a footprint. Set the footprint, up to four levels, the rooms you want, and a seed. The dialog draws every level and reports what the validators find before anything changes. **Apply** writes that plan as one undo step, and the same seed on the same project always gives the same plan. Levels sit 8 blocks apart, joined by compact stairs. Upper levels build only over bays the level below builds. The bays the routes skip become named courtyards, or reserved expansion over a built bay, and any negative space you already named inside the footprint stays.
 - Edit the level's palette in the inspector's **Palette blocks** fields. Edits apply everywhere that palette is used, so choose **Copy palette for this level** first to change only one level. Block IDs use `/setblock` syntax, such as `deepslate_bricks` or `minecraft:lantern[hanging=true]`.
 - Edit the project name and the world x and z of bay A1 in the inspector's **Project** fields. Exports use these coordinates.
 - Choose **Export Litematica** from the **Project** menu to download an in-game schematic.

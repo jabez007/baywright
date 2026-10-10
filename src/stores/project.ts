@@ -12,6 +12,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, toRaw } from 'vue'
 
+import { assembleProposal, type AssemblyProposal, type AssemblyRequest } from '../domain/assembly.js'
 import { bayKeyOf, cellAABB, footprintsOverlap, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
 import { getLayoutPattern, layoutLevelOffsets, rotatedLayout } from '../domain/layouts.js'
@@ -730,6 +731,25 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /** Generate a proposal against a copy of the project. Changes nothing. */
+  function previewAssembly(request: AssemblyRequest): AssemblyProposal {
+    return assembleProposal(snapshot(), request)
+  }
+
+  /**
+   * Write a generated proposal into the project as one undo step. The
+   * generator is deterministic, so this is the previewed proposal as long as
+   * the project has not changed since the preview.
+   */
+  function assemble(request: AssemblyRequest): Omit<AssemblyProposal, 'project'> {
+    return mutate(() => {
+      const { project: next, ...summary } = assembleProposal(snapshot(), request)
+      project.value = next
+      reconcile()
+      return summary
+    })
+  }
+
   function uniformModule(bay: Bay): string | null {
     const first = bay.cells[0]?.module
     if (first === undefined) return null
@@ -1057,6 +1077,8 @@ export const useProjectStore = defineStore('project', () => {
     paintBay,
     stampBayPattern,
     stampLayoutPattern,
+    previewAssembly,
+    assemble,
     setNegativeSpace,
     paintCell,
     paintCells,

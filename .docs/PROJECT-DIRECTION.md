@@ -12,7 +12,7 @@ The current editor includes the useful foundations from the discussion:
 - Centred 3-block and 5-block openings let adjacent pieces connect without custom geometry.
 - Bay patterns cover passages, junctions, feature rooms, infrastructure runs, and exploration pieces such as dead ends, concealed rooms, and compact stairs. **Auto fit** rotates a pattern to match adjacent openings.
 - Multi-bay layouts stamp Stronghold loops, grand chambers, library wings, and workshop wings as one undoable edit.
-- Multi-level layouts stamp a stair stack, a library with a gallery, an atrium with balconies, and a machinery hall over its service level. They add any level they need.
+- Multi-level layouts stamp a stair stack, a compact stair, a library with a gallery, an atrium with balconies, and a machinery hall over its service level. They add any level they need.
 - Named negative space distinguishes a courtyard, garden, cave, stair shaft, or reserved expansion from an unfinished plan.
 - The layered starter project assigns Mansion, Stronghold, Trial Chamber, and Mineshaft roles to separate levels and palettes.
 - Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, corner pillars, and a central light.
@@ -21,6 +21,7 @@ The current editor includes the useful foundations from the discussion:
 - Nether Portal rooms export an unlit obsidian frame, and Super Smelters export a hopper-fed furnace row.
 - Trading Halls export stall dividers along both side walls around a clear aisle.
 - Item Trunks export a hopper chain that runs toward the nearest spine.
+- **Assemble a base** grows a seeded plan inside a footprint from the same pieces, previews it with the validators' result, and applies it as one undo step.
 - Infrastructure modules describe rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls.
 
 The architectural influences have distinct jobs:
@@ -97,6 +98,8 @@ The current module type distinguishes circulation and service rooms. A future ro
 Do not add this field only to color the plan. Add it when Baywright can use it to check route continuity, calculate travel distance, or show a useful route overlay. Route data must not duplicate connections that sockets and modules already describe.
 
 ### 5. Add optional procedural assembly
+
+Implemented, except atriums. **Assemble a base** in the Project menu takes a footprint, a level count, the rooms to place, and a seed. It grows a seeded tree of passages on each level, closes a few loops, and joins the levels with the compact stair layout. It names the bays it skips as negative space and previews the proposal with the ordinary validators' result before anything changes. The generator does not place atriums yet.
 
 Procedural assembly is the last step. The generator should combine the same bay and layout catalogs that manual tools use.
 

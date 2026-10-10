@@ -9,6 +9,7 @@ import type { CellRef } from '../src/domain/types.js'
 import { blockKey, resolveBlocks } from '../src/domain/geometry.js'
 import { LAYOUT_PATTERN_LIST } from '../src/domain/layouts.js'
 import { validate } from '../src/domain/validate.js'
+import type { AssemblyRequest } from '../src/domain/assembly.js'
 
 function store() {
   return useProjectStore()
@@ -1209,5 +1210,54 @@ describe('multi-level layouts', () => {
     expect(open.every((solid) => !solid)).toBe(true)
     expect(blocks.has(blockKey(12, 8, 6))).toBe(true) // the balcony floor
     expect(blocks.has(blockKey(12, 6, 2))).toBe(true) // beside the 5-wide opening
+  })
+})
+
+describe('procedural assembly', () => {
+  const request = (overrides: Partial<AssemblyRequest> = {}): AssemblyRequest => ({
+    levelId: store().currentLevelId,
+    anchorBayKey: 'A1',
+    width: 3,
+    height: 3,
+    levelCount: 2,
+    rooms: ['library-hall'],
+    seed: 9,
+    ...overrides,
+  })
+
+  it('previews a proposal without touching the project or its history', () => {
+    const s = store()
+    s.clearHistory()
+    const before = JSON.stringify(s.toJSON())
+    const proposal = s.previewAssembly(request())
+
+    expect(proposal.project.levels).toHaveLength(2)
+    expect(JSON.stringify(s.toJSON())).toBe(before)
+    expect(s.undoDepth).toBe(0)
+  })
+
+  it('applies exactly the previewed proposal as one undo step', () => {
+    const s = store()
+    s.clearHistory()
+    const before = JSON.stringify(s.toJSON())
+    const preview = s.previewAssembly(request())
+    const applied = s.assemble(request())
+
+    expect(JSON.stringify(s.toJSON())).toBe(JSON.stringify(preview.project))
+    expect(applied.bays).toEqual(preview.bays)
+    expect(s.issues).toEqual([])
+    expect(s.undoDepth).toBe(1)
+
+    s.undo()
+    expect(JSON.stringify(s.toJSON())).toBe(before)
+  })
+
+  it('rejects a footprint off the field and changes nothing', () => {
+    const s = store()
+    s.clearHistory()
+    const before = JSON.stringify(s.toJSON())
+    expect(() => s.assemble(request({ anchorBayKey: 'B1', width: 3 }))).toThrow('leaves the bay field')
+    expect(JSON.stringify(s.toJSON())).toBe(before)
+    expect(s.undoDepth).toBe(0)
   })
 })

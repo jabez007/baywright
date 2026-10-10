@@ -3,6 +3,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import type { AssemblyProposal } from './domain/assembly.js'
 import { downloadProject, parseProject } from './export/json.js'
 import { downloadLitematic, litematicFilename } from './export/litematic.js'
 import { exportSvgAsPng, pngFilename } from './export/png.js'
@@ -15,6 +16,7 @@ import type { Grain, NegativeSpaceKind, Project } from './domain/types.js'
 import { loadLastOpenedProject, loadProject as loadStoredProject } from './persistence/db.js'
 import { useAutosave } from './persistence/autosave.js'
 import { type Selection, useProjectStore } from './stores/project.js'
+import AssembleDialog from './components/AssembleDialog.vue'
 import BomPanel from './components/BomPanel.vue'
 import FieldSizeDialog from './components/FieldSizeDialog.vue'
 import Inspector from './components/Inspector.vue'
@@ -59,6 +61,7 @@ const inspectorOpen = ref(false)
 const narrowViewport = ref(false)
 /** null when closed, otherwise which of the two things the dialog is doing. */
 const sizing = ref<'new' | 'resize' | null>(null)
+const assembling = ref(false)
 let routeSyncSuspensions = 0
 let routeRequest = 0
 let narrowMedia: MediaQueryList | null = null
@@ -444,6 +447,16 @@ function onApplyFootprint(): void {
   store.applyFootprintToAllLevels(store.currentLevelId)
 }
 
+function onAssembled(summary: Omit<AssemblyProposal, 'project'>): void {
+  assembling.value = false
+  notice.value = null
+  const levels = new Set(summary.bays.map((bay) => bay.levelId)).size
+  const skipped = summary.unplacedRooms.length
+  info.value = `Assembled ${summary.bays.length} bays across ${levels} level${levels === 1 ? '' : 's'}.`
+    + (skipped > 0 ? ` ${skipped} room${skipped === 1 ? '' : 's'} did not fit.` : '')
+    + ' Undo takes it back.'
+}
+
 function onChooseBay(event: Event): void {
   const bayKey = (event.target as HTMLSelectElement).value
   if (!bayKey || !store.currentLevel) return
@@ -521,6 +534,7 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       @import="onImport"
       @reset="sizing = 'new'"
       @resize="sizing = 'resize'"
+      @assemble="assembling = true"
       @apply-footprint="onApplyFootprint"
     />
 
@@ -625,6 +639,8 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       @submit="onSized"
       @cancel="sizing = null"
     />
+
+    <AssembleDialog :open="assembling" @applied="onAssembled" @cancel="assembling = false" />
 
     <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="onFileChosen" />
   </div>

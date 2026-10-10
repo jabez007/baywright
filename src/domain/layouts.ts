@@ -98,6 +98,17 @@ export const LAYOUT_PATTERN_LIST: readonly LayoutPattern[] = [
     ],
   },
   {
+    id: 'compact-stair-pair',
+    name: 'Compact stair',
+    description: 'A one-cell stair and the landing 8 blocks above it, each entered from the west.',
+    width: 1,
+    height: 1,
+    placements: [
+      { i: 0, j: 0, patternId: 'compact-stair', quarterTurns: 0 },
+      { i: 0, j: 0, dy: 8, patternId: 'compact-landing', quarterTurns: 0 },
+    ],
+  },
+  {
     id: 'library-gallery',
     name: 'Library gallery',
     description: 'A library with a gallery 8 blocks up that looks down through a 3×3 well.',

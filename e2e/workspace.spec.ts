@@ -229,6 +229,35 @@ test('stamps a stair stack across three levels and undoes it in one step', async
   await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*fine grain, Empty/)
 })
 
+test('previews an assembled base, applies it, and undoes it in one step', async ({ page }) => {
+  await page.goto('/')
+  const levels = page.getByRole('complementary', { name: 'Levels' })
+
+  await openProjectMenu(page)
+  await page.getByRole('button', { name: 'Assemble a base' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Assemble a base' })
+  await dialog.getByLabel('Levels').fill('2')
+  await dialog.getByLabel('Seed').fill('5')
+  await dialog.getByLabel('Library hall').fill('1')
+
+  const preview = dialog.getByRole('region', { name: 'Proposal preview' })
+  await expect(preview.locator('figcaption')).toHaveText(['Ground · y 0', 'Level 8 · y 8'])
+  await expect(preview.getByRole('status')).toHaveText('The validators report no issues.')
+  await expect(preview.locator('.bay.spine[title]')).toHaveCount(1)
+  // Nothing changes until Apply.
+  await expect(levels.getByRole('button', { name: /Level 8/ })).toHaveCount(0)
+
+  await dialog.getByRole('button', { name: 'Apply' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('status').filter({ hasText: /^Assembled \d+ bays across 2 levels\./ })).toBeVisible()
+  await expect(levels.getByRole('button', { name: /Level 8/ })).toHaveCount(1)
+  await expect(levels.getByLabel('Error')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(levels.getByRole('button', { name: /Level 8/ })).toHaveCount(0)
+  await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*fine grain, Empty/)
+})
+
 test('paints infrastructure modules and stamps a rail-line bay', async ({ page }) => {
   await page.goto('/')
 

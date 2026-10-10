@@ -56,6 +56,7 @@ const emit = defineEmits<{
   import: []
   reset: []
   resize: []
+  assemble: []
   'apply-footprint': []
 }>()
 
@@ -182,6 +183,7 @@ function chooseNegativeSpace(event: Event): void {
             <button type="button" :disabled="pngBusy" :title="`Litematica schematic for ${LITEMATICA_TARGET_LABEL}`" @click="emit('litematic')">Export Litematica</button>
             <button type="button" :disabled="pngBusy" @click="emit('import')">Import project</button>
             <button type="button" :disabled="pngBusy" @click="emit('resize')">Resize field</button>
+            <button type="button" :disabled="pngBusy" @click="emit('assemble')">Assemble a base</button>
             <button type="button" class="danger" :disabled="pngBusy" @click="emit('reset')">New project</button>
           </div>
         </details>

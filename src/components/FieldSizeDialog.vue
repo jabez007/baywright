@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The one modal in the app, for the one thing that is not painting: how wide
- * and deep the bay field is. §10 keeps modals out of the paint tools, and the
+ * A modal for something that is not painting: how wide and deep the bay
+ * field is. §10 keeps modals out of the paint tools, and the
  * field extent is not one — it is the bounding box the plan is drawn inside.
  *
  * Which bays inside that box actually exist is the canvas's job, in footprint

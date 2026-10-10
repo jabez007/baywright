@@ -132,7 +132,13 @@ The catalog contains straight passage, corner passage, T-junction, four-way junc
 
 A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
 
-A placement may also set `dy`, a multiple of 4 blocks above the level the user stamps on. The stamp uses the level already at that y or adds one, named `Level {y}`, that copies the footprint below. Before it keeps the edit, the stamp runs V1. If any stamped cell collides with another level, the whole stamp is refused and the project is left unchanged. The multi-level catalog contains a stair stack over three levels, a library with a gallery that looks down through a 3x3 well, a 12-high atrium with a balcony over each side hall, and two merged smelter bays over an item-trunk service run.
+A placement may also set `dy`, a multiple of 4 blocks above the level the user stamps on. The stamp uses the level already at that y or adds one, named `Level {y}`, that copies the footprint below. Before it keeps the edit, the stamp runs V1. If any stamped cell collides with another level, the whole stamp is refused and the project is left unchanged. The multi-level catalog contains a stair stack over three levels, a compact stair with its landing 8 blocks up, a library with a gallery that looks down through a 3x3 well, a 12-high atrium with a balcony over each side hall, and two merged smelter bays over an item-trunk service run.
+
+Procedural assembly builds a proposal from the same catalogs. A request names the lowest level, a rectangular footprint, one to four levels, the rooms to place, and a seed. The same project and request always give the same proposal. Levels sit 8 blocks apart, the rise of the compact stair layout, and the generator takes its stair and landing pieces from that layout.
+
+On each level the generator grows a random tree of bays from an entry. The entry is a spine near the footprint's centre on the lowest level, and the landing of the stair below on each level above. The tree covers 60 to 85 percent of the open bays, and at least two. Upper levels build only over bays the level below builds. The stair up goes in the dead end farthest from the entry, so a player crosses each level to reach the next. Requested rooms take free dead ends. The side chamber and concealed room take straight runs instead, and the mine head goes only on the lowest level. A room that finds no slot is listed in the proposal. A few neighbouring passage bays are then joined to close loops.
+
+Each bay gets the catalog piece whose rotation opens exactly toward its linked neighbours, checked with the same opening analysis that **Auto fit** uses. The spine replaces the centre cell of the lowest level's entry. Bays the tree skips become named negative space: a courtyard over open ground, reserved expansion over a built bay, or the kind already named on the level below. Negative space already named inside the footprint stays. The generator writes the proposal into a copy of the project and runs every validator on the copy. The editor shows the levels and the result, and **Apply** writes the same proposal as one undo step.
 
 A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The mineshaft level includes reusable rail-line bays. One stair climbs through bay C4 from the mineshaft to the stronghold, and a second climbs through C2 to the mansion. Each stair is as tall as the rise it covers. A spine sits at the stronghold's central junction, so the example passes every check. The level spacing lets the tallest rooms touch the next floor plane without colliding.
 
@@ -379,6 +385,7 @@ src/
     geometry.ts           # §7, pure, no Vue imports
     details.ts            # exact interior detail kits
     connections.ts        # pattern-opening compatibility and auto fit
+    assembly.ts           # seeded procedural assembly from the catalogs
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
@@ -392,6 +399,7 @@ src/
     autosave.ts           # debounced, serialized IndexedDB writes
     db.ts                 # project records and recovery
   components/
+    AssembleDialog.vue
     BayTile.vue
     BomPanel.vue
     CellTile.vue
@@ -467,11 +475,12 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Implemented early: exact Arena core-and-ring detailing in block geometry and material totals.
 - Implemented early: infrastructure modules for transport, item flow, machinery, mine access, portals, and trading.
 - Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
-- Implemented early: multi-level layouts for a stair stack, a library gallery, an atrium, and a machinery hall.
+- Implemented early: multi-level layouts for a stair stack, a compact stair, a library gallery, an atrium, and a machinery hall.
 - Implemented early: exact Library, Rail Line, Ice Highway, Nether Portal, Super Smelter, Trading Hall, and Item Trunk kits.
 - Planned: the remaining exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
 - Implemented early: exploration bay patterns for landings, dead ends, side and concealed rooms, service junctions, mine and cave transitions, and compact stairs.
-- Planned: route roles that support checks, and optional procedural assembly.
+- Implemented early: seeded procedural assembly that previews a proposal and applies it as one undo step.
+- Planned: route roles that support checks.
 - Implemented early: a palette editor. The level inspector renames the level's palette, edits its six block IDs, and copies it for one level. Block IDs follow `/setblock` syntax, with the `minecraft:` namespace added when omitted.
 - Implemented early: a matched stair action from one cell to the next level up.
 - Vanilla structure `.nbt` export with region splitting for the format limit.
