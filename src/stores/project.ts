@@ -12,7 +12,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, toRaw } from 'vue'
 
-import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
+import { bayKeyOf, cellAABB, footprintsOverlap, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
 import { rotatedLayout } from '../domain/layouts.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, isBuiltCell, type CellOverrides } from '../domain/modules.js'
@@ -765,6 +765,51 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /**
+   * Make a matched stair from `ref` to the next level up: the stair is as tall
+   * as the rise, its ceiling cannot seal the shaft, and every landing cell
+   * inside its footprint opens a shaft down. A landing cell wider than the
+   * stair would lose floor beyond it, so that is refused. An unbuilt stair
+   * becomes a Stair, and an unbuilt landing becomes a Junction.
+   */
+  function addStairUp(ref: CellRef): void {
+    mutate(() => {
+      const levels = sortedLevels(project.value)
+      const { level } = resolveCell(project.value, ref)
+      const above = levels[levels.findIndex((candidate) => candidate.id === level.id) + 1]
+      if (!above) throw new Error('There is no level above to climb to.')
+      const rise = above.y - level.y
+      if (rise !== 4 && rise !== 8 && rise !== 12) {
+        throw new Error(`Level '${above.name}' is ${rise} blocks up. A stair climbs 4, 8, or 12.`)
+      }
+
+      const stairBay = requireBay(level.id, ref.bayKey)
+      const existing = stairBay.cells[ref.cellIndex]!
+      if (!isBuiltCell(existing)) stairBay.cells[ref.cellIndex] = cellFromModule('stair', carryOver(existing))
+      const stair = stairBay.cells[ref.cellIndex]!
+      stair.heightCells = (rise / LEVEL_PITCH) as 1 | 2 | 3
+      stair.ceiling = 'flat'
+      stair.sockets.up = 'shaft'
+
+      above.bays[ref.bayKey] ??= createBay(stairBay.grain)
+      clearNegativeSpace(above, ref.bayKey)
+      const shaft = cellAABB(project.value, ref)
+      const cells = above.bays[ref.bayKey]!.cells
+      for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+        const box = cellAABB(project.value, { levelId: above.id, bayKey: ref.bayKey, cellIndex })
+        if (!footprintsOverlap(shaft, box)) continue
+        if (box.x0 < shaft.x0 || box.x1 > shaft.x1 || box.z0 < shaft.z0 || box.z1 > shaft.z1) {
+          throw new Error(
+            `The landing in '${above.name}' at ${ref.bayKey} is wider than the stair. Match the bay grain above first.`,
+          )
+        }
+        const landing = cells[cellIndex]!
+        if (!isBuiltCell(landing)) cells[cellIndex] = cellFromModule('junction', carryOver(landing))
+        cells[cellIndex]!.sockets.down = 'shaft'
+      }
+    })
+  }
+
   function setNote(ref: CellRef, note: string): void {
     mutate(() => {
       const cell = requireCell(ref)
@@ -944,6 +989,7 @@ export const useProjectStore = defineStore('project', () => {
     setCeiling,
     setSocket,
     setOpeningWidth,
+    addStairUp,
     cycleSocket,
     setNote,
     setPaletteOverride,

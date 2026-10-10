@@ -609,3 +609,21 @@ test('exports a Litematica schematic placed at the world origin', async ({ page 
     'place it with its origin at x 100, y 0, z -36',
   )
 })
+
+test('adds a matched stair from a cell to the level above', async ({ page }) => {
+  await page.goto('/')
+  const levels = page.getByRole('complementary', { name: 'Levels' })
+  await levels.getByRole('button', { name: 'Add level' }).click()
+  await expect(levels.getByRole('button', { name: /Level 4/ })).toHaveAttribute('aria-current', 'true')
+
+  await levels.getByRole('button', { name: /Ground/ }).click()
+  await useCellTool(page, 'Select')
+  await page.getByRole('button', { name: /^A1 cell 5 · Empty/ }).click()
+  await page.getByRole('button', { name: 'Add stair to the level above' }).click()
+  await expect(page.getByRole('button', { name: /^A1 cell 5 · Stair/ })).toBeVisible()
+
+  await levels.getByRole('button', { name: /Level 4/ }).click()
+  await expect(page.getByRole('button', { name: /^A1 cell 5 · Junction/ })).toBeVisible()
+  // A one-high stair meets the level 4 blocks up, so neither level has errors.
+  await expect(levels.getByLabel('Error')).toHaveCount(0)
+})

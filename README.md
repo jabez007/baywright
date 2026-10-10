@@ -101,6 +101,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Choose **Export Litematica** from the **Project** menu to download an in-game schematic.
 - Choose **New project** from the **Project** menu to start blank or load the layered base example.
 - Use the **Skip to plan** link or press `Tab` to enter the plan. Use the arrow keys to move between targets. Press `Enter` or `Space` to apply the active tool.
+- Select one cell and choose **Add stair to the level above** to make a matched stair. The cell becomes as tall as the rise to the next level, which must be 4, 8, or 12 blocks, and that level gets a landing with a shaft down.
 - Shift-drag cells to make a rectangular merge group.
 - Alt-click a cell edge to cycle its horizontal socket.
 - Press `[` or `]` to change the selected cells' height.

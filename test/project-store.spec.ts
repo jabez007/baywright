@@ -980,3 +980,95 @@ describe('the bay field cap', () => {
     expect(() => createProject({ bayRows: 0 })).toThrow(RangeError)
   })
 })
+
+describe('a matched stair up', () => {
+  /** Ground at y 0 plus one level `rise` blocks above it. */
+  function twoLevels(rise: number) {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(rise, 'Upper')
+    const stair: CellRef = { levelId: ground, bayKey: 'A1', cellIndex: 4 }
+    const landing: CellRef = { levelId: upper, bayKey: 'A1', cellIndex: 4 }
+    const cellAt = (ref: CellRef) => s.project.levels.find((l) => l.id === ref.levelId)!.bays[ref.bayKey]!.cells[ref.cellIndex]!
+    return { s, ground, upper, stair, landing, cellAt }
+  }
+
+  it('makes the stair as tall as the rise and opens an unbuilt landing as a junction', () => {
+    const { s, stair, landing, cellAt } = twoLevels(8)
+    s.addStairUp(stair)
+
+    expect(cellAt(stair)).toMatchObject({ module: 'stair', heightCells: 2, ceiling: 'flat' })
+    expect(cellAt(stair).sockets.up).toBe('shaft')
+    expect(cellAt(stair).sockets.n).toBe('corridor') // the Stair module's entrance
+    expect(cellAt(landing).module).toBe('junction')
+    expect(cellAt(landing).sockets.down).toBe('shaft')
+    expect(s.issues.filter((issue) => issue.id === 'V4' || issue.id === 'V1')).toEqual([])
+  })
+
+  it('climbs 4 and 12 with one- and three-high stairs', () => {
+    for (const [rise, heightCells] of [[4, 1], [12, 3]] as const) {
+      setActivePinia(createPinia())
+      const { s, stair, cellAt } = twoLevels(rise)
+      s.addStairUp(stair)
+      expect(cellAt(stair).heightCells).toBe(heightCells)
+      expect(s.issues.filter((issue) => issue.id === 'V4')).toEqual([])
+    }
+  })
+
+  it('keeps a built room on either end and only opens the shaft', () => {
+    const { s, stair, landing, cellAt } = twoLevels(8)
+    s.paintCell(stair, 'spine')
+    s.paintCell(landing, 'library')
+    s.addStairUp(stair)
+
+    // The spine's dropped ceiling would seal the shaft, so it goes flat.
+    expect(cellAt(stair)).toMatchObject({ module: 'spine', ceiling: 'flat' })
+    expect(cellAt(stair).sockets.n).toBe('corridor')
+    expect(cellAt(landing).module).toBe('library')
+    expect(cellAt(landing).sockets.down).toBe('shaft')
+    expect(s.issues.filter((issue) => issue.id === 'V4')).toEqual([])
+  })
+
+  it('adds the landing bay when the level above has none there', () => {
+    const { s, upper, stair, landing, cellAt } = twoLevels(8)
+    s.removeBay(upper, 'A1')
+    s.addStairUp(stair)
+    expect(s.project.levels.find((l) => l.id === upper)!.bays['A1']!.grain).toBe('fine')
+    expect(cellAt(landing).sockets.down).toBe('shaft')
+  })
+
+  it('lands on the next level up, past levels at other heights', () => {
+    const { s, stair, landing, cellAt } = twoLevels(8)
+    s.addLevel(20, 'Roof')
+    s.addStairUp(stair)
+    expect(cellAt(landing).sockets.down).toBe('shaft')
+  })
+
+  it('is one undo step', () => {
+    const { s, stair, landing, cellAt } = twoLevels(8)
+    s.addStairUp(stair)
+    s.undo()
+    expect(cellAt(stair).module).toBe('empty')
+    expect(cellAt(landing).sockets.down).toBe('solid')
+  })
+
+  it('refuses a rise no stair covers, with no level above, or onto a wider cell', () => {
+    const tooHigh = twoLevels(16)
+    expect(() => tooHigh.s.addStairUp(tooHigh.stair)).toThrow(
+      "Level 'Upper' is 16 blocks up. A stair climbs 4, 8, or 12.",
+    )
+    expect(tooHigh.cellAt(tooHigh.stair).module).toBe('empty')
+
+    setActivePinia(createPinia())
+    const top = store()
+    expect(() => top.addStairUp(firstCell())).toThrow('There is no level above to climb to.')
+
+    setActivePinia(createPinia())
+    const wide = twoLevels(8)
+    wide.s.setBayGrain(wide.upper, 'A1', 'merged')
+    expect(() => wide.s.addStairUp(wide.stair)).toThrow(
+      "The landing in 'Upper' at A1 is wider than the stair. Match the bay grain above first.",
+    )
+    expect(wide.cellAt(wide.stair).module).toBe('empty')
+  })
+})

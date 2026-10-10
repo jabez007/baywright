@@ -212,6 +212,11 @@ function splitMergeGroups(): void {
   run(() => store.splitCells(groupRefs))
 }
 
+function addStairUp(): void {
+  const ref = refs.value[0]
+  if (refs.value.length === 1 && ref) run(() => store.addStairUp(ref))
+}
+
 function mergeSelected(): void {
   if (refs.value.length < 2) return
   run(() => store.mergeCells(refs.value))
@@ -397,6 +402,13 @@ function mergeSelected(): void {
           <p class="field-help">Corridors, arches, and bars can use a centred 3- or 5-block opening.</p>
         </fieldset>
 
+        <div v-if="refs.length === 1" class="stair-action">
+          <button type="button" @click="addStairUp">Add stair to the level above</button>
+          <p class="field-help">
+            Makes this cell as tall as the rise, opens a shaft up, and opens a landing on the next level.
+          </p>
+        </div>
+
         <label v-if="refs.length === 1">
           <span>Note</span>
           <textarea :value="cells[0]?.note ?? ''" rows="3" placeholder="Construction note" @change="setNote" />
@@ -502,6 +514,12 @@ label {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
+}
+
+.stair-action {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
 }
 
 .merge-actions {

@@ -316,6 +316,7 @@ Four regions:
 - Choose Footprint, then drag to add or remove bays.
 - Shift-drag with a mouse to create a merge group across a rectangle. The inspector provides the same merge action for a selected cell range.
 - Alt-click a cell edge to cycle that face's socket.
+- The inspector adds a matched stair from one selected cell to the next level up. The rise must be 4, 8, or 12. The stair gets `heightCells = rise / 4`, a flat ceiling, and `up: 'shaft'`. The landing bay is created at the stair's grain when absent. Each landing cell inside the stair footprint gets `down: 'shaft'`, and an unbuilt one becomes a Junction. A landing cell wider than the stair is refused, because its floor beyond the stair would open onto unbuilt ground. The whole edit is one undo step.
 - `[` and `]` decrease and increase `heightCells` on the selection.
 - Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z for undo/redo.
 - Escape clears selection.
