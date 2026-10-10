@@ -17,6 +17,7 @@ The current editor includes the useful foundations from the discussion:
 - The layered starter project assigns Mansion, Stronghold, Trial Chamber, and Mineshaft roles to separate levels and palettes.
 - Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, corner pillars, and a central light.
 - Library cells export wall shelves, a lectern, and a rail around a gallery well.
+- Rail Line and Ice Highway cells export a continuous track. Rail lines get support frames, and ice lanes get edge barriers.
 - Infrastructure modules describe rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls.
 
 The architectural influences have distinct jobs:
@@ -59,7 +60,7 @@ Resolve every target level, bay, and cell before changing the project. Reject an
 
 ### 2. Exact detail kits for selected modules
 
-Decoration hints record builder intent. The Arena and Library kits produce exact blocks.
+Decoration hints record builder intent. The Arena, Library, Rail Line, and Ice Highway kits produce exact blocks.
 
 Add exact detail kits where the result has one dependable interpretation:
 

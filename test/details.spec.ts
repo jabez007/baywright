@@ -6,7 +6,7 @@ import { blockKey, cellInterior, resolveBlocks } from '../src/domain/geometry.js
 import { cellFromModule } from '../src/domain/modules.js'
 import { PALETTES } from '../src/domain/palettes.js'
 import type { Cell, CellRef } from '../src/domain/types.js'
-import { bay, level, project } from './factory.js'
+import { bay, level, project, sockets } from './factory.js'
 
 const arena = project([
   level('L1', 0, { A1: bay('merged', () => cellFromModule('arena')) }),
@@ -146,5 +146,88 @@ describe('library kit', () => {
       const blocks = resolveBlocks(gallery(undefined))
       expect(blocks.get(blockKey(4, 9, 6))).toBe('minecraft:stone_bricks')
     })
+  })
+})
+
+describe('rail line kit', () => {
+  /**
+   * The rail line bay: the middle row of a fine bay at A1, open east and west.
+   * Its interiors run x 1 to 3, 5 to 7, and 9 to 11, at z 5 to 7 and y 1 to 3.
+   */
+  const railBay = (others: Record<string, ReturnType<typeof bay>> = {}) =>
+    project([
+      level('L1', 0, {
+        A1: bay('fine', (index) =>
+          index >= 3 && index <= 5
+            ? { ...cellFromModule('rail-line'), sockets: sockets({ e: 'corridor', w: 'corridor' }) }
+            : { module: 'empty' },
+        ),
+        ...others,
+      }),
+    ])
+
+  it('lays one unbroken track down the middle, through every open seam', () => {
+    const blocks = resolveBlocks(railBay())
+    const track = positionsOf(blocks, 'minecraft:rail')
+
+    expect(track).toHaveLength(13)
+    for (let x = 0; x <= 12; x++) expect(blocks.get(blockKey(x, 1, 6))).toBe('minecraft:rail[shape=east_west]')
+  })
+
+  it('stops at a wall rather than cutting through it', () => {
+    const blocks = resolveBlocks(railBay({ B1: bay('fine') }))
+    expect(blocks.get(blockKey(12, 1, 6))).toBe('minecraft:stone_bricks')
+    expect(positionsOf(blocks, 'minecraft:rail')).toHaveLength(12)
+  })
+
+  it('frames each cell with one support: two posts and a beam across the track', () => {
+    const blocks = resolveBlocks(railBay())
+    // Cell 4 spans x 1 to 3, so its support stands at x 2.
+    expect(blocks.get(blockKey(2, 1, 5))).toBe('minecraft:chiseled_stone_bricks')
+    expect(blocks.get(blockKey(2, 2, 7))).toBe('minecraft:chiseled_stone_bricks')
+    for (let z = 5; z <= 7; z++) expect(blocks.get(blockKey(2, 3, z))).toBe('minecraft:stone_bricks')
+    expect(blocks.has(blockKey(1, 1, 5))).toBe(false)
+  })
+
+  it('runs north to south in a cell open on those faces', () => {
+    const blocks = resolveBlocks(project([level('L1', 0, { A1: bay('merged', () => cellFromModule('rail-line')) })]))
+    expect(blocks.get(blockKey(6, 1, 1))).toBe('minecraft:rail[shape=north_south]')
+  })
+})
+
+describe('ice highway kit', () => {
+  /** The ice highway bay: the middle row of a fine bay at A1, open east and west. */
+  const iceBay = () =>
+    project([
+      level('L1', 0, {
+        A1: bay('fine', (index) =>
+          index >= 3 && index <= 5
+            ? { ...cellFromModule('ice-highway'), sockets: sockets({ e: 'corridor', w: 'corridor' }) }
+            : { module: 'empty' },
+        ),
+      }),
+    ])
+
+  it('sets a blue ice lane into the floor, unbroken across the seams', () => {
+    const blocks = resolveBlocks(iceBay())
+    for (let x = 0; x <= 12; x++) expect(blocks.get(blockKey(x, 0, 6))).toBe('minecraft:blue_ice')
+    expect(positionsOf(blocks, 'minecraft:blue_ice')).toHaveLength(13)
+    expect(blocks.get(blockKey(2, 0, 5))).toBe('minecraft:stone_bricks')
+  })
+
+  it('walls the lane on both sides with a one-high accent barrier', () => {
+    const blocks = resolveBlocks(iceBay())
+    for (let x = 0; x <= 12; x++) {
+      expect(blocks.get(blockKey(x, 1, 5))).toBe('minecraft:chiseled_stone_bricks')
+      expect(blocks.get(blockKey(x, 1, 7))).toBe('minecraft:chiseled_stone_bricks')
+    }
+    expect(blocks.has(blockKey(2, 2, 5))).toBe(false)
+    expect(blocks.has(blockKey(2, 1, 6))).toBe(false)
+  })
+
+  it('lists the ice as placed and leaves it raw, since icebergs drop it', () => {
+    const bom = computeBom(iceBay())
+    expect(bom.blocks.find((entry) => entry.blockId === 'minecraft:blue_ice')?.count).toBe(13)
+    expect(bom.rawInputs.find((entry) => entry.blockId === 'minecraft:blue_ice')?.count).toBe(13)
   })
 })

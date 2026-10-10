@@ -30,6 +30,8 @@ type Kit = (bay: Bay, cell: Cell, interior: AABB, context: DetailContext) => Det
 const KITS: Readonly<Record<string, Kit>> = {
   arena: arenaKit,
   library: libraryKit,
+  'rail-line': railLineKit,
+  'ice-highway': iceHighwayKit,
 }
 
 export function interiorDetailBlocks(
@@ -57,6 +59,8 @@ type EdgeKit = (cell: Cell, outer: AABB, interior: AABB, context: DetailContext)
 
 const EDGE_KITS: Readonly<Record<string, EdgeKit>> = {
   library: galleryRail,
+  'rail-line': railThroughOpenings,
+  'ice-highway': iceThroughOpenings,
 }
 
 export function edgeDetailBlocks(cell: Cell, outer: AABB, interior: AABB, context: DetailContext): EdgeDetail[] {
@@ -135,7 +139,7 @@ function libraryKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext
   const shelves = roleSet(out, 'minecraft:bookshelf')
   const top = Math.min(interior.y0 + 2, interior.y1)
   for (const [x, z] of wallColumns(interior)) {
-    if (isOpening(context, x, z)) continue
+    if (isOpening(context, `${x},${z}`)) continue
     for (let y = interior.y0; y <= top; y++) shelves.add(key(x, y, z))
   }
 
@@ -152,6 +156,133 @@ function entrance(cell: Cell): WallFace | undefined {
   return WALL_FACES.find((face) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch')
 }
 
+/** A route runs north to south or east to west. */
+type Axis = 'ns' | 'ew'
+
+/**
+ * The axis a route follows: the one open at both ends, else the one open at
+ * either end. A cell with no doorway has no route.
+ */
+function routeAxis(cell: Cell): Axis | undefined {
+  const open = (face: WallFace) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch'
+  if (open('n') && open('s')) return 'ns'
+  if (open('e') && open('w')) return 'ew'
+  if (open('n') || open('s')) return 'ns'
+  if (open('e') || open('w')) return 'ew'
+  return undefined
+}
+
+/** The faces a route crosses, which leave the side walls to its kit. */
+const ROUTE_ENDS: Readonly<Record<Axis, readonly WallFace[]>> = { ns: ['n', 's'], ew: ['e', 'w'] }
+const ROUTE_SIDES: Readonly<Record<Axis, readonly WallFace[]>> = { ns: ['e', 'w'], ew: ['n', 's'] }
+
+/**
+ * Lay the route's line in route coordinates: `along` the axis, `across` it.
+ * `place` turns them back into a block key.
+ */
+function routeFrame(axis: Axis, interior: AABB) {
+  const ns = axis === 'ns'
+  return {
+    along: ns ? [interior.z0, interior.z1] as const : [interior.x0, interior.x1] as const,
+    across: ns ? [interior.x0, interior.x1] as const : [interior.z0, interior.z1] as const,
+    place: (along: number, y: number, across: number) => (ns ? key(across, y, along) : key(along, y, across)),
+    column: (along: number, across: number) => (ns ? `${across},${along}` : `${along},${across}`),
+  }
+}
+
+/**
+ * Track runs down the middle of the cell along its route. One support frame
+ * stands halfway along: an accent post against each side wall and a beam of
+ * the floor block across the top. The beam stays out of an upward shaft.
+ */
+function railLineKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const axis = routeAxis(cell)
+  if (!axis || cell.sockets.down === 'shaft') return new Map()
+  const frame = routeFrame(axis, interior)
+  const centre = midpoint(frame.across[0], frame.across[1])
+  const out: DetailBlocks = new Map()
+
+  const track = roleSet(out, `minecraft:rail[shape=${axis === 'ns' ? 'north_south' : 'east_west'}]`)
+  for (let a = frame.along[0]; a <= frame.along[1]; a++) track.add(frame.place(a, interior.y0, centre))
+
+  const halfway = midpoint(frame.along[0], frame.along[1])
+  const posts = roleSet(out, 'accent')
+  for (const side of frame.across) {
+    if (side === centre) continue
+    if (isOpening(context, frame.column(halfway, side), ROUTE_SIDES[axis])) continue
+    for (let y = interior.y0; y < interior.y1; y++) posts.add(frame.place(halfway, y, side))
+  }
+  if (cell.sockets.up !== 'shaft') {
+    const beam = roleSet(out, 'floor')
+    for (let c = frame.across[0]; c <= frame.across[1]; c++) beam.add(frame.place(halfway, interior.y1, c))
+  }
+  return out
+}
+
+/** Carry the track across each open end of the route, onto the shared wall line. */
+function railThroughOpenings(cell: Cell, outer: AABB, interior: AABB): EdgeDetail[] {
+  const axis = routeAxis(cell)
+  if (!axis || cell.sockets.down === 'shaft') return []
+  const frame = routeFrame(axis, interior)
+  const centre = midpoint(frame.across[0], frame.across[1])
+  const material: DetailMaterial = `minecraft:rail[shape=${axis === 'ns' ? 'north_south' : 'east_west'}]`
+  return openRouteEnds(cell, axis, outer).map((plane) => {
+    const at = frame.place(plane, interior.y0, centre)
+    return { at, material, whereAir: at }
+  })
+}
+
+/**
+ * A boat lane of blue ice replaces the floor down the middle of the route,
+ * between two one-high accent barriers. A barrier leaves a side doorway open.
+ */
+function iceHighwayKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const axis = routeAxis(cell)
+  if (!axis || cell.sockets.down === 'shaft') return new Map()
+  const frame = routeFrame(axis, interior)
+  const centre = midpoint(frame.across[0], frame.across[1])
+  const out: DetailBlocks = new Map()
+  const ice = roleSet(out, 'minecraft:blue_ice')
+  const barriers = roleSet(out, 'accent')
+  for (let a = frame.along[0]; a <= frame.along[1]; a++) {
+    ice.add(frame.place(a, interior.y0 - 1, centre))
+    for (const side of [centre - 1, centre + 1]) {
+      if (isOpening(context, frame.column(a, side), ROUTE_SIDES[axis])) continue
+      barriers.add(frame.place(a, interior.y0, side))
+    }
+  }
+  return out
+}
+
+/**
+ * Carry the lane and its barriers across each open end of the route. The ice
+ * replaces the floor under the shared wall line only where the wall above it
+ * is open.
+ */
+function iceThroughOpenings(cell: Cell, outer: AABB, interior: AABB): EdgeDetail[] {
+  const axis = routeAxis(cell)
+  if (!axis || cell.sockets.down === 'shaft') return []
+  const frame = routeFrame(axis, interior)
+  const centre = midpoint(frame.across[0], frame.across[1])
+  const edges: EdgeDetail[] = []
+  for (const plane of openRouteEnds(cell, axis, outer)) {
+    const doorway = frame.place(plane, interior.y0, centre)
+    edges.push({ at: frame.place(plane, interior.y0 - 1, centre), material: 'minecraft:blue_ice', whereAir: doorway })
+    for (const side of [centre - 1, centre + 1]) {
+      const at = frame.place(plane, interior.y0, side)
+      edges.push({ at, material: 'accent', whereAir: at })
+    }
+  }
+  return edges
+}
+
+/** The wall lines, on the route axis, where the route leaves the cell. */
+function openRouteEnds(cell: Cell, axis: Axis, outer: AABB): number[] {
+  return ROUTE_ENDS[axis]
+    .filter((face) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch')
+    .map((face) => (face === 'n' ? outer.z0 : face === 's' ? outer.z1 : face === 'w' ? outer.x0 : outer.x1))
+}
+
 /** Every interior column that touches a wall, each corner once. */
 function wallColumns(interior: AABB): Array<[number, number]> {
   const columns: Array<[number, number]> = []
@@ -163,8 +294,8 @@ function wallColumns(interior: AABB): Array<[number, number]> {
   return columns
 }
 
-function isOpening(context: DetailContext, x: number, z: number, faces: readonly WallFace[] = WALL_FACES): boolean {
-  const column = `${x},${z}`
+/** Whether `column`, as `"x,z"`, stands in front of an opening on one of `faces`. */
+function isOpening(context: DetailContext, column: string, faces: readonly WallFace[] = WALL_FACES): boolean {
   return faces.some((face) => context.openings[face]?.has(column))
 }
 
