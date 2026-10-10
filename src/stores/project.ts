@@ -33,6 +33,7 @@ import {
   type Face,
   type Grain,
   type Level,
+  type MaterialRole,
   type NegativeSpaceKind,
   type OpeningWidth,
   type Project,
@@ -97,6 +98,9 @@ export interface NewProjectOptions {
  * host is reached over plain http on a LAN address. `getRandomValues` has no
  * such restriction, so fall back to hand-rolling the v4 layout.
  */
+/** `namespace:path`, namespace optional, then an optional `[key=value,...]` state. */
+const BLOCK_ID = /^(?:[a-z0-9_.-]+:)?[a-z0-9_./-]+(?:\[[a-z0-9_]+=[a-z0-9_]+(?:,[a-z0-9_]+=[a-z0-9_]+)*\])?$/
+
 function newId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
 
@@ -425,6 +429,48 @@ export const useProjectStore = defineStore('project', () => {
     mutate(() => {
       if (!project.value.palettes[paletteId]) throw new Error(`no palette '${paletteId}'`)
       requireLevel(levelId).paletteId = paletteId
+    })
+  }
+
+  // -- palettes -----------------------------------------------------------
+
+  function requirePalette(paletteId: string) {
+    const palette = project.value.palettes[paletteId]
+    if (!palette) throw new Error(`no palette '${paletteId}'`)
+    return palette
+  }
+
+  /** A project-local copy to edit. Returns the new palette's id. */
+  function duplicatePalette(paletteId: string): string {
+    return mutate(() => {
+      const source = requirePalette(paletteId)
+      const id = newId()
+      project.value.palettes[id] = { id, name: `${source.name} copy`, blocks: { ...source.blocks } }
+      return id
+    })
+  }
+
+  function renamePalette(paletteId: string, name: string): void {
+    mutate(() => {
+      const trimmed = name.trim()
+      if (!trimmed) throw new Error('A palette needs a name')
+      requirePalette(paletteId).name = trimmed
+    })
+  }
+
+  /**
+   * Accepts what the game's `/setblock` accepts for a plain block: an optional
+   * namespace, which defaults to `minecraft:`, and an optional block state.
+   */
+  function setPaletteBlock(paletteId: string, role: MaterialRole, blockId: string): void {
+    mutate(() => {
+      const trimmed = blockId.trim()
+      if (!BLOCK_ID.test(trimmed)) {
+        throw new Error(
+          `'${trimmed}' is not a block ID such as minecraft:stone_bricks or minecraft:lantern[hanging=true]`,
+        )
+      }
+      requirePalette(paletteId).blocks[role] = trimmed.includes(':') ? trimmed : `minecraft:${trimmed}`
     })
   }
 
@@ -972,6 +1018,9 @@ export const useProjectStore = defineStore('project', () => {
     setLevelY,
     renameLevel,
     setLevelPalette,
+    duplicatePalette,
+    renamePalette,
+    setPaletteBlock,
     setFieldExtent,
     addBay,
     removeBay,

@@ -1072,3 +1072,41 @@ describe('a matched stair up', () => {
     expect(wide.cellAt(wide.stair).module).toBe('empty')
   })
 })
+
+describe('palette editing', () => {
+  it('duplicates a palette under a new id and name, leaving the source alone', () => {
+    const s = store()
+    const id = s.duplicatePalette('stone-brick')
+    expect(id).not.toBe('stone-brick')
+    expect(s.project.palettes[id]).toEqual({ ...s.project.palettes['stone-brick'], id, name: 'Stone Brick copy' })
+    s.setPaletteBlock(id, 'wall', 'minecraft:deepslate_bricks')
+    expect(s.project.palettes['stone-brick']!.blocks.wall).toBe('minecraft:stone_bricks')
+  })
+
+  it('sets a block, adding the minecraft namespace and keeping a block state', () => {
+    const s = store()
+    s.setPaletteBlock('stone-brick', 'floor', ' deepslate_tiles ')
+    s.setPaletteBlock('stone-brick', 'light', 'minecraft:soul_lantern[hanging=true]')
+    expect(s.project.palettes['stone-brick']!.blocks.floor).toBe('minecraft:deepslate_tiles')
+    expect(s.project.palettes['stone-brick']!.blocks.light).toBe('minecraft:soul_lantern[hanging=true]')
+    s.undo()
+    expect(s.project.palettes['stone-brick']!.blocks.light).toBe('minecraft:lantern[hanging=true]')
+  })
+
+  it('rejects text that is not a block ID', () => {
+    const s = store()
+    for (const bad of ['', 'Stone Bricks', 'minecraft:lantern[hanging]', 'a:b:c']) {
+      expect(() => s.setPaletteBlock('stone-brick', 'wall', bad)).toThrow(
+        `'${bad.trim()}' is not a block ID such as minecraft:stone_bricks or minecraft:lantern[hanging=true]`,
+      )
+    }
+    expect(s.canUndo).toBe(false)
+  })
+
+  it('renames a palette but not to nothing', () => {
+    const s = store()
+    s.renamePalette('dark-oak', '  Spruce hall ')
+    expect(s.project.palettes['dark-oak']!.name).toBe('Spruce hall')
+    expect(() => s.renamePalette('dark-oak', '  ')).toThrow('A palette needs a name')
+  })
+})

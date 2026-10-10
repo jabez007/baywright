@@ -97,6 +97,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain. Empty cells are unbuilt: they place no blocks, cost nothing in the materials list, and take no part in the checks.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
 - Choose **Space** to name absent bays as courtyards, gardens, caves, stair shafts, or reserved expansion. Building a bay in that slot clears the name.
+- Edit the level's palette in the inspector's **Palette blocks** fields. Edits apply everywhere that palette is used, so choose **Copy palette for this level** first to change only one level. Block IDs use `/setblock` syntax, such as `deepslate_bricks` or `minecraft:lantern[hanging=true]`.
 - Edit the project name and the world x and z of bay A1 in the inspector's **Project** fields. Exports use these coordinates.
 - Choose **Export Litematica** from the **Project** menu to download an in-game schematic.
 - Choose **New project** from the **Project** menu to start blank or load the layered base example.
@@ -122,6 +123,5 @@ The [project direction](.docs/PROJECT-DIRECTION.md) explains which design candid
 
 - vanilla structure NBT export
 - 3D preview
-- palette editing
 - additional style-specific module and palette content
 - project sharing or cloud sync

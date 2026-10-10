@@ -627,3 +627,24 @@ test('adds a matched stair from a cell to the level above', async ({ page }) => 
   // A one-high stair meets the level 4 blocks up, so neither level has errors.
   await expect(levels.getByLabel('Error')).toHaveCount(0)
 })
+
+test('copies a level palette and changes one of its blocks', async ({ page }) => {
+  await page.goto('/')
+  const inspector = page.getByRole('complementary', { name: 'Inspector' })
+  await inspector.getByRole('button', { name: 'Copy palette for this level' }).click()
+  await expect(inspector.getByLabel('Palette name')).toHaveValue('Stone Brick copy')
+
+  const wall = inspector.getByLabel('Wall block')
+  await wall.fill('deepslate_bricks')
+  await wall.press('Enter')
+  await expect(wall).toHaveValue('minecraft:deepslate_bricks')
+
+  // A typo is refused and the field shows the stored block again.
+  await wall.fill('Deepslate Bricks')
+  await wall.press('Enter')
+  await expect(page.getByText(/'Deepslate Bricks' is not a block ID/)).toBeVisible()
+  await expect(wall).toHaveValue('minecraft:deepslate_bricks')
+
+  await inspector.getByRole('combobox', { name: /^Palette/ }).selectOption({ label: 'Stone Brick' })
+  await expect(inspector.getByLabel('Wall block')).toHaveValue('minecraft:stone_bricks')
+})

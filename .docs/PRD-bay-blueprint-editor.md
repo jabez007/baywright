@@ -455,7 +455,8 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
 - Planned: multi-level layout patterns and selected exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
 - Planned: a larger pattern catalog, route roles that support checks, and optional procedural assembly.
-- Palette editor.
+- Implemented early: a palette editor. The level inspector renames the level's palette, edits its six block IDs, and copies it for one level. Block IDs follow `/setblock` syntax, with the `minecraft:` namespace added when omitted.
+- Implemented early: a matched stair action from one cell to the next level up.
 - Vanilla structure `.nbt` export with region splitting for the format limit.
 - Shareable project links after choosing a backend. See §15.
 

@@ -9,6 +9,7 @@ import {
   type Ceiling,
   type Face,
   type Grain,
+  type MaterialRole,
   type OpeningWidth,
   type Socket,
 } from '../domain/types.js'
@@ -129,6 +130,43 @@ function moveLevel(event: Event): void {
 function setLevelPalette(event: Event): void {
   const current = level.value
   if (current) run(() => store.setLevelPalette(current.id, valueOf(event)))
+}
+
+const PALETTE_ROLES: readonly { id: MaterialRole; label: string }[] = [
+  { id: 'floor', label: 'Floor block' },
+  { id: 'wall', label: 'Wall block' },
+  { id: 'ceiling', label: 'Ceiling block' },
+  { id: 'accent', label: 'Accent block' },
+  { id: 'trim', label: 'Trim block' },
+  { id: 'light', label: 'Light block' },
+]
+const levelPalette = computed(() => (level.value ? store.project.palettes[level.value.paletteId] : undefined))
+
+function renamePalette(event: Event): void {
+  const palette = levelPalette.value
+  if (!palette) return
+  const input = event.target as HTMLInputElement
+  if (input.value.trim() !== palette.name) run(() => store.renamePalette(palette.id, input.value))
+  input.value = palette.name
+}
+
+function setPaletteBlock(role: MaterialRole, event: Event): void {
+  const palette = levelPalette.value
+  if (!palette) return
+  const input = event.target as HTMLInputElement
+  if (input.value.trim() !== palette.blocks[role]) run(() => store.setPaletteBlock(palette.id, role, input.value))
+  input.value = palette.blocks[role]
+}
+
+/** Copy this level's palette and switch the level to the copy, as one undo step. */
+function duplicateLevelPalette(): void {
+  const current = level.value
+  if (!current) return
+  run(() =>
+    store.batch(() => {
+      store.setLevelPalette(current.id, store.duplicatePalette(current.paletteId))
+    }),
+  )
 }
 
 function setBayGrain(event: Event): void {
@@ -266,7 +304,33 @@ function mergeSelected(): void {
           </select>
         </label>
 
-        <fieldset>
+        <fieldset v-if="levelPalette" class="stack">
+          <legend>Palette blocks</legend>
+          <label>
+            <span>Palette name</span>
+            <input :value="levelPalette.name" type="text" @change="renamePalette" />
+          </label>
+          <div class="palette-grid">
+            <label v-for="role in PALETTE_ROLES" :key="role.id">
+              <span>{{ role.label }}</span>
+              <input
+                :value="levelPalette.blocks[role.id]"
+                class="mono"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                @change="setPaletteBlock(role.id, $event)"
+              />
+            </label>
+          </div>
+          <button type="button" class="palette-copy" @click="duplicateLevelPalette">Copy palette for this level</button>
+          <p class="field-help">
+            Edits change every level and cell that uses this palette. Copy it first to change only this level.
+            Block IDs may carry a state, such as minecraft:lantern[hanging=true].
+          </p>
+        </fieldset>
+
+        <fieldset class="stack">
           <legend>Project</legend>
           <label>
             <span>Project name</span>
@@ -516,6 +580,16 @@ label {
   gap: 9px;
 }
 
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.palette-copy {
+  justify-self: start;
+}
+
 .stair-action {
   display: grid;
   gap: 4px;
@@ -534,6 +608,11 @@ fieldset {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+fieldset.stack {
+  display: grid;
+  gap: 10px;
 }
 
 legend {
