@@ -131,6 +131,38 @@ describe('F10 — stair continuity', () => {
     p.levels[1]!.bays['A1']!.cells = []
     expect(only(validate(p), 'V4')).toHaveLength(1)
   })
+
+  it('rises past a level that has nothing built over the shaft', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
+      level('elsewhere', 4, { C3: bay('merged') }),
+      level('upper', 8, { A1: bay('merged', () => ({ sockets: sockets({ down: 'shaft' }) })) }),
+    ])
+    expect(only(validate(p), 'V4')).toEqual([])
+  })
+
+  describe('under a dropped ceiling', () => {
+    const sealed = () =>
+      project([
+        level('lower', 0, {
+          A1: bay('merged', () => ({ module: 'spine', heightCells: 2, ceiling: 'dropped', sockets: sockets({ up: 'shaft' }) })),
+        }),
+        level('upper', 8, { A1: bay('merged', () => ({ module: 'library', sockets: sockets({ down: 'shaft' }) })) }),
+      ])
+
+    it('rejects a shaft the plenum plane at y + 4 closes off', () => {
+      const issues = only(validate(sealed()), 'V4')
+      expect(issues).toHaveLength(1)
+      expect(issues[0]!.message).toBe('Stair at A1 is sealed by its dropped ceiling at y 4')
+      expect(resolveBlocks(sealed()).has(blockKey(6, 4, 6))).toBe(true)
+    })
+
+    it('does not let V3 climb through the sealed shaft', () => {
+      const issues = only(validate(sealed()), 'V3')
+      expect(issues).toHaveLength(1)
+      expect(issues[0]!.refs).toEqual([{ levelId: 'upper', bayKey: 'A1', cellIndex: 0 }])
+    })
+  })
 })
 
 // --------------------------------------------------------------------------
@@ -536,5 +568,45 @@ describe('V7 — merge group integrity', () => {
     const p = merged([0])
     expect(only(validate(p), 'V7')).toHaveLength(0)
     expect(validMergeGroupIds(p).has('g')).toBe(false)
+  })
+})
+
+// --------------------------------------------------------------------------
+// V8 — World build limits
+// --------------------------------------------------------------------------
+
+describe('V8 — world build limits', () => {
+  it('accepts a stack that spans the whole overworld, -64 to 319', () => {
+    const p = project([
+      level('bottom', -64, { A1: bay('merged') }),
+      level('top', 312, { A1: bay('merged', () => ({ heightCells: 1 })) }),
+    ])
+    // The top cell's ceiling plane sits at 316, inside the limit.
+    expect(only(validate(p), 'V8')).toEqual([])
+  })
+
+  it('rejects a ceiling plane at y 320, one past the top block', () => {
+    const p = project([level('roof', 312, { A1: bay('merged', () => ({ heightCells: 2 })) }, { name: 'Roof' })])
+    const issues = only(validate(p), 'V8')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.severity).toBe('error')
+    expect(issues[0]!.message).toBe("Level 'Roof' builds up to y 320, above the world's top block at y 319")
+    expect(issues[0]!.refs).toEqual([{ levelId: 'roof', bayKey: 'A1', cellIndex: 0 }])
+    expect(issues[0]!.levelId).toBe('roof')
+  })
+
+  it('rejects a floor below bedrock level -64', () => {
+    const p = project([level('deep', -68, { A1: bay('coarse') }, { name: 'Deep' })])
+    const issues = only(validate(p), 'V8')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.message).toBe("Level 'Deep' sits at y -68, below the world's bottom block at y -64")
+    expect(issues[0]!.refs).toHaveLength(4)
+  })
+
+  it('names only the cells that cross the limit', () => {
+    const p = project([
+      level('roof', 312, { A1: bay('coarse', (index) => ({ heightCells: index === 0 ? 2 : 1 })) }),
+    ])
+    expect(only(validate(p), 'V8')[0]!.refs).toEqual([{ levelId: 'roof', bayKey: 'A1', cellIndex: 0 }])
   })
 })

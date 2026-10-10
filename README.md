@@ -1,6 +1,6 @@
 # Baywright
 
-Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and all seven domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
+Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and eight domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ The domain layer in `src/domain/` has no Vue, Pinia, or browser dependencies. It
 
 - the project, level, bay, cell, palette, module, and socket model;
 - coordinate and block geometry for fine, coarse, and merged bays;
-- vertical collisions, grain seams, room connectivity, stair continuity, plenum reachability, level alignment, and merge-group validation;
+- vertical collisions, grain seams, room connectivity, stair continuity, plenum reachability, level alignment, merge-group validation, and overworld build limits;
 - block deduplication, material totals, raw-input rollups, and smelting estimates; and
 - the shipped module presets and palettes.
 

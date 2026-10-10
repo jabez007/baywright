@@ -125,6 +125,10 @@ export const MAX_BAY_FIELD = 8
 /** §5.3 — level y values and cell heights are quantised to 4 blocks. */
 export const LEVEL_PITCH = 4
 
+/** Overworld build limits since 1.18: the lowest and highest placeable block y. */
+export const WORLD_MIN_Y = -64
+export const WORLD_MAX_Y = 319
+
 /** §5.2 — cells per bay axis, by grain. */
 export const GRAIN_AXIS_CELLS: Readonly<Record<Grain, 1 | 2 | 3>> = {
   fine: 3,

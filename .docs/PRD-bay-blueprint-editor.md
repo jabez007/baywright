@@ -250,7 +250,9 @@ Warning rather than error, because intentionally sealed secret rooms are a legit
 
 ### V4: stair continuity (error)
 
-A cell with `sockets.up === 'shaft'` requires the cell directly above it (same bay key, overlapping footprint, next level up) to have `sockets.down === 'shaft'`. The y-delta between the two levels must equal `4 * heightCells` of the lower cell.
+A cell with `sockets.up === 'shaft'` lands on the first level above it that has a cell in the same bay with an overlapping footprint. Levels are sparse, so a level in between that builds nothing over the shaft does not interrupt the stair. At least one landing cell must have `sockets.down === 'shaft'`. The y-delta between the two levels must equal `4 * heightCells` of the lower cell.
+
+A dropped ceiling puts a solid plane at `y + 4`, between the room and its upward shaft. An upward shaft on a dropped-ceiling cell is therefore an error, and V3 does not treat that shaft as a path.
 
 Message: `"Stair at {bayKey} rises {actual} but the level above is {expected} higher"`
 
@@ -267,6 +269,10 @@ Flood-fill from plenums in spine cells and plenums that connect to an adjacent s
 ### V7: merge group integrity (error)
 
 All cells sharing a `mergeGroup` must have the same grain, the same `heightCells`, the same `ceiling`, and form a contiguous rectangle. Report otherwise.
+
+### V8: world build limits (error)
+
+Every floor and ceiling plane must be a placeable overworld block: `level.y >= -64` and `level.y + 4 * heightCells <= 319`. Report one issue per level and limit, naming the cells that cross it.
 
 ## 9. Bill of materials
 
@@ -359,7 +365,7 @@ src/
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
-    validate.ts           # V1 through V7
+    validate.ts           # V1 through V8
     bom.ts                # material and smelting calculations
     modules.ts            # module presets
     palettes.ts           # palette definitions

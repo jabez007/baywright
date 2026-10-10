@@ -1,5 +1,5 @@
 /**
- * PRD §8 — Validation rules. All seven implemented.
+ * PRD §8 — Validation rules V1 through V8.
  *
  * Pure: no Vue, no store, no I/O.
  */
@@ -12,6 +12,7 @@ import {
   cellIndexOf,
   cellInterior,
   cellPlenum,
+  droppedCeilingY,
   footprintsOverlap,
   horizontalOpeningSpan,
   parseBayKey,
@@ -25,6 +26,8 @@ import { SPINE_MODULE_ID } from './modules.js'
 import {
   GRAIN_AXIS_CELLS,
   LEVEL_PITCH,
+  WORLD_MAX_Y,
+  WORLD_MIN_Y,
   type AABB,
   type Bay,
   type Cell,
@@ -38,7 +41,7 @@ import {
 
 export type Severity = 'error' | 'warning'
 
-export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7'
+export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8'
 
 export interface Issue {
   id: IssueId
@@ -59,6 +62,7 @@ export function validate(project: Project): Issue[] {
     ...checkPlenumReachability(project),
     ...checkLevelAlignment(project),
     ...checkMergeGroups(project),
+    ...checkWorldLimits(project),
   ]
 }
 
@@ -219,7 +223,6 @@ export function checkStairContinuity(project: Project): Issue[] {
 
   for (let index = 0; index < levels.length; index++) {
     const below = levels[index]!
-    const above = levels[index + 1]
 
     for (const bayKey of Object.keys(below.bays).sort()) {
       const belowBay = below.bays[bayKey]
@@ -230,7 +233,17 @@ export function checkStairContinuity(project: Project): Issue[] {
         if (cell.sockets.up !== 'shaft') continue
         const belowRef: CellRef = { levelId: below.id, bayKey, cellIndex: i }
         const rise = LEVEL_PITCH * cell.heightCells
-        if (!above) {
+        const sealedAt = droppedCeilingY(below, cell)
+        if (sealedAt !== null) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} is sealed by its dropped ceiling at y ${sealedAt}`,
+            refs: [belowRef],
+          })
+          continue
+        }
+        if (index === levels.length - 1) {
           issues.push({
             id: 'V4',
             severity: 'error',
@@ -240,32 +253,20 @@ export function checkStairContinuity(project: Project): Issue[] {
           continue
         }
 
-        const aboveBay = above.bays[bayKey]
-        if (!aboveBay) {
-          issues.push({
-            id: 'V4',
-            severity: 'error',
-            message: `Stair at ${bayKey} rises into level '${above.name}' but that level has no matching bay`,
-            refs: [belowRef],
-          })
-          continue
-        }
-
+        // Levels are sparse, so the stair lands on the first level that builds
+        // over its shaft, not merely the next level by height.
         const belowBox = cellAABB(project, belowRef)
-        const overlapping: CellRef[] = []
-        for (let j = 0; j < aboveBay.cells.length; j++) {
-          const aboveRef: CellRef = { levelId: above.id, bayKey, cellIndex: j }
-          if (footprintsOverlap(belowBox, cellAABB(project, aboveRef))) overlapping.push(aboveRef)
-        }
-        if (overlapping.length === 0) {
+        const landing = stairLanding(project, levels.slice(index + 1), bayKey, belowBox)
+        if (!landing) {
           issues.push({
             id: 'V4',
             severity: 'error',
-            message: `Stair at ${bayKey} rises into level '${above.name}' but no cell overlaps its shaft`,
+            message: `Stair at ${bayKey} has an upward shaft but no level above builds over it`,
             refs: [belowRef],
           })
           continue
         }
+        const { level: above, overlapping } = landing
 
         const matching = overlapping.filter((ref) => resolveCell(project, ref).cell.sockets.down === 'shaft')
         if (matching.length === 0) {
@@ -291,6 +292,26 @@ export function checkStairContinuity(project: Project): Issue[] {
     }
   }
   return issues
+}
+
+/** The first level above whose cells overlap the shaft's footprint. */
+function stairLanding(
+  project: Project,
+  levelsAbove: Level[],
+  bayKey: string,
+  shaft: AABB,
+): { level: Level; overlapping: CellRef[] } | null {
+  for (const level of levelsAbove) {
+    const bay = level.bays[bayKey]
+    if (!bay) continue
+    const overlapping: CellRef[] = []
+    for (let j = 0; j < bay.cells.length; j++) {
+      const ref: CellRef = { levelId: level.id, bayKey, cellIndex: j }
+      if (footprintsOverlap(shaft, cellAABB(project, ref))) overlapping.push(ref)
+    }
+    if (overlapping.length > 0) return { level, overlapping }
+  }
+  return null
 }
 
 // --------------------------------------------------------------------------
@@ -385,9 +406,14 @@ function buildAdjacencies(nodes: CellNode[]): Adjacency[] {
   return adjacencies
 }
 
-/** Room traversal needs a doorway horizontally and a shaft vertically. */
-function isRoomPassable(face: Face, socket: Socket): boolean {
-  if (face === 'up' || face === 'down') return socket === 'shaft'
+/**
+ * Room traversal needs a doorway horizontally and a shaft vertically. A dropped
+ * ceiling puts a solid plane between the room and its upward shaft.
+ */
+function isRoomPassable(node: CellNode, face: Face): boolean {
+  const socket = node.cell.sockets[face]
+  if (face === 'up') return socket === 'shaft' && node.plenum === null
+  if (face === 'down') return socket === 'shaft'
   return socket === 'corridor' || socket === 'arch'
 }
 
@@ -441,8 +467,8 @@ export function checkConnectivity(project: Project): Issue[] {
     const b = byKey.get(link.b)
     if (!a || !b) continue
     if (!sharesValidMergeGroup(a, b, merged)) {
-      if (!isRoomPassable(link.faceA, a.cell.sockets[link.faceA])) continue
-      if (!isRoomPassable(link.faceB, b.cell.sockets[link.faceB])) continue
+      if (!isRoomPassable(a, link.faceA)) continue
+      if (!isRoomPassable(b, link.faceB)) continue
       if (!horizontalOpeningsOverlap(a, b, link)) continue
     }
     push(graph, a.key, b.key)
@@ -691,6 +717,44 @@ function isFilledRectangle(members: GroupMember[]): boolean {
   const height = Math.max(...vs) - Math.min(...vs) + 1
   // Refs are unique, so a matching area means every slot is filled exactly once.
   return width * height === members.length
+}
+
+// --------------------------------------------------------------------------
+// V8 — World build limits (error)
+// --------------------------------------------------------------------------
+
+/**
+ * Every floor and ceiling plane must be a placeable block. The game refuses
+ * blocks below the bottom limit or above the top one, so a plan that crosses
+ * either cannot be built as drawn.
+ */
+export function checkWorldLimits(project: Project): Issue[] {
+  const issues: Issue[] = []
+  for (const level of sortedLevels(project)) {
+    const refs = allCellRefs(project).filter((ref) => ref.levelId === level.id)
+    if (level.y < WORLD_MIN_Y && refs.length > 0) {
+      issues.push({
+        id: 'V8',
+        severity: 'error',
+        message: `Level '${level.name}' sits at y ${level.y}, below the world's bottom block at y ${WORLD_MIN_Y}`,
+        refs,
+        levelId: level.id,
+      })
+    }
+
+    const tooTall = refs.filter((ref) => cellAABB(project, ref).y1 > WORLD_MAX_Y)
+    if (tooTall.length > 0) {
+      const top = Math.max(...tooTall.map((ref) => cellAABB(project, ref).y1))
+      issues.push({
+        id: 'V8',
+        severity: 'error',
+        message: `Level '${level.name}' builds up to y ${top}, above the world's top block at y ${WORLD_MAX_Y}`,
+        refs: tooTall,
+        levelId: level.id,
+      })
+    }
+  }
+  return issues
 }
 
 // --------------------------------------------------------------------------
