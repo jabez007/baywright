@@ -34,6 +34,7 @@ const KITS: Readonly<Record<string, Kit>> = {
   'ice-highway': iceHighwayKit,
   'nether-portal': netherPortalKit,
   'super-smelter': superSmelterKit,
+  'trading-hall': tradingHallKit,
 }
 
 export function interiorDetailBlocks(
@@ -352,6 +353,30 @@ function superSmelterKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailC
     fuel.add(frame.place(front, interior.y0 + 1, c))
   }
   return out
+}
+
+/**
+ * Stalls line the two walls that run away from the entrance, leaving a clear
+ * aisle down the middle. Two-high accent dividers, two blocks deep, stand at
+ * every other block along each wall, so every stall is one block wide: a
+ * villager at the back and its workstation in front. The workstation is left
+ * to the player, because it depends on the villager's profession.
+ */
+function tradingHallKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const door = entrance(cell) ?? 'n'
+  const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
+  if (frame.across[1] - frame.across[0] + 1 < 5 || cell.sockets.down === 'shaft') return new Map()
+
+  const [lo, hi] = frame.across
+  const depth = [lo, lo + 1, hi - 1, hi]
+  const dividers = new Set<string>()
+  for (let a = frame.along[0]; a <= frame.along[1]; a += 2) {
+    for (const c of depth) {
+      if (isOpening(context, frame.column(a, c))) continue
+      for (let y = interior.y0; y <= Math.min(interior.y0 + 1, interior.y1); y++) dividers.add(frame.place(a, y, c))
+    }
+  }
+  return new Map([['accent', dividers]])
 }
 
 /** Every interior column that touches a wall, each corner once. */

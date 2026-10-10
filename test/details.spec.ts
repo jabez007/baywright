@@ -295,3 +295,37 @@ describe('super smelter kit', () => {
     expect(positionsOf(resolveBlocks(smelter('merged', { heightCells: 1 })), 'minecraft:furnace')).toEqual([])
   })
 })
+
+describe('trading hall kit', () => {
+  const hall = (grain: 'fine' | 'coarse' | 'merged', overrides: Partial<Cell> = {}) =>
+    project([level('L1', 0, { A1: bay(grain, () => ({ ...cellFromModule('trading-hall'), ...overrides })) })])
+
+  it('divides both side walls into one-wide stalls two deep, around a clear aisle', () => {
+    const blocks = resolveBlocks(hall('merged'))
+    // The entrance is the full north wall, so the side walls are x 1 and 11
+    // and dividers stand every other block from z 3; z 1 is the doorway row.
+    for (const z of [3, 5, 7, 9, 11]) {
+      for (const x of [1, 2, 10, 11]) {
+        expect(blocks.get(blockKey(x, 1, z))).toBe('minecraft:chiseled_stone_bricks')
+        expect(blocks.get(blockKey(x, 2, z))).toBe('minecraft:chiseled_stone_bricks')
+        expect(blocks.has(blockKey(x, 3, z))).toBe(false)
+      }
+    }
+    expect(positionsOf(blocks, 'minecraft:chiseled_stone_bricks')).toHaveLength(5 * 4 * 2)
+    expect(blocks.has(blockKey(1, 1, 4))).toBe(false) // a stall
+    expect(blocks.has(blockKey(3, 1, 5))).toBe(false) // the aisle
+    expect(blocks.has(blockKey(1, 1, 1))).toBe(false) // in front of the arch
+  })
+
+  it('runs the stalls along the walls either side of a west entrance', () => {
+    const blocks = resolveBlocks(hall('merged', { sockets: sockets({ w: 'arch' }) }))
+    expect(blocks.get(blockKey(3, 1, 1))).toBe('minecraft:chiseled_stone_bricks')
+    expect(blocks.get(blockKey(3, 1, 10))).toBe('minecraft:chiseled_stone_bricks')
+    expect(blocks.has(blockKey(1, 1, 1))).toBe(false)
+  })
+
+  it('needs room for two stall rows and an aisle', () => {
+    expect(positionsOf(resolveBlocks(hall('coarse')), 'minecraft:chiseled_stone_bricks')).toHaveLength(4 * 2 * 4 * 2)
+    expect(positionsOf(resolveBlocks(hall('fine')), 'minecraft:chiseled_stone_bricks')).toEqual([])
+  })
+})
