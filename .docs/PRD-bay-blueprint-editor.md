@@ -120,6 +120,8 @@ The catalog contains straight passage, corner passage, T-junction, four-way junc
 
 A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
 
+A placement may also set `dy`, a multiple of 4 blocks above the level the user stamps on. The stamp uses the level already at that y or adds one, named `Level {y}`, that copies the footprint below. Before it keeps the edit, the stamp runs V1. If any stamped cell collides with another level, the whole stamp is refused and the project is left unchanged. The multi-level catalog contains a stair stack over three levels, a library with a gallery that looks down through a 3x3 well, a 12-high atrium with a balcony over each side hall, and two merged smelter bays over an item-trunk service run.
+
 A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The mineshaft level includes reusable rail-line bays. One stair climbs through bay C4 from the mineshaft to the stronghold, and a second climbs through C2 to the mansion. Each stair is as tall as the rise it covers. A spine sits at the stronghold's central junction, so the example passes every check. The level spacing lets the tallest rooms touch the next floor plane without colliding.
 
 ## 6. Data model
@@ -453,7 +455,8 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Implemented early: exact Arena core-and-ring detailing in block geometry and material totals.
 - Implemented early: infrastructure modules for transport, item flow, machinery, mine access, portals, and trading.
 - Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
-- Planned: multi-level layout patterns and selected exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
+- Implemented early: multi-level layouts for a stair stack, a library gallery, an atrium, and a machinery hall.
+- Planned: selected exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
 - Planned: a larger pattern catalog, route roles that support checks, and optional procedural assembly.
 - Implemented early: a palette editor. The level inspector renames the level's palette, edits its six block IDs, and copies it for one level. Block IDs follow `/setblock` syntax, with the `minecraft:` namespace added when omitted.
 - Implemented early: a matched stair action from one cell to the next level up.

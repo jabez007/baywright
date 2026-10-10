@@ -209,6 +209,26 @@ test('stamps and undoes a multi-bay grand chamber layout', async ({ page }) => {
   await expect(page.locator('[data-plan-target="bay"][data-bay="B2"]')).toHaveAccessibleName(/B2.*fine grain, Empty/)
 })
 
+test('stamps a stair stack across three levels and undoes it in one step', async ({ page }) => {
+  await page.goto('/')
+  const levels = page.getByRole('complementary', { name: 'Levels' })
+
+  await page.getByRole('button', { name: 'Layout', exact: true }).click()
+  const picker = page.getByLabel('Layout pattern', { exact: true })
+  await expect(picker.locator('option[value="stair-stack"]')).toHaveText('Stair stack (3 levels)')
+  await picker.selectOption('stair-stack')
+  await page.locator('[data-plan-target="bay"][data-bay="A1"]').click()
+
+  await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*merged grain, Stair/)
+  await levels.getByRole('button', { name: /Level 16/ }).click()
+  await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*merged grain, Junction/)
+  await expect(levels.getByLabel('Error')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(levels.getByRole('button', { name: /Level 8|Level 16/ })).toHaveCount(0)
+  await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*fine grain, Empty/)
+})
+
 test('paints infrastructure modules and stamps a rail-line bay', async ({ page }) => {
   await page.goto('/')
 

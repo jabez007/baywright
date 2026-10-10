@@ -33,3 +33,21 @@ describe('layout patterns', () => {
     expect(rotated.placements.some(({ i, j }) => i === 1 && j === 1)).toBe(false)
   })
 })
+
+describe('multi-level layouts', () => {
+  it('keep each placement at its level offset through a rotation', () => {
+    const stack = rotatedLayout('atrium', 1)
+    expect(stack.placements.map((placement) => placement.dy ?? 0).sort((a, b) => a - b)).toEqual([0, 0, 0, 8, 8])
+    expect(stack).toMatchObject({ width: 1, height: 3 })
+  })
+
+  it('offset only upward, in whole level pitches', () => {
+    for (const layout of LAYOUT_PATTERN_LIST) {
+      for (const placement of layout.placements) {
+        const dy = placement.dy ?? 0
+        expect(dy % 4, `${layout.id}`).toBe(0)
+        expect(dy, `${layout.id}`).toBeGreaterThanOrEqual(0)
+      }
+    }
+  })
+})

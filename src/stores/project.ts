@@ -14,12 +14,12 @@ import { computed, ref, toRaw } from 'vue'
 
 import { bayKeyOf, cellAABB, footprintsOverlap, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
-import { rotatedLayout } from '../domain/layouts.js'
+import { getLayoutPattern, layoutLevelOffsets, rotatedLayout } from '../domain/layouts.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, isBuiltCell, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
 import { bayFromPattern, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
 import { projectFromTemplate, type ProjectTemplateId } from '../domain/templates.js'
-import { validate, type Issue } from '../domain/validate.js'
+import { checkVerticalCollisions, validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
   MAX_BAY_FIELD,
@@ -375,23 +375,26 @@ export const useProjectStore = defineStore('project', () => {
   }
 
   function addLevel(y: number, name?: string): string {
-    return mutate(() => {
-      assertY(y)
-      const level = createLevel({
-        y,
-        name: name ?? `Level ${y}`,
-        bayCols: project.value.bayCols,
-        bayRows: project.value.bayRows,
-      })
-      const source = footprintBelow(y)
-      if (source) {
-        level.bays = {}
-        for (const [bayKey, bay] of Object.entries(source.bays)) level.bays[bayKey] = createBay(bay.grain)
-      }
-      project.value.levels.push(level)
-      sortLevels()
-      return level.id
+    return mutate(() => insertLevel(y, name).id)
+  }
+
+  /** Call inside `mutate`. A new level copies the footprint of the level below. */
+  function insertLevel(y: number, name?: string): Level {
+    assertY(y)
+    const level = createLevel({
+      y,
+      name: name ?? `Level ${y}`,
+      bayCols: project.value.bayCols,
+      bayRows: project.value.bayRows,
     })
+    const source = footprintBelow(y)
+    if (source) {
+      level.bays = {}
+      for (const [bayKey, bay] of Object.entries(source.bays)) level.bays[bayKey] = createBay(bay.grain)
+    }
+    project.value.levels.push(level)
+    sortLevels()
+    return level
   }
 
   function removeLevel(levelId: string): void {
@@ -670,7 +673,12 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
-  /** Stamp a whole bay arrangement relative to its north-west anchor. */
+  /**
+   * Stamp a whole bay arrangement relative to its north-west anchor. A
+   * placement with `dy` lands on the level that many blocks up, which is added
+   * when missing. A stamp whose cells would collide vertically with anything is
+   * refused whole. Returns the bay keys stamped on the anchor level.
+   */
   function stampLayoutPattern(
     levelId: string,
     anchorBayKey: string,
@@ -678,28 +686,47 @@ export const useProjectStore = defineStore('project', () => {
     quarterTurns: QuarterTurns,
   ): string[] {
     return mutate(() => {
-      const level = requireLevel(levelId)
+      const base = requireLevel(levelId)
       const anchor = parseBayKey(anchorBayKey)
       const layout = rotatedLayout(layoutId, quarterTurns)
       const targets = layout.placements.map((placement) => ({
         placement,
+        dy: placement.dy ?? 0,
         bayKey: bayKeyOf(anchor.i + placement.i, anchor.j + placement.j),
       }))
 
       // Resolve every address before painting so an out-of-bounds layout is atomic.
       for (const { bayKey } of targets) assertInField(bayKey)
+      const levels = new Map<number, Level>()
+      for (const dy of layoutLevelOffsets(layout)) {
+        const y = base.y + dy
+        levels.set(dy, project.value.levels.find((level) => level.y === y) ?? insertLevel(y))
+      }
+
       const mergeGroups = new Map<string, string>()
-      for (const { placement, bayKey } of targets) {
+      const stamped = new Set<string>()
+      for (const { placement, dy, bayKey } of targets) {
+        const level = levels.get(dy)!
         const bay = bayFromPattern(placement.patternId, placement.quarterTurns)
         if (placement.mergeSlot) {
-          const groupId = mergeGroups.get(placement.mergeSlot) ?? newId()
-          mergeGroups.set(placement.mergeSlot, groupId)
+          const slot = `${dy}:${placement.mergeSlot}`
+          const groupId = mergeGroups.get(slot) ?? newId()
+          mergeGroups.set(slot, groupId)
           for (const cell of bay.cells) cell.mergeGroup = groupId
         }
         level.bays[bayKey] = bay
         clearNegativeSpace(level, bayKey)
+        stamped.add(`${level.id}/${bayKey}`)
       }
-      return targets.map(({ bayKey }) => bayKey)
+
+      const collision = checkVerticalCollisions(project.value).find((issue) =>
+        issue.refs.some((ref) => stamped.has(`${ref.levelId}/${ref.bayKey}`)),
+      )
+      if (collision) {
+        const name = getLayoutPattern(layoutId)?.name ?? layoutId
+        throw new Error(`The ${name} layout does not fit here. ${collision.message}`)
+      }
+      return targets.filter(({ dy }) => dy === 0).map(({ bayKey }) => bayKey)
     })
   }
 

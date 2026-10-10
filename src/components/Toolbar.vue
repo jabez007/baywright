@@ -2,7 +2,7 @@
 /** PRD §10: project commands above, contextual canvas controls below. */
 import { computed } from 'vue'
 
-import { LAYOUT_PATTERN_LIST } from '../domain/layouts.js'
+import { LAYOUT_PATTERN_LIST, layoutLevelOffsets } from '../domain/layouts.js'
 import { LITEMATICA_TARGET_LABEL } from '../export/litematic.js'
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
 import { BAY_PATTERN_LIST, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
@@ -14,6 +14,16 @@ import {
 } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 import type { SaveStatus } from '../persistence/autosave.js'
+
+/** A layout that builds on several levels says so before it is stamped. */
+const LAYOUT_OPTIONS = LAYOUT_PATTERN_LIST.map((layout) => {
+  const levels = layoutLevelOffsets(layout).length
+  return {
+    id: layout.id,
+    label: levels > 1 ? `${layout.name} (${levels} levels)` : layout.name,
+    description: layout.description,
+  }
+})
 
 const props = defineProps<{
   view: 'bay' | 'cell'
@@ -236,8 +246,8 @@ function chooseNegativeSpace(event: Event): void {
       <label v-if="tool === 'layout'" class="module-picker">
         <span class="group-label">Layout pattern</span>
         <select aria-label="Layout pattern" :value="layoutId" :disabled="pngBusy" @change="chooseLayout">
-          <option v-for="layout in LAYOUT_PATTERN_LIST" :key="layout.id" :value="layout.id">
-            {{ layout.name }}
+          <option v-for="layout in LAYOUT_OPTIONS" :key="layout.id" :value="layout.id" :title="layout.description">
+            {{ layout.label }}
           </option>
         </select>
       </label>

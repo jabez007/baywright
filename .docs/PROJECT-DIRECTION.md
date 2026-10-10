@@ -12,6 +12,7 @@ The current editor includes the useful foundations from the discussion:
 - Centred 3-block and 5-block openings let adjacent pieces connect without custom geometry.
 - Bay patterns cover passages, junctions, feature rooms, and infrastructure runs. **Auto fit** rotates a pattern to match adjacent openings.
 - Multi-bay layouts stamp Stronghold loops, grand chambers, library wings, and workshop wings as one undoable edit.
+- Multi-level layouts stamp a stair stack, a library with a gallery, an atrium with balconies, and a machinery hall over its service level. They add any level they need.
 - Named negative space distinguishes a courtyard, garden, cave, stair shaft, or reserved expansion from an unfinished plan.
 - The layered starter project assigns Mansion, Stronghold, Trial Chamber, and Mineshaft roles to separate levels and palettes.
 - Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, corner pillars, and a central light.
@@ -44,9 +45,9 @@ The remaining ideas have value, but they depend on one another. Implement them i
 
 ### 1. Multi-level layout patterns
 
-A layout currently places bays on one level. Extend the layout format so one stamp can place cells and bays at level offsets.
+Implemented. A layout placement can sit a multiple of 4 blocks above the anchor level, and the stamp reuses or adds the level at that height.
 
-Start with a small catalog:
+The first catalog has:
 
 - a two-level library with an open gallery;
 - a tall atrium with surrounding balcony access;

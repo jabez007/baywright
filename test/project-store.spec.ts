@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { HISTORY_LIMIT, createProject, nextLevelY, useProjectStore } from '../src/stores/project.js'
 import { toRaw } from 'vue'
 import type { CellRef } from '../src/domain/types.js'
+import { blockKey, resolveBlocks } from '../src/domain/geometry.js'
+import { LAYOUT_PATTERN_LIST } from '../src/domain/layouts.js'
+import { validate } from '../src/domain/validate.js'
 
 function store() {
   return useProjectStore()
@@ -1108,5 +1111,94 @@ describe('palette editing', () => {
     s.renamePalette('dark-oak', '  Spruce hall ')
     expect(s.project.palettes['dark-oak']!.name).toBe('Spruce hall')
     expect(() => s.renamePalette('dark-oak', '  ')).toThrow('A palette needs a name')
+  })
+})
+
+describe('multi-level layouts', () => {
+  const levelAt = (y: number) => store().project.levels.find((level) => level.y === y)
+
+  it('stacks a stair over three levels, adding the levels it needs, as one undo step', () => {
+    const s = store()
+    s.clearHistory()
+    s.stampLayoutPattern(s.currentLevelId, 'A1', 'stair-stack', 0)
+
+    expect(s.project.levels.map((level) => [level.y, level.name])).toEqual([
+      [0, 'Ground'],
+      [8, 'Level 8'],
+      [16, 'Level 16'],
+    ])
+    expect(levelAt(0)!.bays['A1']!.cells[0]!.sockets.up).toBe('shaft')
+    expect(levelAt(8)!.bays['A1']!.cells[0]!.sockets).toMatchObject({ up: 'shaft', down: 'shaft' })
+    expect(levelAt(16)!.bays['A1']!.cells[0]!.sockets.down).toBe('shaft')
+    expect(s.issues.filter((issue) => issue.severity === 'error')).toEqual([])
+
+    expect(s.undoDepth).toBe(1)
+    s.undo()
+    expect(s.project.levels).toHaveLength(1)
+  })
+
+  it('reuses a level already at the right height', () => {
+    const s = store()
+    const upper = s.addLevel(8, 'Gallery')
+    s.stampLayoutPattern(s.currentLevelId, 'A1', 'library-gallery', 0)
+    expect(s.project.levels.map((level) => level.id)).toContain(upper)
+    expect(s.project.levels).toHaveLength(2)
+    expect(levelAt(8)!.bays['A1']!.cells[4]!.sockets.down).toBe('shaft')
+  })
+
+  it('refuses a layout that collides with a level in between and changes nothing', () => {
+    const s = store()
+    const between = s.addLevel(4, 'Mezzanine')
+    s.paintCell({ levelId: between, bayKey: 'A1', cellIndex: 0 }, 'storage')
+    const before = s.toJSON()
+
+    expect(() => s.stampLayoutPattern(s.project.levels[0]!.id, 'A1', 'stair-stack', 0)).toThrow(
+      /^The Stair stack layout does not fit here\. A1 /,
+    )
+    expect(s.toJSON()).toStrictEqual(before)
+  })
+
+  it('stamps every shipped layout onto an empty field without errors', () => {
+    for (const layout of LAYOUT_PATTERN_LIST) {
+      for (const turns of [0, 1, 2, 3] as const) {
+        setActivePinia(createPinia())
+        const s = store()
+        s.stampLayoutPattern(s.currentLevelId, 'A1', layout.id, turns)
+        const errors = s.issues.filter((issue) => issue.severity === 'error')
+        expect(errors, `${layout.id} turned ${turns}`).toEqual([])
+      }
+    }
+  })
+
+  it('joins every room of a layout to a spine on its lowest level', () => {
+    // The machinery hall and its service level each meet the base on their
+    // own level, so that layout needs a spine on both.
+    const ownSpinePerLevel = new Set(['machinery-hall'])
+    for (const layout of LAYOUT_PATTERN_LIST) {
+      for (const turns of [0, 1] as const) {
+        setActivePinia(createPinia())
+        const s = store()
+        s.stampLayoutPattern(s.currentLevelId, 'A1', layout.id, turns)
+        const p = s.toJSON()
+        const levels = ownSpinePerLevel.has(layout.id) ? p.levels : [p.levels[0]!]
+        for (const level of levels) {
+          const cell = Object.values(level.bays).flatMap((b) => b.cells).find((c) => c.module !== 'empty')!
+          cell.module = 'spine'
+        }
+        const v3 = validate(p).filter((issue) => issue.id === 'V3')
+        expect(v3.map((issue) => issue.message), `${layout.id} turned ${turns}`).toEqual([])
+      }
+    }
+  })
+
+  it('opens the atrium core to the hall below and the balcony above', () => {
+    const s = store()
+    s.stampLayoutPattern(s.currentLevelId, 'A1', 'atrium', 0)
+    const blocks = resolveBlocks(s.toJSON())
+    // The shared wall between the west flank and the core, at x 12 and z 6.
+    const open = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11].map((y) => blocks.has(blockKey(12, y, 6)))
+    expect(open.every((solid) => !solid)).toBe(true)
+    expect(blocks.has(blockKey(12, 8, 6))).toBe(true) // the balcony floor
+    expect(blocks.has(blockKey(12, 6, 2))).toBe(true) // beside the 5-wide opening
   })
 })

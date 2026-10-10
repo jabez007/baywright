@@ -94,6 +94,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Choose **Paint** and a module to paint bays or cells. Drag with a mouse, touch, or pen to paint several targets.
 - Choose **Stamp** and a bay pattern to replace whole bays with reusable layouts. **Auto fit** rotates each stamp to match openings in adjacent bays; fixed rotations remain available when the plan calls for a specific orientation.
 - Choose **Layout** to stamp a Stronghold loop, grand chamber, library wing, or workshop wing from a north-west anchor. Layouts may fill absent footprint slots, and the whole placement is one undo step.
+- Some layouts build on more than one level, and the picker shows how many. A stair stack, library gallery, atrium, or machinery hall uses a level that already sits at the right height, or adds one. If any part would hit a room on another level, nothing is stamped.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain. Empty cells are unbuilt: they place no blocks, cost nothing in the materials list, and take no part in the checks.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
 - Choose **Space** to name absent bays as courtyards, gardens, caves, stair shafts, or reserved expansion. Building a bay in that slot clears the name.

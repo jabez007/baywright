@@ -134,6 +134,27 @@ export const BAY_PATTERN_LIST: readonly BayPattern[] = [
     cells: [passage('stair', { n: 'solid', w: 'corridor' })],
   },
   {
+    id: 'adapter-passage',
+    name: 'Adapter passage',
+    description: 'A merged passage running east to west that joins fine and coarse bays.',
+    grain: 'merged',
+    cells: [passage('vestibule', { e: 'corridor', w: 'corridor' })],
+  },
+  {
+    id: 'stair-through-hall',
+    name: 'Stair through-hall',
+    description: 'A merged stair bay that continues a stair from below up to the next level.',
+    grain: 'merged',
+    cells: [passage('stair', { n: 'solid', w: 'corridor', down: 'shaft' })],
+  },
+  {
+    id: 'stair-landing',
+    name: 'Stair landing',
+    description: 'A merged landing with a shaft down to a stair and a west exit.',
+    grain: 'merged',
+    cells: [passage('junction', { w: 'corridor', down: 'shaft' })],
+  },
+  {
     id: 'library-hall',
     name: 'Library hall',
     description: 'A merged, two-height library with a west arch.',
@@ -161,8 +182,66 @@ export const BAY_PATTERN_LIST: readonly BayPattern[] = [
   },
 ]
 
+const galleryCell = (open: Partial<Record<Face, Socket>> = {}): PatternCell => ({
+  moduleId: 'library',
+  sockets: { n: 'solid', e: 'solid', s: 'solid', w: 'solid', ...open },
+})
+
+/**
+ * Pieces that only make sense inside a multi-level layout, so the Stamp tool
+ * does not list them. Openings that face a core take a centred 5-block width.
+ */
+export const LAYOUT_PIECE_LIST: readonly BayPattern[] = [
+  {
+    id: 'library-well',
+    name: 'Library well',
+    description: 'A merged library whose ceiling opens into a gallery above.',
+    grain: 'merged',
+    cells: [passage('library', { n: 'solid', w: 'arch', up: 'shaft' })],
+  },
+  {
+    id: 'gallery-floor',
+    name: 'Gallery floor',
+    description: 'A fine library ring around a centre cell open to the room below.',
+    grain: 'fine',
+    cells: [
+      galleryCell(), galleryCell(), galleryCell(),
+      galleryCell({ w: 'arch' }), galleryCell({ down: 'shaft' }), galleryCell(),
+      galleryCell(), galleryCell(), galleryCell(),
+    ],
+  },
+  {
+    id: 'atrium-core',
+    name: 'Atrium core',
+    description: 'A full-height vaulted core open to its east and west flanks.',
+    grain: 'merged',
+    cells: [{ ...passage('arena', { e: 'corridor', w: 'corridor' }), openingWidths: { e: 5, w: 5 } }],
+  },
+  {
+    id: 'atrium-hall',
+    name: 'Atrium hall',
+    description: 'A two-high hall open east into the atrium core.',
+    grain: 'merged',
+    cells: [{ ...passage('vestibule', { e: 'corridor', w: 'corridor' }), openingWidths: { e: 5 } }],
+  },
+  {
+    id: 'atrium-balcony',
+    name: 'Atrium balcony',
+    description: 'A one-high balcony open east over the atrium core.',
+    grain: 'merged',
+    cells: [{ ...passage('corridor', { e: 'corridor', w: 'corridor' }), openingWidths: { e: 5 } }],
+  },
+  {
+    id: 'machine-hall',
+    name: 'Machine hall',
+    description: 'A merged super-smelter bay with a west arch.',
+    grain: 'merged',
+    cells: [passage('super-smelter', { n: 'solid', w: 'arch' })],
+  },
+]
+
 export const BAY_PATTERNS: Readonly<Record<string, BayPattern>> = Object.fromEntries(
-  BAY_PATTERN_LIST.map((pattern) => [pattern.id, pattern]),
+  [...BAY_PATTERN_LIST, ...LAYOUT_PIECE_LIST].map((pattern) => [pattern.id, pattern]),
 )
 
 export function getBayPattern(id: string): BayPattern | undefined {
