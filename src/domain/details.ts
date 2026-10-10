@@ -155,7 +155,11 @@ const FACING: Readonly<Record<WallFace, string>> = { n: 'north', e: 'east', s: '
 
 /** The first wall face a person can walk through, checked n, e, s, w. */
 function entrance(cell: Cell): WallFace | undefined {
-  return WALL_FACES.find((face) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch')
+  return WALL_FACES.find((face) => isDoorway(cell, face))
+}
+
+function isDoorway(cell: Cell, face: WallFace): boolean {
+  return cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch'
 }
 
 /** A route runs north to south or east to west. */
@@ -166,7 +170,7 @@ type Axis = 'ns' | 'ew'
  * either end. A cell with no doorway has no route.
  */
 function routeAxis(cell: Cell): Axis | undefined {
-  const open = (face: WallFace) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch'
+  const open = (face: WallFace) => isDoorway(cell, face)
   if (open('n') && open('s')) return 'ns'
   if (open('e') && open('w')) return 'ew'
   if (open('n') || open('s')) return 'ns'
@@ -204,7 +208,7 @@ function railLineKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailConte
   const centre = midpoint(frame.across[0], frame.across[1])
   const out: DetailBlocks = new Map()
 
-  const track = roleSet(out, `minecraft:rail[shape=${axis === 'ns' ? 'north_south' : 'east_west'}]`)
+  const track = roleSet(out, railFor(axis))
   for (let a = frame.along[0]; a <= frame.along[1]; a++) track.add(frame.place(a, interior.y0, centre))
 
   const halfway = midpoint(frame.along[0], frame.along[1])
@@ -221,13 +225,17 @@ function railLineKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailConte
   return out
 }
 
+function railFor(axis: Axis): DetailMaterial {
+  return `minecraft:rail[shape=${axis === 'ns' ? 'north_south' : 'east_west'}]`
+}
+
 /** Carry the track across each open end of the route, onto the shared wall line. */
 function railThroughOpenings(cell: Cell, outer: AABB, interior: AABB): EdgeDetail[] {
   const axis = routeAxis(cell)
   if (!axis || cell.sockets.down === 'shaft') return []
   const frame = routeFrame(axis, interior)
   const centre = midpoint(frame.across[0], frame.across[1])
-  const material: DetailMaterial = `minecraft:rail[shape=${axis === 'ns' ? 'north_south' : 'east_west'}]`
+  const material = railFor(axis)
   return openRouteEnds(cell, axis, outer).map((plane) => {
     const at = frame.place(plane, interior.y0, centre)
     return { at, material, whereAir: at }
@@ -281,7 +289,7 @@ function iceThroughOpenings(cell: Cell, outer: AABB, interior: AABB): EdgeDetail
 /** The wall lines, on the route axis, where the route leaves the cell. */
 function openRouteEnds(cell: Cell, axis: Axis, outer: AABB): number[] {
   return ROUTE_ENDS[axis]
-    .filter((face) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch')
+    .filter((face) => isDoorway(cell, face))
     .map((face) => (face === 'n' ? outer.z0 : face === 's' ? outer.z1 : face === 'w' ? outer.x0 : outer.x1))
 }
 
