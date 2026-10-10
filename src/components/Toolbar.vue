@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 
 import { LAYOUT_PATTERN_LIST } from '../domain/layouts.js'
+import { LITEMATICA_TARGET_LABEL } from '../export/litematic.js'
 import { MODULE_LIST, categoryOf } from '../domain/modules.js'
 import { BAY_PATTERN_LIST, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
 import {
@@ -41,6 +42,7 @@ const emit = defineEmits<{
   'set-grain': [value: Grain]
   export: []
   png: []
+  litematic: []
   import: []
   reset: []
   resize: []
@@ -167,6 +169,7 @@ function chooseNegativeSpace(event: Event): void {
           <div class="menu-panel">
             <button type="button" @click="emit('export')">Export JSON</button>
             <button type="button" :disabled="pngBusy" @click="emit('png')">{{ pngBusy ? 'Rendering plans…' : 'Export PNG plans' }}</button>
+            <button type="button" :disabled="pngBusy" :title="`Litematica schematic for ${LITEMATICA_TARGET_LABEL}`" @click="emit('litematic')">Export Litematica</button>
             <button type="button" :disabled="pngBusy" @click="emit('import')">Import project</button>
             <button type="button" :disabled="pngBusy" @click="emit('resize')">Resize field</button>
             <button type="button" class="danger" :disabled="pngBusy" @click="emit('reset')">New project</button>

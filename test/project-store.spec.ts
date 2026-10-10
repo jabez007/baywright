@@ -190,6 +190,23 @@ describe('the undo ring buffer', () => {
   })
 })
 
+describe('the world origin', () => {
+  it('moves bay A1 to a world x and z as one undo step', () => {
+    const s = store()
+    s.setOrigin(-240, 1184)
+    expect(s.project.origin).toEqual({ x: -240, z: 1184 })
+    s.undo()
+    expect(s.project.origin).toEqual({ x: 0, z: 0 })
+  })
+
+  it('rejects a coordinate that is not a whole block', () => {
+    const s = store()
+    expect(() => s.setOrigin(1.5, 0)).toThrow('origin x must be an integer, got 1.5')
+    expect(() => s.setOrigin(0, Number.NaN)).toThrow('origin z must be an integer, got NaN')
+    expect(s.project.origin).toEqual({ x: 0, z: 0 })
+  })
+})
+
 describe('levels', () => {
   it('refuses to remove the final level', () => {
     const s = store()

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { downloadProject, parseProject } from './export/json.js'
+import { downloadLitematic, litematicFilename } from './export/litematic.js'
 import { exportSvgAsPng, pngFilename } from './export/png.js'
 import { parseBayKey } from './domain/geometry.js'
 import { LAYOUT_PATTERN_LIST } from './domain/layouts.js'
@@ -48,6 +49,8 @@ const grain = ref<Grain>('fine')
 
 const booted = ref(false)
 const notice = ref<string | null>(null)
+/** A non-error result the user needs to act on, such as where to place a schematic. */
+const info = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const planCanvas = ref<InstanceType<typeof PlanCanvas> | null>(null)
 const pngBusy = ref(false)
@@ -332,6 +335,20 @@ function onExport(): void {
   downloadProject(store.toJSON())
 }
 
+async function onExportLitematic(): Promise<void> {
+  info.value = null
+  try {
+    const project = store.toJSON()
+    const { origin, size } = await downloadLitematic(project)
+    notice.value = null
+    info.value =
+      `Saved ${litematicFilename(project)} (${size.x}×${size.y}×${size.z}). ` +
+      `In Litematica, place it with its origin at x ${origin.x}, y ${origin.y}, z ${origin.z}.`
+  } catch (cause) {
+    notice.value = `Could not export the Litematica schematic: ${(cause as Error).message}`
+  }
+}
+
 async function onExportPng(): Promise<void> {
   if (pngBusy.value) return
   pngBusy.value = true
@@ -500,6 +517,7 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
       @set-grain="grain = $event"
       @export="onExport"
       @png="onExportPng"
+      @litematic="onExportLitematic"
       @import="onImport"
       @reset="sizing = 'new'"
       @resize="sizing = 'resize'"
@@ -507,6 +525,10 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
     />
 
     <p v-if="notice" class="notice" role="alert">{{ notice }}</p>
+    <p v-if="info" class="notice info" role="status">
+      <span>{{ info }}</span>
+      <button type="button" @click="info = null">Dismiss</button>
+    </p>
 
     <main class="workspace" :class="{ 'output-open': outputPanel !== null }">
       <LevelRail class="levels-region" @error="notice = $event" />
@@ -782,6 +804,16 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
   background: var(--panel-2);
   border-bottom: 1px solid var(--danger);
   color: var(--danger);
+}
+
+.notice.info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom-color: var(--accent);
+  color: var(--text);
 }
 
 .legend {

@@ -346,6 +346,15 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
+  /** §5.1 — the world x and z of bay A1's north-west corner. */
+  function setOrigin(x: number, z: number): void {
+    if (!Number.isInteger(x)) throw new Error(`origin x must be an integer, got ${x}`)
+    if (!Number.isInteger(z)) throw new Error(`origin z must be an integer, got ${z}`)
+    mutate(() => {
+      project.value.origin = { x, z }
+    })
+  }
+
   /**
    * The footprint of the level below, so stacking onto a carved base does not
    * hang a full rectangle over the parts that were taken out. Grain comes along
@@ -911,6 +920,7 @@ export const useProjectStore = defineStore('project', () => {
     loadImportedProjectAsCopy,
     newProject,
     renameProject,
+    setOrigin,
     toJSON,
     addLevel,
     removeLevel,

@@ -106,6 +106,21 @@ function renameLevel(event: Event): void {
   input.value = level.value?.name ?? current.name
 }
 
+function renameProject(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const next = input.value.trim()
+  if (next && next !== store.project.name) run(() => store.renameProject(next))
+  input.value = store.project.name
+}
+
+function setOrigin(axis: 'x' | 'z', event: Event): void {
+  const input = event.target as HTMLInputElement
+  const value = Number(input.value)
+  const { x, z } = store.project.origin
+  run(() => store.setOrigin(axis === 'x' ? value : x, axis === 'z' ? value : z))
+  input.value = String(store.project.origin[axis])
+}
+
 function moveLevel(event: Event): void {
   const current = level.value
   if (current) run(() => store.setLevelY(current.id, Number(valueOf(event))))
@@ -245,6 +260,25 @@ function mergeSelected(): void {
             </option>
           </select>
         </label>
+
+        <fieldset>
+          <legend>Project</legend>
+          <label>
+            <span>Project name</span>
+            <input :value="store.project.name" type="text" @change="renameProject" />
+          </label>
+          <div class="field-row">
+            <label>
+              <span>World x of A1</span>
+              <input :value="store.project.origin.x" type="number" step="1" @change="setOrigin('x', $event)" />
+            </label>
+            <label>
+              <span>World z of A1</span>
+              <input :value="store.project.origin.z" type="number" step="1" @change="setOrigin('z', $event)" />
+            </label>
+          </div>
+          <p class="field-help">The north-west corner of bay A1 in your world. Exports use these coordinates.</p>
+        </fieldset>
       </form>
 
       <form v-else-if="inspectorKind === 'bay' && store.selection.kind === 'bay' && selectedBay" class="form" @submit.prevent>

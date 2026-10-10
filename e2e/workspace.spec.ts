@@ -19,6 +19,11 @@ async function paintSpineCells(page: Page): Promise<void> {
   await page.getByLabel('Module', { exact: true }).selectOption('spine')
 }
 
+/** The toolbar's Project menu. The inspector also has a "Project" legend. */
+async function openProjectMenu(page: Page): Promise<void> {
+  await page.locator('summary').filter({ hasText: /^Project$/ }).click()
+}
+
 async function pushRoute(page: Page, path: string): Promise<void> {
   await page.evaluate((nextPath) => {
     const previous = history.state as { current?: string; position?: number } | null
@@ -225,7 +230,7 @@ test('paints infrastructure modules and stamps a rail-line bay', async ({ page }
 test('starts a new project from the layered base example', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByText('Project', { exact: true }).click()
+  await openProjectMenu(page)
   await page.getByRole('button', { name: 'New project', exact: true }).click()
   await page.getByLabel('Starting point').selectOption('layered-base')
   await expect(page.getByText(/sparse 5×5 field/)).toBeVisible()
@@ -392,7 +397,7 @@ test('PNG export preserves selection and browser history without exporting its o
     }
   })
 
-  await page.getByText('Project', { exact: true }).click()
+  await openProjectMenu(page)
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export PNG plans' }).click()
   await download
@@ -407,7 +412,7 @@ test('says why the last bay cannot be removed, and says so when asked to', async
   await page.goto('/')
 
   // Shrink the field to a single bay so removing it is the guarded case.
-  await page.getByText('Project', { exact: true }).click()
+  await openProjectMenu(page)
   await page.getByRole('button', { name: 'Resize field' }).click()
   await page.getByLabel('Bays across').fill('1')
   await page.getByLabel('Bays deep').fill('1')
@@ -446,7 +451,7 @@ test('locks project edits while a PNG export is running', async ({ page }) => {
     }
   })
 
-  await page.getByText('Project', { exact: true }).click()
+  await openProjectMenu(page)
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export PNG plans' }).click()
 
@@ -472,7 +477,7 @@ test('locks project edits while a PNG export is running', async ({ page }) => {
 test('puts the stored level name back when a rename resolves to no change', async ({ page }) => {
   await page.goto('/')
 
-  const name = page.getByRole('textbox', { name: 'Name' })
+  const name = page.getByRole('textbox', { name: 'Name', exact: true })
   await expect(name).toHaveValue('Ground')
 
   // Blank: the store keeps the old name, so the field has to catch up by itself.
@@ -570,4 +575,37 @@ test('opens project output without document overflow on a short desktop viewport
   const bounds = await bottom.boundingBox()
   expect(bounds).not.toBeNull()
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(601)
+})
+
+test('exports a Litematica schematic placed at the world origin', async ({ page }) => {
+  await page.goto('/')
+  const inspector = page.getByRole('complementary', { name: 'Inspector' })
+  await inspector.getByLabel('Project name').fill('North Keep')
+  await inspector.getByLabel('Project name').press('Enter')
+  await inspector.getByLabel('World x of A1').fill('100')
+  await inspector.getByLabel('World x of A1').press('Enter')
+  await inspector.getByLabel('World z of A1').fill('-36')
+  await inspector.getByLabel('World z of A1').press('Enter')
+
+  await useCellTool(page, 'Paint')
+  await page.getByLabel('Module', { exact: true }).selectOption('storage')
+  await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
+
+  await openProjectMenu(page)
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export Litematica' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe('north-keep.litematic')
+
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(chunk as Buffer)
+  const bytes = Buffer.concat(chunks)
+  // gzip magic number: Litematica reads the file through NbtIo.readCompressed.
+  expect([...bytes.subarray(0, 2)]).toEqual([0x1f, 0x8b])
+
+  // A fine cell 1 spans local 0..4, so the schematic starts at bay A1's corner.
+  await expect(page.getByRole('status').filter({ hasText: 'north-keep.litematic' })).toContainText(
+    'place it with its origin at x 100, y 0, z -36',
+  )
 })

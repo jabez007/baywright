@@ -2,7 +2,7 @@
 
 A browser-based floor plan and blueprint tool for designing modular Minecraft bases with 13x13 structural bays, 7x7 rooms, 5x5 utility units, service plenums, and multi-level vertical validation.
 
-**Status:** v1 implemented. Validators V3 and V5 were completed early. Litematica export and 3D remain planned for v2. Parts of the v3 content catalog are implemented. See [the project direction](PROJECT-DIRECTION.md) for the ordered roadmap.
+**Status:** v1 implemented. Validators V3 and V5 were completed early. Litematica export is implemented. The 3D preview remains planned for v2. Parts of the v3 content catalog are implemented. See [the project direction](PROJECT-DIRECTION.md) for the ordered roadmap.
 **Stack:** Vue 3 + TypeScript + Vite
 
 ## 1. Problem
@@ -337,7 +337,7 @@ Snapshot the serialised project into a ring buffer of 50 on every mutation. Do n
 | ----------------- | -------- | ---------------- |
 | `.json` project   | v0       | Implemented. Round-trip import and export include `schemaVersion`. |
 | `.png` floor plan | v1       | Implemented. The exporter serialises the SVG and rasterises it through a canvas. It downloads one file per level. |
-| `.litematic`      | v2       | Planned. Use `prismarine-nbt` for NBT and `pako` for gzip. Build the block palette from `resolveBlocks`, then write the Litematica region format. |
+| `.litematic`      | v2       | Implemented without dependencies. A small NBT writer and the browser's `CompressionStream` produce a gzipped schema-6 file with data version 3955 (Minecraft 1.21.1). It holds one region whose bounds are the bounds of `resolveBlocks`, with palette index 0 as air. Palette IDs may carry block-state properties such as `[hanging=true]`. The app reports the world position of the schematic origin after each download. |
 | `.nbt` structure  | v3       | Planned. The vanilla structure format has a 48x48x48 size limit, so larger plans require splitting. |
 
 Prioritise Litematica export before the 3D preview because it makes the plan usable as an in-game build guide.
@@ -441,7 +441,7 @@ The fixtures in §14 produce the expected geometry and validation results.
 ### v2: connectivity, Litematica, and 3D, partial
 
 - Implemented: validators V3 and V5.
-- Planned: `.litematic` export.
+- Implemented: `.litematic` export.
 - Planned: TresJS 3D preview with instanced meshes.
 
 ### v3: content and sharing, partial
@@ -507,5 +507,5 @@ Rise = 8 = 4 * 2. Expect zero V4 issues. Change level B to y = 36 and expect one
 ### Open questions
 
 1. **Sharing model.** Sharing requires decisions about authentication, backend storage, and moderation. It remains v3 work.
-2. **Litematica version compatibility.** The `.litematic` format has changed across Litematica releases. Choose a schema version and show it in the export dialog.
+2. **Litematica version compatibility.** Resolved: Baywright writes schema version 6, which every current Litematica build reads, and names its 1.21.1 target in the export button's tooltip.
 3. **Palette scope.** Palettes currently resolve per level with an optional per-cell override. Decide whether the palette editor also needs per-bay overrides.

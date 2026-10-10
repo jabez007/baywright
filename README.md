@@ -77,6 +77,8 @@ The app has two routes: `/` and `/project/:id/level/:levelId`. The root route re
 
 JSON export writes the complete project document. JSON import checks the schema, field bounds, cells, sockets, opening widths, ceilings, negative-space annotations, and palette references, then saves the import as a new local project. Projects without opening widths retain full-width passages. Legacy schema-v1 height-3 plenums retain their original geometry; height-1 dropped flags normalize to `flat` because they never affected blocks. PNG export downloads one rendered plan for each level.
 
+Litematica export writes the built blocks as one region in a `.litematic` schematic for Minecraft 1.21.1 and later, using schema version 6 and data version 3955. Set the world coordinates of bay A1 in the inspector before exporting. After the download, the app shows where to place the schematic origin in your world. Room interiors and unbuilt cells inside the region are stored as air, so the overlay flags any existing blocks there.
+
 ## Local persistence
 
 Baywright stores projects only in the current browser profile through IndexedDB. It has no account, server, cloud sync, or cross-device recovery.
@@ -95,6 +97,8 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain. Empty cells are unbuilt: they place no blocks, cost nothing in the materials list, and take no part in the checks.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
 - Choose **Space** to name absent bays as courtyards, gardens, caves, stair shafts, or reserved expansion. Building a bay in that slot clears the name.
+- Edit the project name and the world x and z of bay A1 in the inspector's **Project** fields. Exports use these coordinates.
+- Choose **Export Litematica** from the **Project** menu to download an in-game schematic.
 - Choose **New project** from the **Project** menu to start blank or load the layered base example.
 - Use the **Skip to plan** link or press `Tab` to enter the plan. Use the arrow keys to move between targets. Press `Enter` or `Space` to apply the active tool.
 - Shift-drag cells to make a rectangular merge group.
@@ -107,7 +111,7 @@ The inspector also exposes module, merge, height, ceiling, socket, and opening-w
 
 ## Tests and CI
 
-Vitest covers geometry, every validator, the BOM and recipes, modules, the project store, JSON and PNG exports, IndexedDB recovery, and autosave behavior. Playwright checks editing and reload, one-bay issue navigation, roving SVG focus, PNG state restoration, project Back/Forward routes, and narrow or short viewports.
+Vitest covers geometry, every validator, the BOM and recipes, modules, the project store, JSON, PNG, and Litematica exports, IndexedDB recovery, and autosave behavior. Playwright checks editing and reload, one-bay issue navigation, roving SVG focus, PNG state restoration, Litematica download, project Back/Forward routes, and narrow or short viewports.
 
 GitHub Actions runs on pushes and pull requests. It installs with `npm ci`, runs ESLint, the unit tests, and the production build, audits production dependencies, installs Chromium, and runs the Playwright suite.
 
@@ -115,7 +119,6 @@ GitHub Actions runs on pushes and pull requests. It installs with `npm ci`, runs
 
 The [project direction](.docs/PROJECT-DIRECTION.md) explains which design candidates come next and why.
 
-- Litematica export
 - vanilla structure NBT export
 - 3D preview
 - palette editing
