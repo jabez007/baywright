@@ -1,7 +1,7 @@
 /**
  * Procedural assembly. The generator grows a seeded route through a footprint
  * on each level, joins the levels with the compact stair layout, and fills the
- * route with pieces from the bay pattern catalog. It writes ordinary bays and
+ * route with pieces from the bay pattern catalog and the atrium layout. It writes ordinary bays and
  * named negative space into a copy of the project and runs the validators on
  * the copy, so a proposal can be previewed before anything changes.
  *
@@ -10,7 +10,7 @@
  */
 import { bayOpenFaces, type HorizontalFace } from './connections.js'
 import { bayKeyOf, parseBayKey, sortedLevels } from './geometry.js'
-import { getLayoutPattern } from './layouts.js'
+import { getLayoutPattern, rotatedLayout } from './layouts.js'
 import { SPINE_MODULE_ID, cellFromModule } from './modules.js'
 import { bayFromPattern, getBayPattern, type QuarterTurns } from './patterns.js'
 import type { Bay, Level, NegativeSpaceKind, Project } from './types.js'
@@ -18,27 +18,38 @@ import { validate, type Issue } from './validate.js'
 
 /**
  * Rooms the generator can place. A leaf room has one doorway and ends a
- * branch. A through room sits on a straight run and keeps it open.
+ * branch. A through room sits on a straight run and keeps it open. An atrium
+ * is the multi-level layout of that name, placed before the route grows.
  */
 export interface AssemblyRoom {
-  patternId: string
-  shape: 'leaf' | 'through'
+  /** A bay pattern id, or the layout id for an atrium. */
+  id: string
+  shape: 'leaf' | 'through' | 'atrium'
   /** Only on the lowest assembled level, because its floor opens downward. */
   lowestOnly?: boolean
 }
 
 export const ASSEMBLY_ROOMS: readonly AssemblyRoom[] = [
-  { patternId: 'library-hall', shape: 'leaf' },
-  { patternId: 'machine-hall', shape: 'leaf' },
-  { patternId: 'mine-head', shape: 'leaf', lowestOnly: true },
-  { patternId: 'side-chamber', shape: 'through' },
-  { patternId: 'concealed-room', shape: 'through' },
+  { id: 'library-hall', shape: 'leaf' },
+  { id: 'machine-hall', shape: 'leaf' },
+  { id: 'mine-head', shape: 'leaf', lowestOnly: true },
+  { id: 'side-chamber', shape: 'through' },
+  { id: 'concealed-room', shape: 'through' },
+  { id: 'atrium', shape: 'atrium' },
 ]
+
+/** The catalog name and description of an assembly room. */
+export function assemblyRoomLabel(id: string): { name: string; description: string } {
+  const entry = getBayPattern(id) ?? getLayoutPattern(id)
+  return { name: entry?.name ?? id, description: entry?.description ?? '' }
+}
 
 export const MAX_ASSEMBLY_LEVELS = 4
 
 /** The layout whose two pieces join one assembled level to the next. */
 export const ASSEMBLY_STAIR_LAYOUT_ID = 'compact-stair-pair'
+
+const ATRIUM_LAYOUT_ID = 'atrium'
 
 export interface AssemblyRequest {
   /** The lowest level. Higher levels sit one stair rise apart above it. */
@@ -48,7 +59,7 @@ export interface AssemblyRequest {
   width: number
   height: number
   levelCount: number
-  /** Room pattern ids from `ASSEMBLY_ROOMS`. Repeat an id to ask for more. */
+  /** Room ids from `ASSEMBLY_ROOMS`. Repeat an id to ask for more. */
   rooms: readonly string[]
   seed: number
 }
@@ -83,6 +94,24 @@ const STEP: Readonly<Record<HorizontalFace, { di: number; dj: number }>> = {
 
 const OPPOSITE: Readonly<Record<HorizontalFace, HorizontalFace>> = { n: 's', e: 'w', s: 'n', w: 'e' }
 
+interface Piece {
+  patternId: string
+  quarterTurns: QuarterTurns
+}
+
+/**
+ * Pieces placed before a level's route grows, with the links their doorways
+ * need. When `mustJoin` is set, the route keeps growing until it reaches them.
+ * `through` lists pieces that reach each other through a tall room below
+ * rather than by a link, as the balconies over an atrium core do.
+ */
+interface Preset {
+  pieces: Map<string, Piece>
+  links: Array<[string, string]>
+  mustJoin: boolean
+  through: string[]
+}
+
 /** One level's route: a tree of bays, plus any loop links added afterwards. */
 interface Route {
   links: Map<string, Set<string>>
@@ -93,6 +122,10 @@ interface Route {
   /** Bays that take exactly one link: landings, stairs, and leaf rooms. */
   leaves: Set<string>
   rooms: Map<string, string>
+  /** Preset pieces. Their links are final. */
+  fixed: Map<string, Piece>
+  /** Groups of preset pieces joined through a tall room instead of links. */
+  through: string[][]
 }
 
 export function assembleProposal(source: Project, request: AssemblyRequest): AssemblyProposal {
@@ -105,26 +138,70 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   const levels = Array.from({ length: request.levelCount }, (_, k) => levelAt(project, base, base.y + stair.rise * k))
 
   // Grow every level's route first, so rooms can go wherever a slot is free.
+  // Atriums go in before the route on their level grows around them.
   const routes: Route[] = []
+  const presets: Preset[][] = levels.map(() => [])
+  /** Bays a tall room below rises through, left unbuilt and unnamed. */
+  const risers: Array<Set<string>> = levels.map(() => new Set())
+  const unplaced = new Set<number>()
+  let atriums = request.rooms.flatMap((id, index) => (id === ATRIUM_LAYOUT_ID ? [index] : []))
+  const isClimbable = (k: number, key: string) => !levels[k]!.negativeSpaces?.[key] && !risers[k]!.has(key)
+
+  /** Grow level `k`'s route around its presets and choose its stair up. */
+  const growLevel = (k: number, open: readonly string[], entry: string): Route => {
+    const route = growRoute(open, entry, k > 0, targetSize(open.length, random), random, presets[k]!)
+    if (route.links.get(entry)!.size === 0) {
+      throw new Error(`'${levels[k]!.name}' has only one open bay in the footprint, so no route can leave it`)
+    }
+    if (k === levels.length - 1) return route
+    const preset = new Set(presets[k + 1]!.flatMap(presetKeys))
+    const piecesAbove = new Set(presets[k + 1]!.flatMap((entry) => [...entry.pieces.keys()]))
+    // The landing needs a free bay beside it to step out into.
+    const canLand = (key: string) => isClimbable(k + 1, key) && !preset.has(key) && FACES.some((face) => {
+      const next = neighbourKey(key, face)
+      return route.links.has(next) && isClimbable(k + 1, next) && !piecesAbove.has(next)
+    })
+    route.exit = chooseExit(route, open, canLand, random) ?? undefined
+    return route
+  }
+
   let available = footprint.filter((key) => !base.negativeSpaces?.[key])
   if (available.length === 0) throw new Error('The footprint is all named negative space, so there is nowhere to build')
   for (let k = 0; k < levels.length; k++) {
     const entry = k === 0 ? centralKey(available, random) : routes[k - 1]!.exit!
-    const route = growRoute(available, entry, k > 0, targetSize(available.length, random), random)
-    if (route.links.get(entry)!.size === 0) {
-      throw new Error(`'${levels[k]!.name}' has only one open bay in the footprint, so no route can leave it`)
+    const above = levels[k + 1]
+    const presetsHere = presets[k]!.length
+    const placedHere: number[] = []
+    if (above) {
+      const share = Math.ceil(atriums.length / (levels.length - 1 - k))
+      for (const index of atriums.slice(0, share)) {
+        const atrium = chooseAtrium(available, entry, k > 0, presets[k]!, presets[k + 1]!, above, stair.rise, random)
+        if (!atrium) continue
+        presets[k]!.push(atrium.lower)
+        presets[k + 1]!.push(atrium.upper)
+        for (const key of atrium.risers) risers[k + 1]!.add(key)
+        placedHere.push(index)
+      }
+      atriums = atriums.filter((index) => !placedHere.includes(index))
     }
-    routes.push(route)
-    if (k === levels.length - 1) break
-    const above = levels[k + 1]!
-    const climbable = (key: string) => !above.negativeSpaces?.[key]
-    route.exit = chooseExit(route, available, climbable, random) ?? undefined
-    if (!route.exit) throw new Error(`There is no room for a stair up from '${levels[k]!.name}' inside the footprint`)
-    // Upper levels build only over bays the level below builds.
-    available = [...route.links.keys()].filter(climbable).sort(compareKeys)
-  }
 
-  const unplacedRooms = placeRooms(request.rooms, routes, random)
+    let route = growLevel(k, available, entry)
+    if (above && !route.exit && placedHere.length > 0) {
+      // The atriums left no room for a stair, so they wait for a higher level.
+      presets[k]!.length = presetsHere
+      presets[k + 1]!.length = 0
+      risers[k + 1]!.clear()
+      atriums = [...placedHere, ...atriums]
+      route = growLevel(k, available, entry)
+    }
+    if (above && !route.exit) throw new Error(`There is no room for a stair up from '${levels[k]!.name}' inside the footprint`)
+    routes.push(route)
+    // Upper levels build only over bays the level below builds.
+    if (above) available = [...route.links.keys()].filter((key) => isClimbable(k + 1, key)).sort(compareKeys)
+  }
+  for (const index of atriums) unplaced.add(index)
+
+  for (const index of placeRooms(request.rooms, routes, random)) unplaced.add(index)
   for (const route of routes) addLoops(route, random)
 
   const bays: AssembledBay[] = []
@@ -137,20 +214,24 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
       const links = route.links.get(key)
       if (!links) {
         delete level.bays[key]
+        if (risers[k]!.has(key)) continue
+        const builtBelow = k > 0 && (routes[k - 1]!.links.has(key) || risers[k - 1]!.has(key))
         level.negativeSpaces ??= {}
-        level.negativeSpaces[key] = { kind: voidKind(below, key) }
+        level.negativeSpaces[key] = { kind: voidKind(below, builtBelow, key) }
         continue
       }
       const faces = FACES.filter((face) => links.has(neighbourKey(key, face)))
       const role = roleOf(route, key, k)
-      const patternId = pieceFor(role, route, key, faces, k === 0, stair, random)
-      const { bay, quarterTurns } = oriented(patternId, faces)
+      const fixed = route.fixed.get(key)
+      const patternId = fixed?.patternId ?? pieceFor(role, route, key, faces, k === 0, stair, random)
+      const { bay, quarterTurns } = fixed ? { bay: bayFromPattern(fixed.patternId, fixed.quarterTurns), quarterTurns: fixed.quarterTurns } : oriented(patternId, faces)
       if (role === 'spine') makeSpine(bay)
       level.bays[key] = bay
       bays.push({ levelId: level.id, bayKey: key, patternId, quarterTurns, role })
     }
   }
 
+  const unplacedRooms = request.rooms.filter((_, index) => unplaced.has(index))
   return { project, bays, unplacedRooms, issues: validate(project) }
 }
 
@@ -167,7 +248,7 @@ function checkRequest(project: Project, request: AssemblyRequest): void {
     throw new RangeError(`level count ${request.levelCount} must be 1 to ${MAX_ASSEMBLY_LEVELS}`)
   }
   for (const room of request.rooms) {
-    if (!ASSEMBLY_ROOMS.some((entry) => entry.patternId === room)) throw new Error(`'${room}' is not an assembly room`)
+    if (!ASSEMBLY_ROOMS.some((entry) => entry.id === room)) throw new Error(`'${room}' is not an assembly room`)
   }
 }
 
@@ -216,34 +297,178 @@ function centralKey(keys: readonly string[], random: () => number): string {
 /**
  * Randomised Prim's: link a random frontier bay to the route until it reaches
  * the target size. A landing is a leaf, so it links to one bay only.
+ *
+ * Presets start as separate pieces of the route. A link between two pieces
+ * joins them, and growth goes on past the target until every preset that must
+ * join the entry has.
  */
-function growRoute(available: readonly string[], entry: string, entryIsLeaf: boolean, target: number, random: () => number): Route {
+function growRoute(
+  available: readonly string[],
+  entry: string,
+  entryIsLeaf: boolean,
+  target: number,
+  random: () => number,
+  presets: readonly Preset[],
+): Route {
   const route: Route = {
     links: new Map([[entry, new Set()]]),
     entry,
     leaves: new Set(entryIsLeaf ? [entry] : []),
     rooms: new Map(),
+    fixed: new Map(),
+    through: presets.filter((preset) => preset.through.length > 1).map((preset) => preset.through),
   }
+  const parent = new Map<string, string>()
+  const root = (key: string): string => {
+    let at = key
+    while (parent.has(at) && parent.get(at) !== at) at = parent.get(at)!
+    return at
+  }
+  const join = (from: string, to: string) => {
+    link(route, from, to)
+    parent.set(root(from), root(to))
+  }
+  for (const preset of presets) {
+    for (const [key, piece] of preset.pieces) {
+      route.fixed.set(key, piece)
+      if (!route.links.has(key)) route.links.set(key, new Set())
+    }
+    for (const [from, to] of preset.links) join(from, to)
+  }
+  const joined = () => presets.every((preset) => !preset.mustJoin || presetKeys(preset).every((key) => root(key) === root(entry)))
+  // Presets can fill the target on their own, but the entry still needs a way out.
+  const done = () => route.links.size >= target && joined() && route.links.get(entry)!.size > 0
+
   const open = new Set(available)
-  while (route.links.size < target) {
-    const options = frontier(route, (key) => open.has(key))
+  while (!done()) {
+    const options = [...frontier(route, (key) => open.has(key)), ...bridges(route, root)]
     if (options.length === 0) break
     const [from, to] = pick(random, options)
-    link(route, from, to)
+    join(from, to)
   }
   return route
+}
+
+function presetKeys(preset: Preset): string[] {
+  return [...preset.pieces.keys(), ...preset.links.flat()]
+}
+
+/** A route bay may take another link unless it is preset or a used leaf. */
+function isSealed(route: Route, key: string): boolean {
+  return route.fixed.has(key) || (route.leaves.has(key) && route.links.get(key)!.size > 0)
+}
+
+/** Links between neighbouring route bays that are not yet joined. */
+function bridges(route: Route, root: (key: string) => string): Array<[string, string]> {
+  const options: Array<[string, string]> = []
+  for (const from of route.links.keys()) {
+    if (isSealed(route, from)) continue
+    for (const face of ['e', 's'] as const) {
+      const to = neighbourKey(from, face)
+      if (route.links.has(to) && !isSealed(route, to) && root(from) !== root(to)) options.push([from, to])
+    }
+  }
+  return options
 }
 
 function frontier(route: Route, canAdd: (key: string) => boolean): Array<[string, string]> {
   const options: Array<[string, string]> = []
   for (const from of route.links.keys()) {
-    if (route.leaves.has(from) && route.links.get(from)!.size > 0) continue
+    if (isSealed(route, from)) continue
     for (const face of FACES) {
       const to = neighbourKey(from, face)
       if (!route.links.has(to) && canAdd(to)) options.push([from, to])
     }
   }
   return options
+}
+
+interface AtriumPlacement {
+  lower: Preset
+  upper: Preset
+  risers: string[]
+}
+
+/**
+ * A spot for the atrium layout. Its bays and the bays outside its doorways
+ * must be open, and the entry must reach one of those outside bays. On the
+ * level above, the balconies and the bays outside them must be free, and the
+ * core rises through the bay between the balconies.
+ */
+function chooseAtrium(
+  available: readonly string[],
+  entry: string,
+  entryIsLeaf: boolean,
+  presetsHere: readonly Preset[],
+  presetsAbove: readonly Preset[],
+  above: Level,
+  rise: number,
+  random: () => number,
+): AtriumPlacement | null {
+  const open = new Set(available)
+  const takenHere = new Set(presetsHere.flatMap((preset) => [...preset.pieces.keys()]))
+  const takenAbove = new Set(presetsAbove.flatMap(presetKeys))
+  const candidates: AtriumPlacement[] = []
+  for (const quarterTurns of [0, 1] as const) {
+    const layout = rotatedLayout(ATRIUM_LAYOUT_ID, quarterTurns)
+    for (const anchor of available) {
+      const { i, j } = parseBayKey(anchor)
+      const piecesAt = (dy: number) => new Map(layout.placements
+        .filter((placement) => (placement.dy ?? 0) === dy)
+        .map((placement) => [bayKeyOf(i + placement.i, j + placement.j), { patternId: placement.patternId, quarterTurns: placement.quarterTurns }]))
+      const lower = piecesAt(0)
+      const upper = piecesAt(rise)
+      if ([...lower.keys()].some((key) => !open.has(key) || key === entry || takenHere.has(key))) continue
+      if ([...lower.keys()].some((key) => above.negativeSpaces?.[key] || takenAbove.has(key))) continue
+
+      const lowerLinks = doorwayLinks(lower, () => true)
+      const ports = lowerLinks.map(([, to]) => to).filter((key) => !lower.has(key))
+      if (ports.some((key) => !open.has(key) || takenHere.has(key) || (entryIsLeaf && key === entry))) continue
+      if (!reachesAny(open, entry, ports, new Set([...lower.keys(), ...takenHere]))) continue
+
+      // A balcony's doorway over the core opens onto the core, not a bay.
+      const upperLinks = doorwayLinks(upper, (key) => upper.has(key) || !lower.has(key))
+      const upperPorts = upperLinks.map(([, to]) => to).filter((key) => !upper.has(key))
+      if (upperPorts.some((key) => !ports.includes(key) || above.negativeSpaces?.[key] || takenAbove.has(key))) continue
+
+      candidates.push({
+        lower: { pieces: lower, links: lowerLinks, mustJoin: true, through: [] },
+        upper: { pieces: upper, links: upperLinks, mustJoin: false, through: [...upper.keys()] },
+        risers: [...lower.keys()].filter((key) => !upper.has(key)),
+      })
+    }
+  }
+  return candidates.length > 0 ? pick(random, candidates) : null
+}
+
+/** A link through each doorway of each piece, once per pair of pieces. */
+function doorwayLinks(pieces: ReadonlyMap<string, Piece>, keep: (to: string) => boolean): Array<[string, string]> {
+  const links: Array<[string, string]> = []
+  for (const [key, piece] of pieces) {
+    for (const face of bayOpenFaces(bayFromPattern(piece.patternId, piece.quarterTurns))) {
+      const to = neighbourKey(key, face)
+      if (!keep(to) || (pieces.has(to) && to < key)) continue
+      links.push([key, to])
+    }
+  }
+  return links
+}
+
+function reachesAny(open: ReadonlySet<string>, from: string, targets: readonly string[], blocked: ReadonlySet<string>): boolean {
+  const seen = new Set([from])
+  const queue = [from]
+  for (let index = 0; index < queue.length; index++) {
+    const key = queue[index]!
+    if (targets.includes(key)) return true
+    for (const face of FACES) {
+      const next = neighbourKey(key, face)
+      if (open.has(next) && !blocked.has(next) && !seen.has(next)) {
+        seen.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return false
 }
 
 /**
@@ -253,7 +478,7 @@ function frontier(route: Route, canAdd: (key: string) => boolean): Array<[string
 function chooseExit(route: Route, available: readonly string[], climbable: (key: string) => boolean, random: () => number): string | null {
   const depth = distances(route)
   const leaves = [...route.links.keys()].filter((key) =>
-    key !== route.entry && route.links.get(key)!.size === 1 && climbable(key))
+    key !== route.entry && depth.has(key) && !route.fixed.has(key) && route.links.get(key)!.size === 1 && climbable(key))
   if (leaves.length > 0) {
     const deepest = Math.max(...leaves.map((key) => depth.get(key)!))
     const exit = pick(random, leaves.filter((key) => depth.get(key) === deepest))
@@ -274,7 +499,8 @@ function distances(route: Route): Map<string, number> {
   const queue = [route.entry]
   for (let index = 0; index < queue.length; index++) {
     const key = queue[index]!
-    for (const next of route.links.get(key)!) {
+    const across = route.through.filter((group) => group.includes(key)).flat()
+    for (const next of [...route.links.get(key)!, ...across]) {
       if (depth.has(next)) continue
       depth.set(next, depth.get(key)! + 1)
       queue.push(next)
@@ -287,28 +513,29 @@ function distances(route: Route): Map<string, number> {
  * Give each room a free slot of its shape, trying a different level first for
  * each room so they spread up the stack. Returns the rooms that did not fit.
  */
-function placeRooms(rooms: readonly string[], routes: Route[], random: () => number): string[] {
-  const unplaced: string[] = []
-  rooms.forEach((patternId, index) => {
-    const room = ASSEMBLY_ROOMS.find((entry) => entry.patternId === patternId)!
+function placeRooms(rooms: readonly string[], routes: Route[], random: () => number): number[] {
+  const unplaced: number[] = []
+  rooms.forEach((id, index) => {
+    const room = ASSEMBLY_ROOMS.find((entry) => entry.id === id)!
+    if (room.shape === 'atrium') return
     const order = room.lowestOnly ? [0] : routes.map((_, k) => (index + k) % routes.length)
     for (const k of order) {
       const route = routes[k]!
       const slots = [...route.links.keys()].filter((key) => isFreeSlot(route, key, room.shape))
       if (slots.length === 0) continue
       const slot = pick(random, slots)
-      route.rooms.set(slot, patternId)
+      route.rooms.set(slot, id)
       // A through room keeps its two doorways, so it is as fixed as a leaf.
       route.leaves.add(slot)
       return
     }
-    unplaced.push(patternId)
+    unplaced.push(index)
   })
   return unplaced
 }
 
 function isFreeSlot(route: Route, key: string, shape: AssemblyRoom['shape']): boolean {
-  if (key === route.entry || route.leaves.has(key)) return false
+  if (key === route.entry || route.leaves.has(key) || route.fixed.has(key)) return false
   const faces = FACES.filter((face) => route.links.get(key)!.has(neighbourKey(key, face)))
   if (shape === 'leaf') return faces.length === 1
   return faces.length === 2 && OPPOSITE[faces[0]!] === faces[1]
@@ -319,7 +546,7 @@ function isFreeSlot(route: Route, key: string, shape: AssemblyRoom['shape']): bo
  * loop the way a Stronghold's do. Rooms, stairs and landings keep their shape.
  */
 function addLoops(route: Route, random: () => number): void {
-  const flexible = (key: string) => !route.leaves.has(key)
+  const flexible = (key: string) => !route.leaves.has(key) && !route.fixed.has(key)
   const pairs: Array<[string, string]> = []
   for (const from of route.links.keys()) {
     for (const face of ['e', 's'] as const) {
@@ -339,7 +566,7 @@ function addLoops(route: Route, random: () => number): void {
 function roleOf(route: Route, key: string, k: number): AssemblyRole {
   if (key === route.entry) return k === 0 ? 'spine' : 'landing'
   if (key === route.exit) return 'stair'
-  if (route.rooms.has(key)) return 'room'
+  if (route.rooms.has(key) || route.fixed.has(key)) return 'room'
   return 'passage'
 }
 
@@ -380,9 +607,9 @@ function makeSpine(bay: Bay): void {
 }
 
 /** Open ground stays a courtyard. Space over a built bay waits for expansion. */
-function voidKind(below: Level | undefined, key: string): NegativeSpaceKind {
-  if (!below) return 'courtyard'
-  return below.negativeSpaces?.[key]?.kind ?? (below.bays[key] ? 'reserved' : 'courtyard')
+function voidKind(below: Level | undefined, builtBelow: boolean, key: string): NegativeSpaceKind {
+  if (builtBelow) return 'reserved'
+  return below?.negativeSpaces?.[key]?.kind ?? 'courtyard'
 }
 
 function link(route: Route, from: string, to: string): void {

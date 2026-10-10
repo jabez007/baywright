@@ -72,7 +72,7 @@ describe('procedural assembly', () => {
   })
 
   it('validates clean across seeds, footprints, level counts, and rooms', () => {
-    const rooms = ASSEMBLY_ROOMS.map((room) => room.patternId)
+    const rooms = ASSEMBLY_ROOMS.map((room) => room.id)
     for (const [width, height] of [[2, 1], [3, 2], [4, 4], [6, 5]] as const) {
       for (let levelCount = 1; levelCount <= 3; levelCount++) {
         for (let seed = 1; seed <= 12; seed++) {
@@ -92,6 +92,44 @@ describe('procedural assembly', () => {
 
     const crowded = assembleProposal(field(), request({ width: 2, height: 1, rooms: ['library-hall', 'library-hall', 'library-hall'] }))
     expect(crowded.unplacedRooms).toEqual(['library-hall', 'library-hall'])
+  })
+
+  it('places an atrium with a balcony over each hall on the level above', () => {
+    for (let seed = 1; seed <= 15; seed++) {
+      const proposal = assembleProposal(field(6, 6), request({ width: 6, height: 6, levelCount: 3, rooms: ['atrium', 'library-hall'], seed }))
+      const [ground, upper] = proposal.project.levels as [Level, Level]
+      const at = (levelId: string, patternId: string) =>
+        proposal.bays.filter((entry) => entry.levelId === levelId && entry.patternId === patternId).map((entry) => entry.bayKey)
+      const label = `seed ${seed}`
+
+      expect(proposal.issues.map((issue) => issue.message), label).toEqual([])
+      if (proposal.unplacedRooms.includes('atrium')) continue
+      const atriumLevel = at(ground.id, 'atrium-core').length === 1 ? ground : upper
+      const above = proposal.project.levels[proposal.project.levels.indexOf(atriumLevel) + 1]!
+      const [core] = at(atriumLevel.id, 'atrium-core')
+      expect(at(atriumLevel.id, 'atrium-hall').sort(), label).toEqual(at(above.id, 'atrium-balcony').sort())
+      expect(at(above.id, 'atrium-balcony'), label).toHaveLength(2)
+      // The 12-high core rises through the level above, so nothing is built or named there.
+      expect(above.bays[core!], label).toBeUndefined()
+      expect(above.negativeSpaces?.[core!], label).toBeUndefined()
+    }
+    const placed = Array.from({ length: 15 }, (_, index) =>
+      assembleProposal(field(6, 6), request({ width: 6, height: 6, levelCount: 3, rooms: ['atrium'], seed: index + 1 })))
+      .filter((proposal) => proposal.unplacedRooms.length === 0)
+    expect(placed.length).toBeGreaterThan(10)
+  })
+
+  it('climbs on from a balcony the landing reaches only across the atrium core', () => {
+    // On level 16 of this plan, the only dead ends lie past the far balcony.
+    const proposal = assembleProposal(field(8, 8), request({
+      width: 8, height: 8, levelCount: 4, rooms: ['atrium', 'atrium', 'library-hall', 'concealed-room', 'machine-hall'], seed: 32,
+    }))
+    expect(proposal.issues).toEqual([])
+    expect(proposal.bays.filter((entry) => entry.role === 'stair')).toHaveLength(3)
+  })
+
+  it('needs a level above for an atrium', () => {
+    expect(assembleProposal(field(), request({ rooms: ['atrium'] })).unplacedRooms).toEqual(['atrium'])
   })
 
   it('puts a mine head only on the lowest level', () => {

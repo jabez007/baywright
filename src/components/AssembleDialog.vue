@@ -9,6 +9,7 @@ import { computed, ref, watch } from 'vue'
 import {
   ASSEMBLY_ROOMS,
   MAX_ASSEMBLY_LEVELS,
+  assemblyRoomLabel,
   type AssemblyProposal,
   type AssemblyRequest,
   type AssemblyRole,
@@ -62,7 +63,7 @@ watch(
     width.value = store.project.bayCols
     depth.value = store.project.bayRows
     seed.value = randomSeed()
-    roomCounts.value = Object.fromEntries(ASSEMBLY_ROOMS.map((room) => [room.patternId, 0]))
+    roomCounts.value = Object.fromEntries(ASSEMBLY_ROOMS.map((room) => [room.id, 0]))
     dialog.value?.showModal()
   },
 )
@@ -89,7 +90,7 @@ function requestedRooms(): string[] {
   const most = Math.max(0, ...Object.values(roomCounts.value))
   for (let round = 0; round < most; round++) {
     for (const room of ASSEMBLY_ROOMS) {
-      if ((roomCounts.value[room.patternId] ?? 0) > round) rooms.push(room.patternId)
+      if ((roomCounts.value[room.id] ?? 0) > round) rooms.push(room.id)
     }
   }
   return rooms
@@ -136,7 +137,7 @@ const levelMaps = computed(() => {
             return { bayKey, role: placed.role as AssemblyRole | 'open', glyph: ROLE_GLYPHS[placed.role], title: `${bayKey}: ${name}` }
           }
           const space = level.negativeSpaces?.[bayKey]
-          return { bayKey, role: 'open' as const, glyph: '', title: `${bayKey}: ${space ? `open ${space.kind}` : 'unchanged'}` }
+          return { bayKey, role: 'open' as const, glyph: '', title: `${bayKey}: ${space ? `open ${space.kind}` : 'not built'}` }
         }),
       ),
     }))
@@ -153,7 +154,7 @@ const issueSummary = computed(() => {
 const unplacedSummary = computed(() => {
   const unplaced = proposal.value?.unplacedRooms ?? []
   if (unplaced.length === 0) return ''
-  const names = unplaced.map((id) => getBayPattern(id)?.name ?? id)
+  const names = unplaced.map((id) => assemblyRoomLabel(id).name)
   return `No room for: ${names.join(', ')}. Widen the footprint or add a level.`
 })
 
@@ -208,9 +209,9 @@ function onClose(): void {
 
       <fieldset class="rooms">
         <legend>Rooms to place</legend>
-        <label v-for="room in ASSEMBLY_ROOMS" :key="room.patternId" :title="getBayPattern(room.patternId)?.description">
-          <input v-model.number="roomCounts[room.patternId]" type="number" min="0" max="8" />
-          {{ getBayPattern(room.patternId)?.name }}
+        <label v-for="room in ASSEMBLY_ROOMS" :key="room.id" :title="assemblyRoomLabel(room.id).description">
+          <input v-model.number="roomCounts[room.id]" type="number" min="0" max="8" />
+          {{ assemblyRoomLabel(room.id).name }}
         </label>
       </fieldset>
 

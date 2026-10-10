@@ -99,7 +99,7 @@ Do not add this field only to color the plan. Add it when Baywright can use it t
 
 ### 5. Add optional procedural assembly
 
-Implemented, except atriums. **Assemble a base** in the Project menu takes a footprint, a level count, the rooms to place, and a seed. It grows a seeded tree of passages on each level, closes a few loops, and joins the levels with the compact stair layout. It names the bays it skips as negative space and previews the proposal with the ordinary validators' result before anything changes. The generator does not place atriums yet.
+Implemented. **Assemble a base** in the Project menu takes a footprint, a level count, the rooms to place, and a seed. It grows a seeded tree of passages on each level, closes a few loops, and joins the levels with the compact stair layout. It names the bays it skips as negative space and previews the proposal with the ordinary validators' result before anything changes. A requested atrium takes three bays in a row and puts a balcony over each hall on the level above.
 
 Procedural assembly is the last step. The generator should combine the same bay and layout catalogs that manual tools use.
 
