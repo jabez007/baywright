@@ -16,6 +16,7 @@ import {
   droppedCeilingY,
   footprintsOverlap,
   horizontalOpeningSpan,
+  openingYSpan,
   parseBayKey,
   resolveCell,
   socketVoids,
@@ -366,32 +367,31 @@ function buildCellNodes(project: Project): CellNode[] {
  * Which cells physically share a face. Two cells share one when the outer box
  * of one ends exactly where the other begins and their interiors overlap along
  * the remaining axes — which covers cells inside a bay, cells across a bay
- * seam, and cells stacked between levels, all with the same test.
+ * seam, and cells stacked between levels, all with the same test. A tall room
+ * shares a wall with a room on a higher level beside it, so horizontal faces
+ * are not limited to one level.
  *
  * Sockets are not consulted here; the callers apply their own opening rules.
  */
 function buildAdjacencies(nodes: CellNode[]): Adjacency[] {
   const adjacencies: Adjacency[] = []
 
-  const byLevel = new Map<string, CellNode[]>()
-  for (const node of nodes) push(byLevel, node.ref.levelId, node)
-
-  for (const group of byLevel.values()) {
-    const byX0 = new Map<number, CellNode[]>()
-    const byZ0 = new Map<number, CellNode[]>()
-    for (const node of group) {
-      push(byX0, node.outer.x0, node)
-      push(byZ0, node.outer.z0, node)
+  const byX0 = new Map<number, CellNode[]>()
+  const byZ0 = new Map<number, CellNode[]>()
+  for (const node of nodes) {
+    push(byX0, node.outer.x0, node)
+    push(byZ0, node.outer.z0, node)
+  }
+  for (const node of nodes) {
+    for (const other of byX0.get(node.outer.x1) ?? []) {
+      if (!spansOverlap(node.interior.y0, node.interior.y1, other.interior.y0, other.interior.y1)) continue
+      if (!spansOverlap(node.interior.z0, node.interior.z1, other.interior.z0, other.interior.z1)) continue
+      adjacencies.push({ a: node.key, b: other.key, faceA: 'e', faceB: 'w', vertical: false })
     }
-    for (const node of group) {
-      for (const other of byX0.get(node.outer.x1) ?? []) {
-        if (!spansOverlap(node.interior.z0, node.interior.z1, other.interior.z0, other.interior.z1)) continue
-        adjacencies.push({ a: node.key, b: other.key, faceA: 'e', faceB: 'w', vertical: false })
-      }
-      for (const other of byZ0.get(node.outer.z1) ?? []) {
-        if (!spansOverlap(node.interior.x0, node.interior.x1, other.interior.x0, other.interior.x1)) continue
-        adjacencies.push({ a: node.key, b: other.key, faceA: 's', faceB: 'n', vertical: false })
-      }
+    for (const other of byZ0.get(node.outer.z1) ?? []) {
+      if (!spansOverlap(node.interior.y0, node.interior.y1, other.interior.y0, other.interior.y1)) continue
+      if (!spansOverlap(node.interior.x0, node.interior.x1, other.interior.x0, other.interior.x1)) continue
+      adjacencies.push({ a: node.key, b: other.key, faceA: 's', faceB: 'n', vertical: false })
     }
   }
 
@@ -506,11 +506,19 @@ export function checkConnectivity(project: Project): Issue[] {
   })
 }
 
+/**
+ * Both openings must clear a common stretch of the shared wall, across it and
+ * up it. Cells on one level share a floor, so their doorways always meet in
+ * height; a tall room and a balcony on the level above may not.
+ */
 function horizontalOpeningsOverlap(a: CellNode, b: CellNode, link: Adjacency): boolean {
   if (link.vertical) return true
   const spanA = openingSpan(a, link.faceA)
   const spanB = openingSpan(b, link.faceB)
-  return Boolean(spanA && spanB && spansOverlap(spanA[0], spanA[1], spanB[0], spanB[1]))
+  if (!spanA || !spanB || !spansOverlap(spanA[0], spanA[1], spanB[0], spanB[1])) return false
+  const riseA = openingYSpan(a.cell.sockets[link.faceA], a.interior)
+  const riseB = openingYSpan(b.cell.sockets[link.faceB], b.interior)
+  return spansOverlap(riseA[0], riseA[1], riseB[0], riseB[1])
 }
 
 function openingSpan(node: CellNode, face: Face): [number, number] | null {

@@ -285,6 +285,34 @@ describe('V3 — connectivity', () => {
     expect(only(validate(stacked('solid')), 'V3')).toHaveLength(1)
   })
 
+  describe('beside a taller room on a lower level', () => {
+    /** A1 is a three-cell-tall spine at y 0; B1 is a one-cell balcony at y 8. */
+    const balcony = (tall: Socket, high: Socket): Project =>
+      project(
+        [
+          level('low', 0, {
+            A1: bay('merged', () => ({ module: 'spine', heightCells: 3, sockets: sockets({ e: tall }) })),
+          }),
+          level('high', 8, { B1: bay('merged', () => ({ sockets: sockets({ w: high }) })) }),
+        ],
+        { bayCols: 2, bayRows: 1 },
+      )
+
+    it('walks a doorway the two rooms share at balcony height', () => {
+      const p = balcony('corridor', 'corridor')
+      // The shared wall at x 12 is open at y 9 to 11, inside both rooms.
+      expect(resolveBlocks(p).has(blockKey(12, 10, 6))).toBe(false)
+      expect(only(validate(p), 'V3')).toEqual([])
+    })
+
+    it('does not walk openings that sit at different heights', () => {
+      // The arch opens y 1 and 2 of the tall room, below the balcony floor.
+      const p = balcony('arch', 'corridor')
+      expect(resolveBlocks(p).has(blockKey(12, 10, 6))).toBe(true)
+      expect(only(validate(p), 'V3').map((issue) => issue.refs[0]!.bayKey)).toEqual(['B1'])
+    })
+  })
+
   it('walks a valid merge group whose members kept their default solid sockets', () => {
     const p = row(
       { module: 'spine', sockets: sockets({ e: 'corridor' }) },

@@ -526,7 +526,8 @@ function addHorizontalOpening(
   }
 }
 
-function openingYSpan(socket: Socket, interior: AABB): [number, number] {
+/** The heights a horizontal opening clears, empty when the socket is closed. */
+export function openingYSpan(socket: Socket, interior: AABB): [number, number] {
   switch (socket) {
     case 'corridor':
     case 'bars':

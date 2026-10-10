@@ -98,7 +98,7 @@ Each cell has six faces (`n`, `e`, `s`, `w`, `up`, `down`), each carrying a sock
 
 Corridor, arch, and bars sockets default to the full cell interior width. A cell can set a horizontal face to a centred width of 3 or 5 blocks. The configured width must fit the cell interior. Fine cells therefore allow 3, coarse cells allow 3 or 5, and merged cells allow 3 or 5. Windows keep their fixed one-block width.
 
-Room connectivity depends on direction. Across a horizontal shared face, the matching opposing faces must both use a room opening: `corridor` or `arch`. The two room-opening sockets may differ, so a corridor facing an arch is passable. Across a vertical shared face, the matching opposing faces must both use `shaft`. A `bars` socket places visually open blocks but does not create a passable room path. A `window` socket also does not create a room path.
+Room connectivity depends on direction. A horizontal shared face can join cells on different levels when a tall room stands beside a room on a higher level. The two openings must then also overlap in height. Across a horizontal shared face, the matching opposing faces must both use a room opening: `corridor` or `arch`. The two room-opening sockets may differ, so a corridor facing an arch is passable. Across a vertical shared face, the matching opposing faces must both use `shaft`. A `bars` socket places visually open blocks but does not create a passable room path. A `window` socket also does not create a room path.
 
 ### 5.5 Modules and palettes
 
