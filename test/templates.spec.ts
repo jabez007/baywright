@@ -51,6 +51,13 @@ describe('project templates', () => {
     expect(validate(project).filter((issue) => issue.id === 'V1')).toEqual([])
   })
 
+  it('passes every check, so each room is reachable from the spine by stairs', () => {
+    // V3 warns about a missing spine and about any room it cannot reach, and
+    // V4 rejects any stair whose shaft does not land, so no issues at all
+    // means all four levels are joined.
+    expect(validate(projectFromTemplate('layered-base', ids()))).toEqual([])
+  })
+
   it('lists the template offered by the new-project dialog', () => {
     expect(PROJECT_TEMPLATE_LIST.map((template) => template.id)).toEqual(['layered-base'])
   })

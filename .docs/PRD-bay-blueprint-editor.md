@@ -120,7 +120,7 @@ The catalog contains straight passage, corner passage, T-junction, four-way junc
 
 A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
 
-A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The mineshaft level includes reusable rail-line bays. The level spacing lets the tallest rooms touch the next floor plane without colliding.
+A project template also expands into ordinary project data. The layered base example uses a sparse 5x5 field. It places mineshaft infrastructure at y -4, trial machinery at y 0, a stronghold core at y 12, and mansion living space at y 20. Each level uses the matching shipped palette. The mineshaft level includes reusable rail-line bays. One stair climbs through bay C4 from the mineshaft to the stronghold, and a second climbs through C2 to the mansion. Each stair is as tall as the rise it covers. A spine sits at the stronghold's central junction, so the example passes every check. The level spacing lets the tallest rooms touch the next floor plane without colliding.
 
 ## 6. Data model
 

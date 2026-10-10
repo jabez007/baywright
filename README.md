@@ -71,7 +71,7 @@ A one-cell height occupies five blocks and has a three-block interior. Taller ce
 
 Merged Arena cells apply the system inside the bay: a trim outline marks the centred 7×7 purpose core, leaving a two-block circulation ring in the 11×11 interior. Four palette-resolved pillars and a central ceiling light are included in exported blocks and material totals.
 
-Infrastructure planning uses ordinary modules rather than a separate simulator. Rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls carry useful height, socket, palette, and detailing intent. Transport and item-trunk bay patterns make the straight runs reusable; the layered example now uses rail-line bays on its lowest level. Throughput, redstone state, and entity behavior remain outside Baywright's scope.
+Infrastructure planning uses ordinary modules rather than a separate simulator. Rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls carry useful height, socket, palette, and detailing intent. Transport and item-trunk bay patterns make the straight runs reusable; the layered example uses rail-line bays on its lowest level. Its stairs join all four levels to a spine, so it passes every check. Throughput, redstone state, and entity behavior remain outside Baywright's scope.
 
 The app has two routes: `/` and `/project/:id/level/:levelId`. The root route restores the last valid local project and then changes to its project and level URL. These URLs identify local IndexedDB records. They are not share links.
 
