@@ -97,6 +97,9 @@ export const RECIPES: Readonly<Record<string, Recipe>> = {
   'minecraft:tuff_brick_wall': { input: 'minecraft:tuff_bricks', per: 1, method: 'stonecutter' },
   'minecraft:chiseled_tuff_bricks': { input: 'minecraft:tuff_bricks', per: 1, method: 'stonecutter' },
 
+  // furnace ← 8 cobblestone
+  'minecraft:furnace': { input: 'minecraft:cobblestone', per: 8, method: 'craft' },
+
   // planks ← logs (4:1)
   ...woodRecipes(),
 }

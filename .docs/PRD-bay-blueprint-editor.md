@@ -117,6 +117,9 @@ Decoration hints record builder intent. Exact detail kits are optional, and only
 
 Rail Line and Ice Highway continue their track through each open end of the route, onto the shared wall line. A track block on the wall line lands only where that wall is open, so a route never cuts into a solid neighbour. Neither kit applies to a cell with a `down` shaft. Blue ice stays a raw input in the bill of materials, because icebergs drop it.
 
+- **Nether Portal.** A coarse or merged room at least 5 blocks wide and high gets a 5x5 obsidian frame without corners at the middle of the room. The frame plane faces the first `corridor` or `arch` face. Its 3x3 opening stays air for the player to light. A frame column in front of an opening would break the frame, so the kit then places nothing.
+- **Super Smelter.** A room at least 4 blocks high gets a furnace row along the interior row opposite the entrance. Each column holds a downward output hopper at the floor, a furnace facing the entrance, and a downward input hopper on top. A fuel hopper stands in front of each furnace, pointing at it. Nothing is placed above the input hoppers, so a chest or hopper minecart can feed them. Furnaces roll back to 8 cobblestone in the raw inputs.
+
 A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`. An ID may carry a block state, as in `minecraft:lantern[hanging=true]`. The ceiling light has air below it, so shipped lanterns hang and no shipped palette uses a torch.
 
 Palette resolves per level, overridable per cell.
@@ -463,7 +466,7 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Implemented early: infrastructure modules for transport, item flow, machinery, mine access, portals, and trading.
 - Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
 - Implemented early: multi-level layouts for a stair stack, a library gallery, an atrium, and a machinery hall.
-- Implemented early: exact Library, Rail Line, and Ice Highway kits.
+- Implemented early: exact Library, Rail Line, Ice Highway, Nether Portal, and Super Smelter kits.
 - Planned: the remaining exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
 - Planned: a larger pattern catalog, route roles that support checks, and optional procedural assembly.
 - Implemented early: a palette editor. The level inspector renames the level's palette, edits its six block IDs, and copies it for one level. Block IDs follow `/setblock` syntax, with the `minecraft:` namespace added when omitted.

@@ -231,3 +231,67 @@ describe('ice highway kit', () => {
     expect(bom.rawInputs.find((entry) => entry.blockId === 'minecraft:blue_ice')?.count).toBe(13)
   })
 })
+
+describe('nether portal kit', () => {
+  const portalRoom = (grain: 'fine' | 'coarse' | 'merged', overrides: Partial<Cell> = {}) =>
+    project([level('L1', 0, { A1: bay(grain, () => ({ ...cellFromModule('nether-portal'), ...overrides })) })])
+
+  it('stands a cornerless obsidian frame across the room, facing the entrance', () => {
+    const blocks = resolveBlocks(portalRoom('merged'))
+    const frame = positionsOf(blocks, 'minecraft:obsidian').sort()
+
+    // A 3×3 opening at x 5 to 7 and y 2 to 4, in the plane z 6.
+    expect(frame).toEqual(
+      [
+        ...[5, 6, 7].flatMap((x) => [blockKey(x, 1, 6), blockKey(x, 5, 6)]),
+        ...[2, 3, 4].flatMap((y) => [blockKey(4, y, 6), blockKey(8, y, 6)]),
+      ].sort(),
+    )
+    expect(blocks.has(blockKey(6, 3, 6))).toBe(false)
+    expect(blocks.has(blockKey(4, 1, 6))).toBe(false)
+  })
+
+  it('turns the frame to face a west entrance', () => {
+    const blocks = resolveBlocks(portalRoom('merged', { sockets: sockets({ w: 'arch' }) }))
+    expect(blocks.get(blockKey(6, 1, 5))).toBe('minecraft:obsidian')
+    expect(blocks.get(blockKey(6, 3, 4))).toBe('minecraft:obsidian')
+  })
+
+  it('needs a room at least five blocks wide and high', () => {
+    expect(positionsOf(resolveBlocks(portalRoom('coarse')), 'minecraft:obsidian')).toHaveLength(4 * 12)
+    expect(positionsOf(resolveBlocks(portalRoom('fine')), 'minecraft:obsidian')).toEqual([])
+    expect(positionsOf(resolveBlocks(portalRoom('merged', { heightCells: 1 })), 'minecraft:obsidian')).toEqual([])
+  })
+})
+
+describe('super smelter kit', () => {
+  const smelter = (grain: 'fine' | 'merged', overrides: Partial<Cell> = {}) =>
+    project([level('L1', 0, { A1: bay(grain, () => ({ ...cellFromModule('super-smelter'), ...overrides })) })])
+
+  it('backs a furnace row against the wall opposite the entrance, fed from above and in front', () => {
+    const blocks = resolveBlocks(smelter('merged'))
+    // The entrance is north, so the row stands at z 11, the back interior row.
+    for (let x = 1; x <= 11; x++) {
+      expect(blocks.get(blockKey(x, 1, 11))).toBe('minecraft:hopper[facing=down]')
+      expect(blocks.get(blockKey(x, 2, 11))).toBe('minecraft:furnace[facing=north]')
+      expect(blocks.get(blockKey(x, 3, 11))).toBe('minecraft:hopper[facing=down]')
+      expect(blocks.get(blockKey(x, 2, 10))).toBe('minecraft:hopper[facing=south]')
+      // Feed clearance: the space above the input hoppers stays open.
+      expect(blocks.has(blockKey(x, 4, 11))).toBe(false)
+    }
+    expect(blocks.has(blockKey(6, 1, 10))).toBe(false)
+  })
+
+  it('counts furnaces and hoppers, and rolls furnaces back to cobblestone', () => {
+    const bom = computeBom(smelter('fine'))
+    const placed = new Map(bom.blocks.map((entry) => [entry.blockId, entry.count]))
+    // Nine 3×3 cells, each with a three-furnace row.
+    expect(placed.get('minecraft:furnace')).toBe(27)
+    expect(placed.get('minecraft:hopper')).toBe(81)
+    expect(bom.rawInputs.find((entry) => entry.blockId === 'minecraft:furnace')).toBeUndefined()
+  })
+
+  it('needs room for the feed above the input hoppers', () => {
+    expect(positionsOf(resolveBlocks(smelter('merged', { heightCells: 1 })), 'minecraft:furnace')).toEqual([])
+  })
+})

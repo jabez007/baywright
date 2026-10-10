@@ -32,6 +32,8 @@ const KITS: Readonly<Record<string, Kit>> = {
   library: libraryKit,
   'rail-line': railLineKit,
   'ice-highway': iceHighwayKit,
+  'nether-portal': netherPortalKit,
+  'super-smelter': superSmelterKit,
 }
 
 export function interiorDetailBlocks(
@@ -281,6 +283,67 @@ function openRouteEnds(cell: Cell, axis: Axis, outer: AABB): number[] {
   return ROUTE_ENDS[axis]
     .filter((face) => cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch')
     .map((face) => (face === 'n' ? outer.z0 : face === 's' ? outer.z1 : face === 'w' ? outer.x0 : outer.x1))
+}
+
+/**
+ * A 5×5 obsidian frame without corners, the smallest a 3×3 portal needs,
+ * stands across the middle of the room so a player walks in from the
+ * entrance and straight through. The opening is left as air for the player
+ * to light. A room narrower or lower than the frame gets none, and so does a
+ * frame that would stand in front of an opening, since a gap breaks it.
+ */
+function netherPortalKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const door = entrance(cell) ?? 'n'
+  const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
+  const wide = frame.across[1] - frame.across[0] + 1
+  const high = interior.y1 - interior.y0 + 1
+  if (wide < 5 || high < 5 || cell.sockets.down === 'shaft') return new Map()
+
+  const along = midpoint(frame.along[0], frame.along[1])
+  const centre = midpoint(frame.across[0], frame.across[1])
+  const blocks: string[] = []
+  for (let c = centre - 1; c <= centre + 1; c++) {
+    blocks.push(frame.place(along, interior.y0, c), frame.place(along, interior.y0 + 4, c))
+  }
+  for (let y = interior.y0 + 1; y <= interior.y0 + 3; y++) {
+    blocks.push(frame.place(along, y, centre - 2), frame.place(along, y, centre + 2))
+  }
+  for (let c = centre - 2; c <= centre + 2; c++) {
+    if (isOpening(context, frame.column(along, c))) return new Map()
+  }
+  return new Map([['minecraft:obsidian', new Set(blocks)]])
+}
+
+const OPPOSITE: Readonly<Record<WallFace, WallFace>> = { n: 's', e: 'w', s: 'n', w: 'e' }
+
+/**
+ * A row of furnaces backs onto the wall opposite the entrance, facing it.
+ * Each furnace has an input hopper on top and an output hopper below, both
+ * pointing down, and a fuel hopper in front pointing at its side. The space
+ * above the input hoppers stays clear for whatever feeds them, so the room
+ * must be at least four blocks high.
+ */
+function superSmelterKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const door = entrance(cell) ?? 'n'
+  const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
+  if (interior.y1 - interior.y0 + 1 < 4 || cell.sockets.down === 'shaft') return new Map()
+
+  // North and west entrances put the back wall at the far end of the axis.
+  const fromFar = door === 'n' || door === 'w'
+  const back = fromFar ? frame.along[1] : frame.along[0]
+  const front = fromFar ? back - 1 : back + 1
+  const out: DetailBlocks = new Map()
+  const furnaces = roleSet(out, `minecraft:furnace[facing=${FACING[door]}]`)
+  const down = roleSet(out, 'minecraft:hopper[facing=down]')
+  const fuel = roleSet(out, `minecraft:hopper[facing=${FACING[OPPOSITE[door]]}]`)
+  for (let c = frame.across[0]; c <= frame.across[1]; c++) {
+    if (isOpening(context, frame.column(back, c)) || isOpening(context, frame.column(front, c))) continue
+    down.add(frame.place(back, interior.y0, c))
+    furnaces.add(frame.place(back, interior.y0 + 1, c))
+    down.add(frame.place(back, interior.y0 + 2, c))
+    fuel.add(frame.place(front, interior.y0 + 1, c))
+  }
+  return out
 }
 
 /** Every interior column that touches a wall, each corner once. */
