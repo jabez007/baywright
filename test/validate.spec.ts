@@ -610,3 +610,43 @@ describe('V8 — world build limits', () => {
     expect(only(validate(p), 'V8')[0]!.refs).toEqual([{ levelId: 'roof', bayKey: 'A1', cellIndex: 0 }])
   })
 })
+
+// --------------------------------------------------------------------------
+// Unbuilt cells
+// --------------------------------------------------------------------------
+
+describe('empty cells are unbuilt', () => {
+  const empty = () => ({ module: 'empty' })
+
+  it('cannot collide with the level above (V1)', () => {
+    const p = project([
+      level('lower', 16, { A1: bay('merged', () => ({ module: 'empty', heightCells: 3 })) }),
+      level('upper', 24, { A1: bay('merged') }),
+    ])
+    expect(only(validate(p), 'V1')).toEqual([])
+  })
+
+  it('need no path to a spine (V3)', () => {
+    const p = project([
+      level('L', 0, {
+        A1: bay('merged', () => ({ module: 'spine', sockets: sockets({ e: 'corridor' }) })),
+        B1: bay('merged', empty),
+      }),
+    ])
+    expect(only(validate(p), 'V3')).toEqual([])
+  })
+
+  it('do not catch a stair rising through them (V4)', () => {
+    const p = project([
+      level('lower', 0, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
+      level('cleared', 4, { A1: bay('merged', empty) }),
+      level('upper', 8, { A1: bay('merged', () => ({ sockets: sockets({ down: 'shaft' }) })) }),
+    ])
+    expect(only(validate(p), 'V4')).toEqual([])
+  })
+
+  it('cannot cross the world limits (V8)', () => {
+    const p = project([level('roof', 316, { A1: bay('merged', empty) })])
+    expect(only(validate(p), 'V8')).toEqual([])
+  })
+})

@@ -68,6 +68,14 @@ export interface Module {
 /** The module every cell starts as. */
 export const DEFAULT_MODULE_ID = 'empty'
 
+/**
+ * An empty cell is unbuilt: it places no blocks and takes no part in the
+ * checks. Built neighbours still emit their own walls around it.
+ */
+export function isBuiltCell(cell: Pick<Cell, 'module'>): boolean {
+  return cell.module !== DEFAULT_MODULE_ID
+}
+
 /** V3 and V5 flood-fill from this module (§8). */
 export const SPINE_MODULE_ID = 'spine'
 
@@ -312,7 +320,7 @@ export const MODULE_LIST: readonly Module[] = [
     ceiling: 'flat',
     sockets: faces(),
     hints: [],
-    description: 'Sealed. The starting state of every cell.',
+    description: 'Unbuilt. Places no blocks. The starting state of every cell.',
   },
 ]
 

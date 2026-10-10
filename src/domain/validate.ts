@@ -6,6 +6,7 @@
 import {
   allCellRefs,
   bayKeyOf,
+  builtCellRefs,
   blockKey,
   cellAABB,
   cellAxisIndices,
@@ -22,7 +23,7 @@ import {
   validMergeGroupIds,
   yIntervalsCollide,
 } from './geometry.js'
-import { SPINE_MODULE_ID } from './modules.js'
+import { SPINE_MODULE_ID, isBuiltCell } from './modules.js'
 import {
   GRAIN_AXIS_CELLS,
   LEVEL_PITCH,
@@ -91,9 +92,11 @@ export function checkVerticalCollisions(project: Project): Issue[] {
         if (!belowBay || !aboveBay) continue
 
         for (let i = 0; i < belowBay.cells.length; i++) {
+          if (!isBuiltCell(belowBay.cells[i]!)) continue
           const belowRef: CellRef = { levelId: below.id, bayKey, cellIndex: i }
           const belowBox = cellAABB(project, belowRef)
           for (let j = 0; j < aboveBay.cells.length; j++) {
+            if (!isBuiltCell(aboveBay.cells[j]!)) continue
             const aboveRef: CellRef = { levelId: above.id, bayKey, cellIndex: j }
             const aboveBox = cellAABB(project, aboveRef)
             if (!footprintsOverlap(belowBox, aboveBox)) continue
@@ -164,7 +167,7 @@ export function checkGrainSeams(project: Project): Issue[] {
 
         const middleIndex = dir.axis === 'b' ? cellIndexOf('fine', dir.edge, 1) : cellIndexOf('fine', 1, dir.edge)
         const cell = bay.cells[middleIndex]
-        if (!cell) continue
+        if (!cell || !isBuiltCell(cell)) continue
         const socket = cell.sockets[dir.face]
         if (SEAM_SAFE_SOCKETS.has(socket)) continue
 
@@ -230,7 +233,7 @@ export function checkStairContinuity(project: Project): Issue[] {
 
       for (let i = 0; i < belowBay.cells.length; i++) {
         const cell = belowBay.cells[i]!
-        if (cell.sockets.up !== 'shaft') continue
+        if (cell.sockets.up !== 'shaft' || !isBuiltCell(cell)) continue
         const belowRef: CellRef = { levelId: below.id, bayKey, cellIndex: i }
         const rise = LEVEL_PITCH * cell.heightCells
         const sealedAt = droppedCeilingY(below, cell)
@@ -294,7 +297,7 @@ export function checkStairContinuity(project: Project): Issue[] {
   return issues
 }
 
-/** The first level above whose cells overlap the shaft's footprint. */
+/** The first level above whose built cells overlap the shaft's footprint. */
 function stairLanding(
   project: Project,
   levelsAbove: Level[],
@@ -306,6 +309,7 @@ function stairLanding(
     if (!bay) continue
     const overlapping: CellRef[] = []
     for (let j = 0; j < bay.cells.length; j++) {
+      if (!isBuiltCell(bay.cells[j]!)) continue
       const ref: CellRef = { levelId: level.id, bayKey, cellIndex: j }
       if (footprintsOverlap(shaft, cellAABB(project, ref))) overlapping.push(ref)
     }
@@ -343,7 +347,7 @@ export function cellRefKey(ref: CellRef): string {
 }
 
 function buildCellNodes(project: Project): CellNode[] {
-  return allCellRefs(project).map((ref) => {
+  return builtCellRefs(project).map((ref) => {
     const { level, bay, cell } = resolveCell(project, ref)
     return {
       key: cellRefKey(ref),
@@ -731,7 +735,7 @@ function isFilledRectangle(members: GroupMember[]): boolean {
 export function checkWorldLimits(project: Project): Issue[] {
   const issues: Issue[] = []
   for (const level of sortedLevels(project)) {
-    const refs = allCellRefs(project).filter((ref) => ref.levelId === level.id)
+    const refs = builtCellRefs(project).filter((ref) => ref.levelId === level.id)
     if (level.y < WORLD_MIN_Y && refs.length > 0) {
       issues.push({
         id: 'V8',

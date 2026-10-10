@@ -152,6 +152,19 @@ describe('F9 — shell dedup', () => {
   })
 })
 
+describe('unbuilt cells', () => {
+  it('places no blocks for a bay of empty cells', () => {
+    const p = project([level('L', 0, { A1: bay('merged', () => ({ module: 'empty' })) })])
+    expect(resolveBlocks(p).size).toBe(0)
+  })
+
+  it('places only the built cell of a mostly empty bay', () => {
+    // One fine cell: a 5x5x5 shell around a 3x3x3 room is 125 - 27 = 98 blocks.
+    const p = project([level('L', 0, { A1: bay('fine', (index) => ({ module: index === 4 ? 'storage' : 'empty' })) })])
+    expect(resolveBlocks(p).size).toBe(98)
+  })
+})
+
 describe('shared planes are counted once', () => {
   it('does not double-count the wall two bays share', () => {
     const one = project([level('L1', 0, { A1: bay('merged', () => ({ heightCells: 2 })) })])

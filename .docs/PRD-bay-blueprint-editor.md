@@ -106,6 +106,8 @@ A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `so
 
 `spine`, `corridor`, `junction`, `rail-line`, `ice-highway`, `stair`, `vestibule`, `storage`, `vault`, `library`, `arena`, `workshop`, `nether-portal`, `trading-hall`, `prison-cell`, `farm`, `item-trunk`, `mine-access`, `super-smelter`, `auto-crafter`, `plenum-access`, `empty`
 
+Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5 and V8. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
+
 Decoration hints record builder intent. Exact detail kits are optional. The Arena kit currently exports a centred 7x7 core boundary, four pillars, and a central light.
 
 A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`.

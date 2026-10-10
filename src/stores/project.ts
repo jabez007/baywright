@@ -15,7 +15,7 @@ import { computed, ref, toRaw } from 'vue'
 import { bayKeyOf, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
 import { rotatedLayout } from '../domain/layouts.js'
-import { DEFAULT_MODULE_ID, cellFromModule, getModule, type CellOverrides } from '../domain/modules.js'
+import { DEFAULT_MODULE_ID, cellFromModule, getModule, isBuiltCell, type CellOverrides } from '../domain/modules.js'
 import { PALETTES } from '../domain/palettes.js'
 import { bayFromPattern, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
 import { projectFromTemplate, type ProjectTemplateId } from '../domain/templates.js'
@@ -950,7 +950,7 @@ export const useProjectStore = defineStore('project', () => {
 function tallestCell(level: Level): number {
   let tallest = 1
   for (const bay of Object.values(level.bays)) {
-    for (const cell of bay.cells) tallest = Math.max(tallest, cell.heightCells)
+    for (const cell of bay.cells) if (isBuiltCell(cell)) tallest = Math.max(tallest, cell.heightCells)
   }
   return tallest
 }

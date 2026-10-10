@@ -7,6 +7,7 @@
  */
 import { PALETTES, SOCKET_BLOCKS } from './palettes.js'
 import { interiorDetailBlocks } from './details.js'
+import { isBuiltCell } from './modules.js'
 import {
   BAY_PITCH,
   GRAIN_AXIS_CELLS,
@@ -164,6 +165,11 @@ export function allCellRefs(project: Project): CellRef[] {
   return refs
 }
 
+/** Every cell that places blocks, in the {@link allCellRefs} order. */
+export function builtCellRefs(project: Project): CellRef[] {
+  return allCellRefs(project).filter((ref) => isBuiltCell(resolveCell(project, ref).cell))
+}
+
 /** Levels ascending by y; ties broken by id so ordering is total and stable. */
 export function sortedLevels(project: Project): Level[] {
   return [...project.levels].sort((l, r) => l.y - r.y || l.id.localeCompare(r.id))
@@ -305,7 +311,7 @@ const blockCache = new WeakMap<Project, { serialized: string; blocks: Map<string
 function computeBlocks(project: Project): Map<string, string> {
   const blocks = new Map<string, string>()
   const claimed = new Map<string, number>()
-  for (const ref of allCellRefs(project)) {
+  for (const ref of builtCellRefs(project)) {
     const { level, cell } = resolveCell(project, ref)
     const palette = paletteFor(project, level, cell)
     for (const [role, coords] of shellBlocks(project, ref)) {
@@ -326,7 +332,7 @@ function computeBlocks(project: Project): Map<string, string> {
 
 /** Details land last because floor trim intentionally replaces the shell palette. */
 function placeInteriorDetails(project: Project, blocks: Map<string, string>): void {
-  for (const ref of allCellRefs(project)) {
+  for (const ref of builtCellRefs(project)) {
     const { level, bay, cell } = resolveCell(project, ref)
     const palette = paletteFor(project, level, cell)
     for (const [role, coords] of interiorDetailBlocks(bay, cell, cellInterior(project, ref))) {

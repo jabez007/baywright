@@ -315,12 +315,15 @@ test('cancels an active stroke when PNG export freezes the canvas', async ({ pag
 
 test('offers no jump for an issue that belongs to no level', async ({ page }) => {
   await page.goto('/')
+  await useCellTool(page, 'Paint')
+  await page.getByLabel('Module', { exact: true }).selectOption('storage')
+  await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
   await page.getByRole('button', { name: 'Issues' }).click()
 
   const spine = page.getByRole('button', { name: /Add a spine to check connectivity/ })
   await expect(spine).toBeVisible()
-  // A starter project has no spine anywhere, so there is no level to jump to
-  // and no cell at fault. The row states that; it does not offer to travel.
+  // A built cell with no spine anywhere leaves no level to jump to and no
+  // cell at fault. The row states that; it does not offer to travel.
   await expect(spine).toBeDisabled()
 })
 

@@ -201,6 +201,9 @@ describe('levels', () => {
   it('places the next level above the tallest occupied height on the 4-block lattice', () => {
     const s = store()
     s.setCellHeight([firstCell()], 3)
+    expect(nextLevelY(s.project)).toBe(4) // an unbuilt cell has no height to clear
+    s.paintCell(firstCell(), 'storage')
+    s.setCellHeight([firstCell()], 3)
     expect(nextLevelY(s.project)).toBe(12)
 
     s.addLevel(16)
@@ -223,6 +226,7 @@ describe('levels', () => {
   it('reports the gap between rail entries and the headroom left in it', () => {
     const s = store()
     s.addLevel(8, 'Upper')
+    s.paintCell(firstCell(), 'storage')
     s.setCellHeight([firstCell()], 3) // 12 blocks tall under an 8-block gap
     expect(s.levelGaps).toHaveLength(1)
     expect(s.levelGaps[0]!.delta).toBe(8)
@@ -620,6 +624,8 @@ describe('validation wiring', () => {
     const upper = s.addLevel(8)
     s.setBayGrain(ground, 'A1', 'merged')
     s.setBayGrain(upper, 'A1', 'merged')
+    s.paintCell({ levelId: ground, bayKey: 'A1', cellIndex: 0 }, 'storage')
+    s.paintCell({ levelId: upper, bayKey: 'A1', cellIndex: 0 }, 'storage')
     s.setCellHeight([{ levelId: ground, bayKey: 'A1', cellIndex: 0 }], 3)
 
     const collisions = s.issues.filter((issue) => issue.id === 'V1')
@@ -631,7 +637,9 @@ describe('validation wiring', () => {
   it('clears the issue when the mistake is undone', () => {
     const s = store()
     const ground = s.currentLevelId
-    s.addLevel(8)
+    const upper = s.addLevel(8)
+    s.paintCell({ levelId: ground, bayKey: 'A1', cellIndex: 0 }, 'storage')
+    s.paintCell({ levelId: upper, bayKey: 'A1', cellIndex: 0 }, 'storage')
     s.setCellHeight([{ levelId: ground, bayKey: 'A1', cellIndex: 0 }], 3)
     expect(s.issues.filter((issue) => issue.id === 'V1').length).toBeGreaterThan(0)
     s.undo()
