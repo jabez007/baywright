@@ -10,7 +10,7 @@ The current editor includes the useful foundations from the discussion:
 
 - The 13×13 structural bay, 7×7 functional room, and 5×5 utility unit share one 12-block pitch.
 - Centred 3-block and 5-block openings let adjacent pieces connect without custom geometry.
-- Bay patterns cover passages, junctions, feature rooms, and infrastructure runs. **Auto fit** rotates a pattern to match adjacent openings.
+- Bay patterns cover passages, junctions, feature rooms, infrastructure runs, and exploration pieces such as dead ends, concealed rooms, and compact stairs. **Auto fit** rotates a pattern to match adjacent openings.
 - Multi-bay layouts stamp Stronghold loops, grand chambers, library wings, and workshop wings as one undoable edit.
 - Multi-level layouts stamp a stair stack, a library with a gallery, an atrium with balconies, and a machinery hall over its service level. They add any level they need.
 - Named negative space distinguishes a courtyard, garden, cave, stair shaft, or reserved expansion from an unfinished plan.
@@ -79,7 +79,7 @@ Each kit must derive coordinates from `cellInterior` and use the selected palett
 
 ### 3. Expand the bay-pattern catalog
 
-Procedural assembly needs more pieces than the current catalog provides. Add pieces that produce the exploration qualities described in the original discussion:
+Implemented. Procedural assembly needs more pieces than the original catalog provided. The catalog now has pieces for the exploration qualities described in the original discussion:
 
 - overlooks and balcony landings;
 - short dead ends and side chambers;

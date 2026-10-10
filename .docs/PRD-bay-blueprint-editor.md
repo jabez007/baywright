@@ -128,7 +128,7 @@ Palette resolves per level, overridable per cell.
 
 A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Patterns are catalog data, not persisted project data. Stamping a pattern expands it into ordinary cells. Exported projects therefore do not depend on the installed pattern catalog.
 
-The catalog contains straight passage, corner passage, T-junction, four-way junction, stair hall, library hall, workshop bay, feature chamber, rail line, ice highway, and item trunk patterns. Rotate a pattern in 90-degree steps before stamping it. **Auto fit** selects the rotation with the fewest conflicts and the most matching openings against adjacent bays.
+The catalog contains straight passage, corner passage, T-junction, four-way junction, stair hall, library hall, workshop bay, feature chamber, rail line, ice highway, and item trunk patterns. Exploration pieces add a balcony landing, dead end, side chamber, concealed room, service junction, mine head, cave mouth, compact stair, and compact landing. Every pattern, in every rotation, meets a four-way junction on each side either centre to centre or with a closed face, and a spine in a neighbouring junction reaches every cell it builds. The concealed room's vault opens through a plain arch with a note to hide it, because the model has no hidden-door socket. The mine head's floor shaft and the cave mouth's open east side lead into whatever the world holds there. Rotate a pattern in 90-degree steps before stamping it. **Auto fit** selects the rotation with the fewest conflicts and the most matching openings against adjacent bays.
 
 A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
 
@@ -470,7 +470,8 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Implemented early: multi-level layouts for a stair stack, a library gallery, an atrium, and a machinery hall.
 - Implemented early: exact Library, Rail Line, Ice Highway, Nether Portal, Super Smelter, Trading Hall, and Item Trunk kits.
 - Planned: the remaining exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
-- Planned: a larger pattern catalog, route roles that support checks, and optional procedural assembly.
+- Implemented early: exploration bay patterns for landings, dead ends, side and concealed rooms, service junctions, mine and cave transitions, and compact stairs.
+- Planned: route roles that support checks, and optional procedural assembly.
 - Implemented early: a palette editor. The level inspector renames the level's palette, edits its six block IDs, and copies it for one level. Block IDs follow `/setblock` syntax, with the `minecraft:` namespace added when omitted.
 - Implemented early: a matched stair action from one cell to the next level up.
 - Vanilla structure `.nbt` export with region splitting for the format limit.

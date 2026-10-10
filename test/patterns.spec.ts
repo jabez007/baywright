@@ -7,6 +7,8 @@ import {
   getBayPattern,
 } from '../src/domain/patterns.js'
 import { cellCount } from '../src/domain/types.js'
+import { validate } from '../src/domain/validate.js'
+import { level, project } from './factory.js'
 
 describe('bay patterns', () => {
   it('has a unique id and the right number of cells for every pattern', () => {
@@ -53,4 +55,19 @@ describe('bay patterns', () => {
     expect(bayFromPattern('ice-highway-bay').cells[4]!.module).toBe('ice-highway')
     expect(bayFromPattern('item-trunk-bay').cells[4]!.module).toBe('item-trunk')
   })
+
+  it('stacks a compact stair under a compact landing 8 blocks up with no errors', () => {
+    const p = project([
+      level('ground', 0, { A1: bayFromPattern('compact-stair', 2) }),
+      level('upper', 8, { A1: bayFromPattern('compact-landing', 2) }),
+    ])
+    expect(validate(p).filter((issue) => issue.severity === 'error')).toEqual([])
+  })
+
+  it('leaves building notes on the concealed room and the mine head', () => {
+    expect(bayFromPattern('concealed-room').cells[7]!.note).toMatch(/^Concealed room\. Hide the north arch/)
+    expect(bayFromPattern('concealed-room', 1).cells[3]!.sockets.e).toBe('arch')
+    expect(bayFromPattern('mine-head').cells[4]!.note).toMatch(/^Mine head\./)
+  })
 })
+
