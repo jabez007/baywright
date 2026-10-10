@@ -157,4 +157,19 @@ describe('bomFromBlocks', () => {
     expect(countOf(bom.rawInputs, 'minecraft:oak_log')).toBe(1) // 0.25 of a log, rounded up
     expect(bom.smelting.items).toBe(2)
   })
+
+  it('counts a block in any state as the item you carry', () => {
+    const blocks = new Map<string, string>([
+      ['0,0,0', 'minecraft:lantern[hanging=true]'],
+      ['0,0,1', 'minecraft:lantern'],
+      ['0,0,2', 'minecraft:oak_stairs[facing=east,half=top]'],
+    ])
+    const bom = bomFromBlocks(blocks)
+    expect(bom.blocks.map((entry) => [entry.blockId, entry.count])).toEqual([
+      ['minecraft:lantern', 2],
+      ['minecraft:oak_stairs', 1],
+    ])
+    // Oak stairs still walk back to logs once the state is gone.
+    expect(countOf(bom.rawInputs, 'minecraft:oak_log')).toBe(2)
+  })
 })

@@ -205,11 +205,23 @@ export function bomFromBlocks(blocks: ReadonlyMap<string, string>, options: BomO
   }
 }
 
-/** Total blocks per Minecraft block ID. */
+/**
+ * Total blocks per Minecraft block ID. A palette ID may carry a block state,
+ * `minecraft:lantern[hanging=true]`, but the item you carry has none, so the
+ * state is dropped before counting.
+ */
 export function countBlocks(blocks: ReadonlyMap<string, string>): Map<string, number> {
   const counts = new Map<string, number>()
-  for (const blockId of blocks.values()) counts.set(blockId, (counts.get(blockId) ?? 0) + 1)
+  for (const blockId of blocks.values()) {
+    const item = itemId(blockId)
+    counts.set(item, (counts.get(item) ?? 0) + 1)
+  }
   return counts
+}
+
+function itemId(blockId: string): string {
+  const state = blockId.indexOf('[')
+  return state === -1 ? blockId : blockId.slice(0, state)
 }
 
 export interface RawRollup {

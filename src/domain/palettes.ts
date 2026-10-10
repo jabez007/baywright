@@ -3,6 +3,9 @@
  *
  * A palette binds abstract material roles to Minecraft block IDs. Nothing in
  * here is Vue-aware; the exporter and the renderer read the same table.
+ *
+ * The light hangs under the ceiling with air below it, so a lantern carries
+ * `[hanging=true]`. A torch cannot be placed there.
  */
 import type { Palette } from './types.js'
 
@@ -16,7 +19,7 @@ export const PALETTES: Readonly<Record<string, Palette>> = {
       ceiling: 'minecraft:polished_andesite',
       accent: 'minecraft:chiseled_stone_bricks',
       trim: 'minecraft:stone_brick_stairs',
-      light: 'minecraft:lantern',
+      light: 'minecraft:lantern[hanging=true]',
     },
   },
   'dark-oak': {
@@ -28,7 +31,7 @@ export const PALETTES: Readonly<Record<string, Palette>> = {
       ceiling: 'minecraft:dark_oak_planks',
       accent: 'minecraft:dark_oak_log',
       trim: 'minecraft:dark_oak_stairs',
-      light: 'minecraft:lantern',
+      light: 'minecraft:lantern[hanging=true]',
     },
   },
   'mineshaft-oak': {
@@ -40,7 +43,7 @@ export const PALETTES: Readonly<Record<string, Palette>> = {
       ceiling: 'minecraft:oak_planks',
       accent: 'minecraft:oak_fence',
       trim: 'minecraft:oak_stairs',
-      light: 'minecraft:torch',
+      light: 'minecraft:lantern[hanging=true]',
     },
   },
   'tuff-copper': {

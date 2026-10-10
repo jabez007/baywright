@@ -110,7 +110,7 @@ Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, add
 
 Decoration hints record builder intent. Exact detail kits are optional. The Arena kit currently exports a centred 7x7 core boundary, four pillars, and a central light.
 
-A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`.
+A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`. An ID may carry a block state, as in `minecraft:lantern[hanging=true]`. The ceiling light has air below it, so shipped lanterns hang and no shipped palette uses a torch.
 
 Palette resolves per level, overridable per cell.
 
@@ -280,7 +280,7 @@ Every floor and ceiling plane must be a placeable overworld block: `level.y >= -
 
 Computed from `resolveBlocks`. Output:
 
-- Total blocks per Minecraft block ID.
+- Total blocks per Minecraft block ID, ignoring block states, so a hanging lantern counts as a lantern.
 - Stack breakdown with full stacks as `Math.floor(count / 64)`, loose remainder as `count % 64`, and occupied inventory slots as `Math.ceil(count / 64)`. For example, 2,636 blocks are 41 full stacks plus 12 loose blocks, occupy 42 slots, and display as `"41 stacks + 12"`.
 - Raw-input rollup for craftable materials. Ship with these chains:
   - stone brick ← stone ← cobblestone (note furnace count: 1 cobble = 1 smelt)

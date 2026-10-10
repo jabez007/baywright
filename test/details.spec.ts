@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { interiorDetailBlocks } from '../src/domain/details.js'
 import { blockKey, cellInterior, resolveBlocks } from '../src/domain/geometry.js'
 import { cellFromModule } from '../src/domain/modules.js'
+import { PALETTES } from '../src/domain/palettes.js'
 import type { CellRef } from '../src/domain/types.js'
 import { bay, level, project } from './factory.js'
 
@@ -32,12 +33,21 @@ describe('arena core and circulation ring', () => {
     expect(details.get('light')).toEqual(new Set([blockKey(6, 11, 6)]))
   })
 
+  it('hangs the ceiling light from the ceiling in every shipped palette', () => {
+    // The light sits on the top interior block with air below it, so a
+    // lantern must hang and a torch cannot stand there at all.
+    for (const palette of Object.values(PALETTES)) {
+      const light = palette.blocks.light
+      expect(light === 'minecraft:copper_bulb' || light.endsWith('[hanging=true]'), `${palette.id}: ${light}`).toBe(true)
+    }
+  })
+
   it('resolves detail roles through the room palette', () => {
     const blocks = resolveBlocks(arena)
 
     expect(blocks.get(blockKey(4, 0, 3))).toBe('minecraft:stone_brick_stairs')
     expect(blocks.get(blockKey(3, 5, 3))).toBe('minecraft:chiseled_stone_bricks')
-    expect(blocks.get(blockKey(6, 11, 6))).toBe('minecraft:lantern')
+    expect(blocks.get(blockKey(6, 11, 6))).toBe('minecraft:lantern[hanging=true]')
   })
 
   it('does not detail non-arena or subdivided cells', () => {
