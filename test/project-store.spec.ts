@@ -1191,6 +1191,15 @@ describe('multi-level layouts', () => {
     }
   })
 
+  it('rails the gallery well of a stamped library gallery', () => {
+    const s = store()
+    s.stampLayoutPattern(s.currentLevelId, 'A1', 'library-gallery', 0)
+    const blocks = resolveBlocks(s.toJSON())
+    // The well is the gallery's centre cell, interior x and z 5 to 7, at y 8.
+    expect(blocks.get(blockKey(4, 9, 6))).toBe('minecraft:chiseled_stone_bricks')
+    expect(blocks.has(blockKey(6, 8, 6))).toBe(false)
+  })
+
   it('opens the atrium core to the hall below and the balcony above', () => {
     const s = store()
     s.stampLayoutPattern(s.currentLevelId, 'A1', 'atrium', 0)

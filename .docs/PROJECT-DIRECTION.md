@@ -16,6 +16,7 @@ The current editor includes the useful foundations from the discussion:
 - Named negative space distinguishes a courtyard, garden, cave, stair shaft, or reserved expansion from an unfinished plan.
 - The layered starter project assigns Mansion, Stronghold, Trial Chamber, and Mineshaft roles to separate levels and palettes.
 - Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, corner pillars, and a central light.
+- Library cells export wall shelves, a lectern, and a rail around a gallery well.
 - Infrastructure modules describe rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls.
 
 The architectural influences have distinct jobs:
@@ -58,7 +59,7 @@ Resolve every target level, bay, and cell before changing the project. Reject an
 
 ### 2. Exact detail kits for selected modules
 
-Decoration hints currently record builder intent. Only the Arena hint set produces exact interior blocks.
+Decoration hints record builder intent. The Arena and Library kits produce exact blocks.
 
 Add exact detail kits where the result has one dependable interpretation:
 

@@ -17,7 +17,12 @@ async function decode(bytes: Uint8Array) {
   const regions = root['Regions'] as NbtCompound
   const [regionName] = Object.keys(regions)
   const region = regions[regionName!] as NbtCompound
-  const palette = (region['BlockStatePalette'] as NbtCompound[]).map((entry) => entry['Name'] as string)
+  // Rebuild `name[key=value,...]` so entries compare with resolved block IDs.
+  const palette = (region['BlockStatePalette'] as NbtCompound[]).map((entry) => {
+    const properties = entry['Properties'] as Record<string, string> | undefined
+    const state = properties ? Object.entries(properties).map(([key, value]) => `${key}=${value}`) : []
+    return state.length > 0 ? `${entry['Name'] as string}[${state.join(',')}]` : (entry['Name'] as string)
+  })
   const size = region['Size'] as NbtCompound
   const [sx, sy, sz] = [size['x'] as number, size['y'] as number, size['z'] as number]
   const bits = Math.max(2, 32 - Math.clz32(palette.length - 1))

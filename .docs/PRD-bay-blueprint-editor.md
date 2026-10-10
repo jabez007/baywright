@@ -108,7 +108,10 @@ A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `so
 
 Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5 and V8. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
 
-Decoration hints record builder intent. Exact detail kits are optional. The Arena kit currently exports a centred 7x7 core boundary, four pillars, and a central light.
+Decoration hints record builder intent. Exact detail kits are optional, and only some modules have one. A kit derives its coordinates from `cellInterior`, uses a palette role where one fits, and uses a fixed block ID for a functional block such as a bookshelf. It leaves clear every interior column in front of a wall opening, including windows and bars.
+
+- **Arena.** A merged Arena exports a centred 7x7 core boundary, four pillars, and a central light.
+- **Library.** A coarse or merged Library exports bookshelves three high along every wall and a lectern at the centre, facing the first `corridor` or `arch` face. A fine cell is too small for the kit. A member of a merge group is skipped, because its room is larger than its interior. A Library cell with a `down` shaft is a well, so it gets no shelves. When the well belongs to a valid merge group, a one-high accent rail rings it on the gallery floor. The rail fills only blocks that are still air, so it never replaces a wall.
 
 A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`. An ID may carry a block state, as in `minecraft:lantern[hanging=true]`. The ceiling light has air below it, so shipped lanterns hang and no shipped palette uses a torch.
 
@@ -456,7 +459,8 @@ The fixtures in §14 produce the expected geometry and validation results.
 - Implemented early: infrastructure modules for transport, item flow, machinery, mine access, portals, and trading.
 - Implemented early: a sparse four-level starter project based on stronghold, mineshaft, trial chamber, and mansion layout rules.
 - Implemented early: multi-level layouts for a stair stack, a library gallery, an atrium, and a machinery hall.
-- Planned: selected exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
+- Implemented early: an exact Library kit with shelves, a lectern, and a gallery rail.
+- Planned: the remaining exact detail kits. See [the project direction](PROJECT-DIRECTION.md).
 - Planned: a larger pattern catalog, route roles that support checks, and optional procedural assembly.
 - Implemented early: a palette editor. The level inspector renames the level's palette, edits its six block IDs, and copies it for one level. Block IDs follow `/setblock` syntax, with the `minecraft:` namespace added when omitted.
 - Implemented early: a matched stair action from one cell to the next level up.

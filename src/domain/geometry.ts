@@ -6,7 +6,12 @@
  * both functions of this one module.
  */
 import { PALETTES, SOCKET_BLOCKS } from './palettes.js'
-import { interiorDetailBlocks } from './details.js'
+import {
+  edgeDetailBlocks,
+  interiorDetailBlocks,
+  type DetailContext,
+  type DetailMaterial,
+} from './details.js'
 import { isBuiltCell } from './modules.js'
 import {
   BAY_PITCH,
@@ -332,13 +337,53 @@ function computeBlocks(project: Project): Map<string, string> {
 
 /** Details land last because floor trim intentionally replaces the shell palette. */
 function placeInteriorDetails(project: Project, blocks: Map<string, string>): void {
+  const merged = validMergeGroupIds(project)
+  const edges: Array<{ at: string; blockId: string; whereAir: string }> = []
   for (const ref of builtCellRefs(project)) {
     const { level, bay, cell } = resolveCell(project, ref)
     const palette = paletteFor(project, level, cell)
-    for (const [role, coords] of interiorDetailBlocks(bay, cell, cellInterior(project, ref))) {
-      for (const key of coords) blocks.set(key, palette.blocks[role])
+    const interior = cellInterior(project, ref)
+    const context: DetailContext = {
+      openings: openingColumns(cell, interior),
+      merged: cell.mergeGroup !== undefined && merged.has(cell.mergeGroup),
+    }
+    for (const [material, coords] of interiorDetailBlocks(bay, cell, interior, context)) {
+      const blockId = detailBlockId(material, palette)
+      for (const key of coords) blocks.set(key, blockId)
+    }
+    for (const edge of edgeDetailBlocks(cell, cellAABB(project, ref), interior, context)) {
+      edges.push({ at: edge.at, blockId: detailBlockId(edge.material, palette), whereAir: edge.whereAir })
     }
   }
+
+  // Every edge checks the same finished map, so the order cells come in
+  // cannot decide whether a neighbour's edge detail counts as a wall.
+  const landing = edges.filter((edge) => !blocks.has(edge.whereAir))
+  for (const edge of landing) blocks.set(edge.at, edge.blockId)
+}
+
+function detailBlockId(material: DetailMaterial, palette: Palette): string {
+  return isMaterialRole(material) ? palette.blocks[material] : material
+}
+
+function isMaterialRole(material: DetailMaterial): material is MaterialRole {
+  return !material.includes(':')
+}
+
+/** The interior columns, as `"x,z"`, right inside each open wall face. */
+function openingColumns(cell: Cell, interior: AABB): DetailContext['openings'] {
+  const out: DetailContext['openings'] = {}
+  for (const face of HORIZONTAL_FACES) {
+    const eastWest = face === 'e' || face === 'w'
+    const cross: [number, number] = eastWest ? [interior.z0, interior.z1] : [interior.x0, interior.x1]
+    const span = horizontalOpeningSpan(cell.sockets[face], cross, cell.openingWidths?.[face])
+    if (!span) continue
+    const row = face === 'n' ? interior.z0 : face === 's' ? interior.z1 : face === 'w' ? interior.x0 : interior.x1
+    const columns = new Set<string>()
+    for (let c = span[0]; c <= span[1]; c++) columns.add(eastWest ? `${row},${c}` : `${c},${row}`)
+    out[face] = columns
+  }
+  return out
 }
 
 interface MergeBlockMember {
