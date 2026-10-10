@@ -9,8 +9,12 @@ import { PALETTES, SOCKET_BLOCKS } from './palettes.js'
 import {
   edgeDetailBlocks,
   interiorDetailBlocks,
+  isDoorway,
+  OPPOSITE,
   type DetailContext,
   type DetailMaterial,
+  type TrunkFlow,
+  type WallFace,
 } from './details.js'
 import { isBuiltCell } from './modules.js'
 import {
@@ -338,6 +342,7 @@ function computeBlocks(project: Project): Map<string, string> {
 /** Details land last because floor trim intentionally replaces the shell palette. */
 function placeInteriorDetails(project: Project, blocks: Map<string, string>): void {
   const merged = validMergeGroupIds(project)
+  const trunks = trunkFlows(project)
   const edges: Array<{ at: string; blockId: string; whereAir: string }> = []
   for (const ref of builtCellRefs(project)) {
     const { level, bay, cell } = resolveCell(project, ref)
@@ -346,6 +351,8 @@ function placeInteriorDetails(project: Project, blocks: Map<string, string>): vo
     const context: DetailContext = {
       openings: openingColumns(cell, interior),
       merged: cell.mergeGroup !== undefined && merged.has(cell.mergeGroup),
+      plenum: cellPlenum(project, ref),
+      trunk: trunks.get(refKey(ref)),
     }
     for (const [material, coords] of interiorDetailBlocks(bay, cell, interior, context)) {
       const blockId = detailBlockId(material, palette)
@@ -368,6 +375,72 @@ function detailBlockId(material: DetailMaterial, palette: Palette): string {
 
 function isMaterialRole(material: DetailMaterial): material is MaterialRole {
   return !material.includes(':')
+}
+
+/**
+ * Which way items flow along each item trunk. A trunk cell that opens onto a
+ * spine sends its items there. Flow then spreads back, one cell at a time,
+ * through trunk cells joined by doorways whose centre lines meet, so every
+ * trunk on an unbroken line to a spine sends items one step closer to it.
+ */
+function trunkFlows(project: Project): Map<string, TrunkFlow> {
+  interface TrunkNode { ref: CellRef; cell: Cell; outer: AABB; interior: AABB }
+  const flows = new Map<string, { out: WallFace; in: WallFace[] }>()
+  const byLevel = new Map<string, TrunkNode[]>()
+  for (const ref of builtCellRefs(project)) {
+    const { cell } = resolveCell(project, ref)
+    if (cell.module !== 'item-trunk' && cell.module !== 'spine') continue
+    const node = { ref, cell, outer: cellAABB(project, ref), interior: cellInterior(project, ref) }
+    const group = byLevel.get(ref.levelId)
+    if (group) group.push(node)
+    else byLevel.set(ref.levelId, [node])
+  }
+
+  /** The cell across `face` from `node` whose interior the centre line enters. */
+  const across = (nodes: TrunkNode[], node: TrunkNode, face: WallFace): TrunkNode | undefined => {
+    const eastWest = face === 'e' || face === 'w'
+    const line = eastWest ? midpoint(node.interior.z0, node.interior.z1) : midpoint(node.interior.x0, node.interior.x1)
+    return nodes.find((other) => {
+      const touches =
+        face === 'e' ? other.outer.x0 === node.outer.x1
+          : face === 'w' ? other.outer.x1 === node.outer.x0
+            : face === 's' ? other.outer.z0 === node.outer.z1
+              : other.outer.z1 === node.outer.z0
+      if (!touches || !isDoorway(other.cell, OPPOSITE[face])) return false
+      const [lo, hi] = eastWest ? [other.interior.z0, other.interior.z1] : [other.interior.x0, other.interior.x1]
+      if (other.cell.module === 'spine') return line >= lo && line <= hi
+      return line === midpoint(lo, hi)
+    })
+  }
+
+  for (const nodes of byLevel.values()) {
+    const trunks = nodes.filter((node) => node.cell.module === 'item-trunk' && hasDroppedCeiling(node.cell))
+    const queue: TrunkNode[] = []
+    for (const node of trunks) {
+      const face = HORIZONTAL_FACES.find(
+        (f) => isDoorway(node.cell, f) && across(nodes, node, f)?.cell.module === 'spine',
+      )
+      if (!face) continue
+      flows.set(refKey(node.ref), { out: face, in: [] })
+      queue.push(node)
+    }
+    while (queue.length > 0) {
+      const node = queue.shift()!
+      for (const face of HORIZONTAL_FACES) {
+        if (!isDoorway(node.cell, face)) continue
+        const next = across(trunks, node, face)
+        if (!next || flows.has(refKey(next.ref))) continue
+        flows.set(refKey(next.ref), { out: OPPOSITE[face], in: [] })
+        flows.get(refKey(node.ref))!.in.push(face)
+        queue.push(next)
+      }
+    }
+  }
+  return flows
+}
+
+function refKey(ref: CellRef): string {
+  return `${ref.levelId}|${ref.bayKey}|${ref.cellIndex}`
 }
 
 /** The interior columns, as `"x,z"`, right inside each open wall face. */

@@ -329,3 +329,66 @@ describe('trading hall kit', () => {
     expect(positionsOf(resolveBlocks(hall('fine')), 'minecraft:chiseled_stone_bricks')).toEqual([])
   })
 })
+
+describe('item trunk kit', () => {
+  const trunk = (open: Partial<Record<'n' | 'e' | 's' | 'w', 'corridor'>>): Partial<Cell> => ({
+    ...cellFromModule('item-trunk'),
+    sockets: sockets(open),
+  })
+  const spine = (open: Partial<Record<'n' | 'e' | 's' | 'w', 'corridor'>>): Partial<Cell> => ({
+    module: 'spine',
+    heightCells: 2,
+    sockets: sockets(open),
+  })
+  /** The item trunk bay: the middle row of a fine bay, open east and west. */
+  const trunkRow = () => bay('fine', (index) => (index >= 3 && index <= 5 ? trunk({ e: 'corridor', w: 'corridor' }) : { module: 'empty' }))
+
+  it('chains hoppers along the plenum floor toward a spine to the east', () => {
+    const p = project(
+      [level('L1', 0, { A1: trunkRow(), B1: bay('merged', () => spine({ w: 'corridor' })) })],
+      { bayCols: 2, bayRows: 1 },
+    )
+    const blocks = resolveBlocks(p)
+    // The plenum runs y 5 to 7 above the dropped ceiling at y 4.
+    for (let x = 1; x <= 12; x++) expect(blocks.get(blockKey(x, 5, 6))).toBe('minecraft:hopper[facing=east]')
+    expect(positionsOf(blocks, 'minecraft:hopper')).toHaveLength(12)
+    expect(blocks.get(blockKey(0, 5, 6))).not.toBe('minecraft:hopper[facing=east]')
+  })
+
+  it('turns the chain round when the spine is to the west', () => {
+    const p = project(
+      [level('L1', 0, { A1: bay('merged', () => spine({ e: 'corridor' })), B1: trunkRow() })],
+      { bayCols: 2, bayRows: 1 },
+    )
+    const blocks = resolveBlocks(p)
+    for (let x = 12; x <= 23; x++) expect(blocks.get(blockKey(x, 5, 6))).toBe('minecraft:hopper[facing=west]')
+    expect(positionsOf(blocks, 'minecraft:hopper')).toHaveLength(12)
+  })
+
+  it('leaves out the chain when no line of trunk cells reaches a spine', () => {
+    const p = project([level('L1', 0, { A1: trunkRow() })], { bayCols: 1, bayRows: 1 })
+    expect(positionsOf(resolveBlocks(p), 'minecraft:hopper')).toEqual([])
+  })
+
+  it('turns a corner at the centre of a cell', () => {
+    // A2's west and centre cells carry the trunk east, then north through its
+    // top cell into a spine at A1.
+    const p = project(
+      [level('L1', 0, {
+        A1: bay('merged', () => spine({ s: 'corridor' })),
+        A2: bay('fine', (index) =>
+          index === 1 ? trunk({ n: 'corridor', s: 'corridor' })
+            : index === 3 ? trunk({ e: 'corridor', w: 'corridor' })
+              : index === 4 ? trunk({ n: 'corridor', w: 'corridor' })
+                : { module: 'empty' },
+        ),
+      })],
+      { bayCols: 1, bayRows: 2 },
+    )
+    const blocks = resolveBlocks(p)
+    for (let x = 1; x <= 5; x++) expect(blocks.get(blockKey(x, 5, 18))).toBe('minecraft:hopper[facing=east]')
+    for (let z = 12; z <= 18; z++) expect(blocks.get(blockKey(6, 5, z))).toBe('minecraft:hopper[facing=north]')
+    expect(blocks.has(blockKey(7, 5, 18))).toBe(false)
+    expect(positionsOf(blocks, 'minecraft:hopper')).toHaveLength(12)
+  })
+})

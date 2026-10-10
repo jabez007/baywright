@@ -21,6 +21,15 @@ export interface DetailContext {
   openings: Partial<Record<WallFace, ReadonlySet<string>>>
   /** The cell shares a valid merge group, so its room is larger than its interior. */
   merged: boolean
+  /** The service void above a dropped ceiling. */
+  plenum?: AABB | null
+  /** For an item trunk on a line to a spine: where items leave, and where they come in. */
+  trunk?: TrunkFlow
+}
+
+export interface TrunkFlow {
+  out: WallFace
+  in: readonly WallFace[]
 }
 
 const NO_CONTEXT: DetailContext = { openings: {}, merged: false }
@@ -35,6 +44,7 @@ const KITS: Readonly<Record<string, Kit>> = {
   'nether-portal': netherPortalKit,
   'super-smelter': superSmelterKit,
   'trading-hall': tradingHallKit,
+  'item-trunk': itemTrunkKit,
 }
 
 export function interiorDetailBlocks(
@@ -64,6 +74,7 @@ const EDGE_KITS: Readonly<Record<string, EdgeKit>> = {
   library: galleryRail,
   'rail-line': railThroughOpenings,
   'ice-highway': iceThroughOpenings,
+  'item-trunk': trunkThroughOpening,
 }
 
 export function edgeDetailBlocks(cell: Cell, outer: AABB, interior: AABB, context: DetailContext): EdgeDetail[] {
@@ -159,7 +170,7 @@ function entrance(cell: Cell): WallFace | undefined {
   return WALL_FACES.find((face) => isDoorway(cell, face))
 }
 
-function isDoorway(cell: Cell, face: WallFace): boolean {
+export function isDoorway(cell: Cell, face: WallFace): boolean {
   return cell.sockets[face] === 'corridor' || cell.sockets[face] === 'arch'
 }
 
@@ -323,7 +334,7 @@ function netherPortalKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailC
   return new Map([['minecraft:obsidian', new Set(blocks)]])
 }
 
-const OPPOSITE: Readonly<Record<WallFace, WallFace>> = { n: 's', e: 'w', s: 'n', w: 'e' }
+export const OPPOSITE: Readonly<Record<WallFace, WallFace>> = { n: 's', e: 'w', s: 'n', w: 'e' }
 
 /**
  * A row of furnaces backs onto the wall opposite the entrance, facing it.
@@ -377,6 +388,57 @@ function tradingHallKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailCo
     }
   }
   return new Map([['accent', dividers]])
+}
+
+/**
+ * A hopper chain on the plenum floor carries items toward the spine. Each
+ * feeding face runs in to the centre of the cell, and one run carries on
+ * from the centre to the face items leave by, so the chain turns corners at
+ * the centre. A trunk that nothing feeds starts at the face opposite its
+ * exit. The flow comes from the context; without one, no chain is placed.
+ */
+function itemTrunkKit(_bay: Bay, _cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const { plenum, trunk } = context
+  if (!plenum || !trunk) return new Map()
+  const centre = { x: midpoint(interior.x0, interior.x1), z: midpoint(interior.z0, interior.z1) }
+  const out: DetailBlocks = new Map()
+  const hopper = (face: WallFace) => roleSet(out, `minecraft:hopper[facing=${FACING[face]}]`)
+
+  const feeds = trunk.in.length > 0 ? trunk.in : [OPPOSITE[trunk.out]]
+  for (const feed of feeds) {
+    const toward = hopper(OPPOSITE[feed])
+    for (const [x, z] of walkFromCentre(interior, centre, feed)) toward.add(key(x, plenum.y0, z))
+  }
+  const onward = hopper(trunk.out)
+  onward.add(key(centre.x, plenum.y0, centre.z))
+  for (const [x, z] of walkFromCentre(interior, centre, trunk.out)) onward.add(key(x, plenum.y0, z))
+  return out
+}
+
+/** The last hopper sits on the shared wall line and passes items to the next cell. */
+function trunkThroughOpening(_cell: Cell, outer: AABB, interior: AABB, context: DetailContext): EdgeDetail[] {
+  const { plenum, trunk } = context
+  if (!plenum || !trunk) return []
+  const x = trunk.out === 'e' ? outer.x1 : trunk.out === 'w' ? outer.x0 : midpoint(interior.x0, interior.x1)
+  const z = trunk.out === 's' ? outer.z1 : trunk.out === 'n' ? outer.z0 : midpoint(interior.z0, interior.z1)
+  const at = key(x, plenum.y0, z)
+  return [{ at, material: `minecraft:hopper[facing=${FACING[trunk.out]}]`, whereAir: at }]
+}
+
+const STEP: Readonly<Record<WallFace, readonly [number, number]>> = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] }
+
+/** The interior columns from beside the centre out to the wall on `face`. */
+function walkFromCentre(interior: AABB, centre: { x: number; z: number }, face: WallFace): Array<[number, number]> {
+  const [dx, dz] = STEP[face]
+  const columns: Array<[number, number]> = []
+  let x = centre.x + dx
+  let z = centre.z + dz
+  while (x >= interior.x0 && x <= interior.x1 && z >= interior.z0 && z <= interior.z1) {
+    columns.push([x, z])
+    x += dx
+    z += dz
+  }
+  return columns
 }
 
 /** Every interior column that touches a wall, each corner once. */
