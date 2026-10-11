@@ -743,3 +743,24 @@ test('counts the digging for a room below the ground surface', async ({ page }) 
   await inspector.getByLabel('Ground surface y').press('Enter')
   await expect(digging).toHaveCount(0)
 })
+
+test('lists the materials for one level at a time', async ({ page }) => {
+  await page.goto('/')
+  await openProjectMenu(page)
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
+  await page.getByLabel('Starting point').selectOption('layered-base')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+
+  await page.getByRole('button', { name: 'Materials', exact: true }).click()
+  const bom = page.getByRole('region', { name: 'Bill of materials' })
+  await expect(bom.getByText('11,015 blocks')).toBeVisible()
+
+  await bom.getByLabel('Materials for').selectOption({ label: 'Stronghold core' })
+  await expect(bom.getByText('3,965 blocks')).toBeVisible()
+  await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('stone bricks')
+  await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('39 stacks + 47')
+  await expect(bom.getByText('7h 3m 50s')).toBeVisible()
+
+  await bom.getByLabel('Materials for').selectOption({ label: 'Whole base' })
+  await expect(bom.getByText('11,015 blocks')).toBeVisible()
+})

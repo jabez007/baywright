@@ -334,6 +334,7 @@ Computed from `resolveBlocks`. Output:
 
 - A furnace-time estimate for the smelting chain, assuming 10 seconds per item per furnace, with a configurable furnace count.
 - When the project has a `surfaceY`, a digging count: every block position inside a built cell's outer bounds at or below `surfaceY`, walls included, since the plan places its own walls. A position two levels share counts once, on the lower level. Each level with built cells is underground when all its cells end at or below the surface, above ground when all start above it, and partly underground otherwise. The rough yield treats the top 4 blocks of ground as dirt, the rest as stone that drops cobblestone, and anything below y 0 as deepslate that drops cobbled deepslate. Ores, caves, and water are ignored.
+- The same placed blocks, raw inputs, and furnace time for each level with built cells, so a base can be gathered for one level at a time. Each block belongs to the lowest level whose built cells hold it, so a plane two levels share counts on the lower level, as it does for digging. Each level rounds its raw inputs up to whole items on its own, so the levels' raw inputs can add up to slightly more than the whole base's.
 
 The BOM panel recomputes 200ms after the latest document change.
 

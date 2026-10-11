@@ -5,7 +5,7 @@
  * exporter uses. The UI is responsible for debouncing the recompute (200ms is
  * fine); nothing here caches.
  */
-import { builtCellRefs, cellAABB, resolveBlocks, sortedLevels } from './geometry.js'
+import { builtCellRefs, cellAABB, parseBlockKey, resolveBlocks, sortedLevels } from './geometry.js'
 import type { AABB, Project } from './types.js'
 
 /** Every block the shipped palettes use stacks to 64. */
@@ -144,15 +144,29 @@ export interface SmeltingEstimate {
   steps: SmeltStep[]
 }
 
-export interface Bom {
+export interface Materials {
   /** Placed blocks per ID, most first. */
   blocks: BomEntry[]
   totalBlocks: number
   /** What to gather, after rolling craftables back to their raw inputs. */
   rawInputs: BomEntry[]
   smelting: SmeltingEstimate
+}
+
+/**
+ * One level's share of the blocks. A plane it shares with the level below
+ * belongs to that level, as it does for digging.
+ */
+export interface LevelMaterials extends Materials {
+  levelId: string
+  name: string
+}
+
+export interface Bom extends Materials {
   /** What building into the ground takes, or null when the surface is unknown. */
   digging: Digging | null
+  /** Each level with built cells, lowest first. */
+  levels: LevelMaterials[]
 }
 
 /** Where a level's built cells sit against the ground. */
@@ -211,11 +225,20 @@ export function formatStacks(total: number): string {
 // --------------------------------------------------------------------------
 
 export function computeBom(project: Project, options: BomOptions = {}): Bom {
-  return { ...bomFromBlocks(resolveBlocks(project), options), digging: computeDigging(project) }
+  const blocks = resolveBlocks(project)
+  return {
+    ...materialsOf(blocks, options),
+    digging: computeDigging(project),
+    levels: materialsByLevel(project, blocks, options),
+  }
 }
 
 /** The same computation over a block map, for exporters and tests. */
 export function bomFromBlocks(blocks: ReadonlyMap<string, string>, options: BomOptions = {}): Bom {
+  return { ...materialsOf(blocks, options), digging: null, levels: [] }
+}
+
+function materialsOf(blocks: ReadonlyMap<string, string>, options: BomOptions): Materials {
   const counts = countBlocks(blocks)
   const { raw, smelts } = rollUpRawInputs(counts)
   const furnaces = Math.max(1, Math.floor(options.furnaces ?? DEFAULT_FURNACES))
@@ -228,7 +251,88 @@ export function bomFromBlocks(blocks: ReadonlyMap<string, string>, options: BomO
     totalBlocks,
     rawInputs: toEntries(raw),
     smelting: estimateSmelting(smelts, furnaces),
-    digging: null,
+  }
+}
+
+// --------------------------------------------------------------------------
+// Levels
+// --------------------------------------------------------------------------
+
+/**
+ * Hand each placed block to the lowest level whose built cells hold it. A
+ * level's rounding to whole logs and slabs happens per level, so its raw
+ * inputs can add up to a little more than the whole base's.
+ */
+function materialsByLevel(project: Project, blocks: ReadonlyMap<string, string>, options: BomOptions): LevelMaterials[] {
+  const boxesByLevel = builtBoxesByLevel(project)
+  const levels = sortedLevels(project).filter((level) => boxesByLevel.has(level.id))
+  if (levels.length === 0) return []
+
+  const all = [...boxesByLevel.values()].flat()
+  const owners = new BoxGrid(all)
+  // Highest first, so the lower level writes last and keeps a shared plane.
+  for (let index = levels.length - 1; index >= 0; index--) {
+    for (const box of boxesByLevel.get(levels[index]!.id)!) owners.fill(box, index + 1)
+  }
+
+  const split = levels.map(() => new Map<string, string>())
+  for (const [key, blockId] of blocks) {
+    const { x, y, z } = parseBlockKey(key)
+    const owner = owners.get(x, y, z)
+    // Every block the resolver places lies in a cell; this is only a guard.
+    const index = owner > 0 ? owner - 1 : Math.max(0, levels.filter((level) => level.y <= y).length - 1)
+    split[index]!.set(key, blockId)
+  }
+  return levels.map((level, index) => ({ levelId: level.id, name: level.name, ...materialsOf(split[index]!, options) }))
+}
+
+/** Built cell boxes by level ID. */
+function builtBoxesByLevel(project: Project): Map<string, AABB[]> {
+  const boxesByLevel = new Map<string, AABB[]>()
+  for (const ref of builtCellRefs(project)) {
+    const boxes = boxesByLevel.get(ref.levelId) ?? []
+    boxes.push(cellAABB(project, ref))
+    boxesByLevel.set(ref.levelId, boxes)
+  }
+  return boxesByLevel
+}
+
+/** A number per block position over the box around `boxes`, 0 outside it or where unset. */
+class BoxGrid {
+  private readonly x0: number
+  private readonly y0: number
+  private readonly z0: number
+  private readonly sizeX: number
+  private readonly sizeY: number
+  private readonly sizeZ: number
+  private readonly values: Uint16Array
+
+  constructor(boxes: readonly AABB[]) {
+    this.x0 = Math.min(...boxes.map((box) => box.x0))
+    this.y0 = Math.min(...boxes.map((box) => box.y0))
+    this.z0 = Math.min(...boxes.map((box) => box.z0))
+    this.sizeX = Math.max(...boxes.map((box) => box.x1)) - this.x0 + 1
+    this.sizeY = Math.max(...boxes.map((box) => box.y1)) - this.y0 + 1
+    this.sizeZ = Math.max(...boxes.map((box) => box.z1)) - this.z0 + 1
+    this.values = new Uint16Array(this.sizeX * this.sizeY * this.sizeZ)
+  }
+
+  fill(box: AABB, value: number): void {
+    for (let x = box.x0; x <= box.x1; x++) {
+      for (let y = box.y0; y <= box.y1; y++) {
+        for (let z = box.z0; z <= box.z1; z++) this.values[this.index(x, y, z)] = value
+      }
+    }
+  }
+
+  get(x: number, y: number, z: number): number {
+    const inside =
+      x >= this.x0 && x < this.x0 + this.sizeX && y >= this.y0 && y < this.y0 + this.sizeY && z >= this.z0 && z < this.z0 + this.sizeZ
+    return inside ? this.values[this.index(x, y, z)]! : 0
+  }
+
+  private index(x: number, y: number, z: number): number {
+    return ((x - this.x0) * this.sizeY + (y - this.y0)) * this.sizeZ + (z - this.z0)
   }
 }
 
@@ -249,13 +353,7 @@ function computeDigging(project: Project): Digging | null {
   const surfaceY = project.surfaceY
   if (surfaceY === undefined) return null
 
-  const boxesByLevel = new Map<string, AABB[]>()
-  for (const ref of builtCellRefs(project)) {
-    const boxes = boxesByLevel.get(ref.levelId) ?? []
-    boxes.push(cellAABB(project, ref))
-    boxesByLevel.set(ref.levelId, boxes)
-  }
-
+  const boxesByLevel = builtBoxesByLevel(project)
   const all = [...boxesByLevel.values()].flat()
   if (all.length === 0) return { surfaceY, blocks: 0, yields: [], levels: [] }
   const bounds = {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-import { computeBom, type Bom, type GroundPlacement } from '../domain/bom.js'
+import { computeBom, type Bom, type GroundPlacement, type Materials } from '../domain/bom.js'
 import { useProjectStore } from '../stores/project.js'
 
 const store = useProjectStore()
@@ -9,6 +9,8 @@ const furnaces = ref(1)
 const bom = ref<Bom | null>(null)
 const error = ref<string | null>(null)
 const pending = ref(true)
+/** The level the material lists cover, or '' for the whole base. */
+const scope = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 
 /**
@@ -49,6 +51,12 @@ onBeforeUnmount(() => {
   stopFurnaceWatch()
 })
 
+/** The whole base when the chosen level is gone or builds nothing. */
+const shown = computed<Materials | null>(() => {
+  if (!bom.value) return null
+  return bom.value.levels.find((level) => level.levelId === scope.value) ?? bom.value
+})
+
 const GROUND_LABELS: Readonly<Record<GroundPlacement, string>> = {
   underground: 'underground',
   partly: 'partly underground',
@@ -67,18 +75,27 @@ function blockName(blockId: string): string {
         <p class="eyebrow">Build order</p>
         <h2 id="bom-title">Bill of materials</h2>
       </div>
-      <strong v-if="bom" class="total mono">{{ bom.totalBlocks.toLocaleString() }} blocks</strong>
+      <div v-if="bom && shown" class="scope">
+        <label>
+          <span>Materials for</span>
+          <select v-model="scope">
+            <option value="">Whole base</option>
+            <option v-for="level in bom.levels" :key="level.levelId" :value="level.levelId">{{ level.name }}</option>
+          </select>
+        </label>
+        <strong class="total mono">{{ shown.totalBlocks.toLocaleString() }} blocks</strong>
+      </div>
     </header>
 
     <div v-if="error" class="bom-state error" role="alert">Could not compute materials: {{ error }}</div>
-    <div v-else-if="!bom" class="bom-state muted">Calculating materials…</div>
+    <div v-else-if="!bom || !shown" class="bom-state muted">Calculating materials…</div>
 
     <div v-else class="bom-body">
       <div class="material-column">
         <h3>Placed materials</h3>
-        <p v-if="bom.blocks.length === 0" class="muted">Paint a module to start a material list.</p>
+        <p v-if="shown.blocks.length === 0" class="muted">Paint a module to start a material list.</p>
         <ol v-else class="materials">
-          <li v-for="entry in bom.blocks" :key="entry.blockId">
+          <li v-for="entry in shown.blocks" :key="entry.blockId">
             <span :title="entry.blockId">{{ blockName(entry.blockId) }}</span>
             <strong class="mono">{{ entry.stacks.label }}</strong>
           </li>
@@ -87,9 +104,9 @@ function blockName(blockId: string): string {
 
       <div class="material-column">
         <h3>Raw inputs</h3>
-        <p v-if="bom.rawInputs.length === 0" class="muted">No blocks to gather yet.</p>
+        <p v-if="shown.rawInputs.length === 0" class="muted">No blocks to gather yet.</p>
         <ol v-else class="materials raw-inputs">
-          <li v-for="entry in bom.rawInputs" :key="entry.blockId">
+          <li v-for="entry in shown.rawInputs" :key="entry.blockId">
             <span :title="entry.blockId">{{ blockName(entry.blockId) }}</span>
             <strong class="mono">{{ entry.stacks.label }}</strong>
           </li>
@@ -104,8 +121,8 @@ function blockName(blockId: string): string {
           </label>
           <div>
             <span class="muted">Smelting duration</span>
-            <strong class="duration mono">{{ bom.smelting.label }}</strong>
-            <small class="muted">{{ bom.smelting.items.toLocaleString() }} item{{ bom.smelting.items === 1 ? '' : 's' }}</small>
+            <strong class="duration mono">{{ shown.smelting.label }}</strong>
+            <small class="muted">{{ shown.smelting.items.toLocaleString() }} item{{ shown.smelting.items === 1 ? '' : 's' }}</small>
           </div>
         </div>
 
@@ -172,6 +189,31 @@ function blockName(blockId: string): string {
 
 .total {
   font-size: 12px;
+}
+
+.scope {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.scope label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.scope label span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.scope select {
+  min-width: 0;
+  max-width: 180px;
 }
 
 .bom-body {
@@ -298,6 +340,23 @@ h3 {
 }
 
 @media (max-width: 560px) {
+  .panel-heading {
+    flex-wrap: wrap;
+  }
+
+  .scope {
+    flex-basis: 100%;
+  }
+
+  .scope label {
+    flex: 1;
+  }
+
+  .scope select {
+    flex: 1;
+    max-width: none;
+  }
+
   .bom-body {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -229,3 +229,45 @@ describe('digging', () => {
     ])
   })
 })
+
+describe('materials by level', () => {
+  const stored = (id: string, y: number, bays: Parameters<typeof level>[2]) => level(id, y, bays, { name: `${id} level` })
+  const lower = () => stored('Lower', 0, { A1: bay('merged', () => ({ heightCells: 1 })) })
+  const upper = () => stored('Upper', 4, { A1: bay('merged', () => ({ heightCells: 1 })) })
+
+  it('lists each built level, lowest first, with its own materials', () => {
+    const levels = computeBom(project([upper(), lower(), stored('Empty', 8, {})])).levels
+    expect(levels.map(({ levelId, name }) => [levelId, name])).toEqual([
+      ['Lower', 'Lower level'],
+      ['Upper', 'Upper level'],
+    ])
+  })
+
+  it('counts a plane two levels share once, on the lower level', () => {
+    const stack = computeBom(project([lower(), upper()]))
+    const alone = computeBom(project([lower()]))
+    const [below, above] = stack.levels
+    // The lower level takes as many blocks as building it on its own, roof
+    // included, though the roof is the upper level's floor block.
+    expect(below!.totalBlocks).toBe(alone.totalBlocks)
+    // The upper level stands on that roof, so its 13 × 13 floor is already there.
+    expect(above!.totalBlocks).toBe(computeBom(project([upper()])).totalBlocks - 169)
+    expect(below!.totalBlocks + above!.totalBlocks).toBe(stack.totalBlocks)
+    for (const { blockId, count } of stack.blocks) {
+      expect((countOf(below!.blocks, blockId) ?? 0) + (countOf(above!.blocks, blockId) ?? 0)).toBe(count)
+    }
+  })
+
+  it('keeps a tall room on its own level when a level starts partway up it', () => {
+    const tall = stored('Tall', 0, { A1: bay('merged', () => ({ heightCells: 2 })) })
+    const beside = stored('Beside', 4, { C3: bay('merged', () => ({ heightCells: 1 })) })
+    const [first, second] = computeBom(project([tall, beside])).levels
+    expect(first!.totalBlocks).toBe(computeBom(project([tall])).totalBlocks)
+    expect(second!.totalBlocks).toBe(computeBom(project([beside])).totalBlocks)
+  })
+
+  it('times each level with the same furnaces', () => {
+    const levels = computeBom(project([lower(), upper()]), { furnaces: 3 }).levels
+    expect(levels.map((entry) => entry.smelting.furnaces)).toEqual([3, 3])
+  })
+})
