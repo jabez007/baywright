@@ -102,8 +102,8 @@ function galleryRail(cell: Cell, outer: AABB, interior: AABB, context: DetailCon
 
 /**
  * A merged arena has an 11×11 interior. Its centred 7×7 purpose core leaves
- * a two-block circulation ring on every side. The trim marks that boundary;
- * four pillars rise from its corners, and one light hangs at the room centre.
+ * a two-block circulation ring on every side. The trim marks that boundary,
+ * and four pillars rise from its corners. The resolver hangs its light.
  */
 function arenaKit(bay: Bay, _cell: Cell, interior: AABB): DetailBlocks {
   if (bay.grain !== 'merged') return new Map()
@@ -135,8 +135,6 @@ function arenaKit(bay: Bay, _cell: Cell, interior: AABB): DetailBlocks {
   ] as const) {
     for (let y = interior.y0; y <= interior.y1; y++) accent.add(key(x, y, z))
   }
-
-  roleSet(out, 'light').add(key(midpoint(interior.x0, interior.x1), interior.y1, midpoint(interior.z0, interior.z1)))
   return out
 }
 

@@ -1,6 +1,6 @@
 # Baywright
 
-Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and eight domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
+Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and nine domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ The domain layer in `src/domain/` has no Vue, Pinia, or browser dependencies. It
 
 - the project, level, bay, cell, palette, module, and socket model;
 - coordinate and block geometry for fine, coarse, and merged bays;
-- vertical collisions, grain seams, room connectivity, stair continuity, plenum reachability, level alignment, merge-group validation, and overworld build limits;
+- vertical collisions, grain seams, room connectivity, stair continuity, plenum reachability, level alignment, merge-group validation, overworld build limits, and dark floors where mobs can spawn;
 - block deduplication, material totals, raw-input rollups, and smelting estimates; and
 - the shipped module presets and palettes.
 
@@ -69,9 +69,11 @@ Baywright measures outer footprints inclusively because adjacent spaces share th
 
 A one-cell height occupies five blocks and has a three-block interior. Taller cells share floor and ceiling planes, so two height cells occupy nine blocks and three occupy thirteen.
 
-Merged Arena cells apply the system inside the bay: a trim outline marks the centred 7×7 purpose core, leaving a two-block circulation ring in the 11×11 interior. Four palette-resolved pillars and a central ceiling light are included in exported blocks and material totals.
+Merged Arena cells apply the system inside the bay: a trim outline marks the centred 7×7 purpose core, leaving a two-block circulation ring in the 11×11 interior. Four palette-resolved pillars are included in exported blocks and material totals.
 
 A coarse or merged Library lines its walls with bookshelves three high and stands a lectern in the middle, facing the first doorway. A library cell that is the well of a merged gallery gets a one-high rail around its rim in the palette's accent block. A Rail Line lays rails down its middle, and one support frame per cell stands halfway along: two accent posts and a beam in the floor block. An Ice Highway sets a blue ice lane into its floor between two one-high accent barriers. Both routes continue through every open seam, so neighbouring cells join into one track. A Nether Portal room at least five blocks wide and high gets a 5×5 obsidian frame without corners, standing across the room so you walk straight in from the entrance. Light it yourself. A Super Smelter at least four blocks high backs a row of furnaces onto the wall opposite its entrance. Each furnace has an input hopper above, an output hopper below, and a fuel hopper in front, with open space above the input hoppers for whatever feeds them. A Trading Hall at least five blocks wide gets one-wide stalls along both walls that run away from the entrance, separated by two-high accent dividers two blocks deep, with a clear aisle between. Each stall holds a villager at the back and its workstation in front, which you choose. An Item Trunk on an unbroken line of trunk cells to a spine gets a hopper chain on its plenum floor, pointing toward the spine and turning corners at cell centres. A trunk with no such line gets no hoppers, so join it to a spine first. Kits never place a block in front of a doorway, window, or bars.
+
+Since 1.18, hostile mobs spawn on any floor with a block light of 0, so every room that would have such a floor gets its palette light hung under the ceiling, near the centre. A room two or more cells tall lowers the light on a chain to 3 blocks above the floor, which lights the corners of an 11×11 room. A stair shaft has no ceiling, so its light hangs in the landing above. One light often reaches the floors of the rooms next to it, and then they get none of their own. Plenums above dropped ceilings get lights too. The Tuff & Copper palette uses a waxed, lit copper bulb. A copper bulb you place by hand starts unlit, so give it one redstone pulse. V9 warns about any floor still dark, and names the palette light when it gives no light at all.
 
 Infrastructure planning uses ordinary modules rather than a separate simulator. Rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls carry useful height, socket, palette, and detailing intent. Transport and item-trunk bay patterns make the straight runs reusable; the layered example uses rail-line bays on its lowest level. Its stairs join all four levels to a spine, so it passes every check. Throughput, redstone state, and entity behavior remain outside Baywright's scope.
 

@@ -31,7 +31,7 @@ Drawing, palettes, and exports support the main job: finding these errors before
 
 - Not a world editor. The app never reads or writes save files.
 - Not a general voxel editor. Everything snaps to the bay lattice; there is no freehand block placement.
-- No redstone simulation, no lighting simulation, no mob spawn simulation.
+- No redstone or mob simulation. Block light is modelled only to hang lamps and to find floors where hostile mobs can spawn, which V9 reports.
 - No terrain, no biomes, no existing-world context.
 - No multiplayer, no cloud sync, no sharing in v1.
 
@@ -106,11 +106,11 @@ A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `so
 
 `spine`, `corridor`, `junction`, `rail-line`, `ice-highway`, `stair`, `vestibule`, `storage`, `vault`, `library`, `arena`, `workshop`, `nether-portal`, `trading-hall`, `prison-cell`, `farm`, `item-trunk`, `mine-access`, `super-smelter`, `auto-crafter`, `plenum-access`, `empty`
 
-Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5 and V8. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
+Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5, V8, and V9. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
 
 Decoration hints record builder intent. Exact detail kits are optional, and only some modules have one. A kit derives its coordinates from `cellInterior`, uses a palette role where one fits, and uses a fixed block ID for a functional block such as a bookshelf. It leaves clear every interior column in front of a wall opening, including windows and bars.
 
-- **Arena.** A merged Arena exports a centred 7x7 core boundary, four pillars, and a central light.
+- **Arena.** A merged Arena exports a centred 7x7 core boundary and four pillars. Its light comes from the lighting pass, as every room's does.
 - **Library.** A coarse or merged Library exports bookshelves three high along every wall and a lectern at the centre, facing the first `corridor` or `arch` face. A fine cell is too small for the kit. A member of a merge group is skipped, because its room is larger than its interior. A Library cell with a `down` shaft is a well, so it gets no shelves. When the well belongs to a valid merge group, a one-high accent rail rings it on the gallery floor. The rail fills only blocks that are still air, so it never replaces a wall.
 - **Rail Line.** The route runs along the axis open at both ends, or else the axis open at either end. Rails run down the centre of the interior, shaped to the axis. Halfway along, one support frame stands across the route: an accent post against each side wall, as tall as the interior less one, and a beam of the floor block along the top row. An upward shaft omits the beam.
 - **Ice Highway.** On the same axis, blue ice replaces the floor down the centre, with a one-high accent barrier on each side of it.
@@ -122,7 +122,9 @@ Rail Line and Ice Highway continue their track through each open end of the rout
 - **Trading Hall.** A room at least 5 blocks wide, measured across its entrance, gets stalls along the two walls that run away from the entrance. Accent dividers two blocks deep and two high stand at every other block along each wall, starting at the entrance end, so each stall is one block wide and two deep. The middle stays clear as the aisle. The kit places no workstations, since each depends on the villager's profession.
 - **Item Trunk.** Items flow toward a spine on the same level. A dropped-ceiling Item Trunk with a `corridor` or `arch` face onto a spine, whose facing socket is also one of those, sends items through that face. Flow then spreads back through Item Trunk cells joined by such doorways whose centre lines meet. Each reached cell gets sideways-facing hoppers on the bottom row of its plenum: one run from each feeding face in to the centre, and one from the centre out to the exit face, ending in a hopper on the shared wall line. A trunk that nothing feeds starts its run at the face opposite its exit. A trunk with no such line to a spine gets no hoppers.
 
-A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`. An ID may carry a block state, as in `minecraft:lantern[hanging=true]`. The ceiling light has air below it, so shipped lanterns hang and no shipped palette uses a torch.
+Every built room gets light after the kits. The resolver spreads block light as the game does: a source lights its own block, each step through air or a see-through block costs one level, and anything solid stops it. Rooms go from the top level down. A room or plenum whose floor or doorways still hold a block where a hostile mob could spawn gets the palette light under its ceiling, in the free column nearest its centre. A room two or more cells tall lowers the light on a chain to 3 blocks above the floor, which lights the corners of an 11x11 room and clears a player's head. The light never drops past a kit block, so a portal frame keeps its opening. A stair shaft has no ceiling, so its light hangs in the room the shaft climbs to. A light that already reaches a neighbour's floor saves the neighbour a lamp. A light that gives no light is still placed, and V9 names it.
+
+A `Palette` maps abstract material roles (`floor`, `wall`, `ceiling`, `accent`, `trim`, `light`) to Minecraft block IDs. Ship with four: `stone-brick`, `dark-oak`, `mineshaft-oak`, `tuff-copper`. An ID may carry a block state, as in `minecraft:lantern[hanging=true]`. The ceiling light has air below it, so shipped lanterns hang and no shipped palette uses a torch. A copper bulb gives no light until a redstone pulse lights it, and it dims as it weathers, so `tuff-copper` ships `minecraft:waxed_copper_bulb[lit=true]`.
 
 Palette resolves per level, overridable per cell.
 
@@ -298,6 +300,12 @@ All cells sharing a `mergeGroup` must have the same grain, the same `heightCells
 
 Every floor and ceiling plane must be a placeable overworld block: `level.y >= -64` and `level.y + 4 * heightCells <= 319`. Report one issue per level and limit, naming the cells that cross it.
 
+### V9: dark floors (warning)
+
+Since 1.18, hostile mobs spawn on a floor whose block light is 0. Within each built cell's outer bounds, between its floor and ceiling planes, count each air block with air above it and, below it, a block that takes spawns. Bottom slabs, upright stairs, magma blocks, and see-through blocks such as glass, rails, and hoppers take none. Light comes from the resolved blocks, lamps included. Report one warning per level with the count and the cells that hold dark floors. When such a cell's palette light gives no light, the message names it.
+
+Message: `"Level '{name}' has {count} dark floor blocks where mobs can spawn"`
+
 ## 9. Bill of materials
 
 Computed from `resolveBlocks`. Output:
@@ -391,7 +399,8 @@ src/
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
-    validate.ts           # V1 through V8
+    validate.ts           # V1 through V9
+    lighting.ts           # block light for lamps and V9
     bom.ts                # material and smelting calculations
     modules.ts            # module presets
     palettes.ts           # palette definitions

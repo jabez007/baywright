@@ -5,7 +5,9 @@
  * here is Vue-aware; the exporter and the renderer read the same table.
  *
  * The light hangs under the ceiling with air below it, so a lantern carries
- * `[hanging=true]`. A torch cannot be placed there.
+ * `[hanging=true]`. A torch cannot be placed there. A copper bulb gives no
+ * light until it is lit, and dims as it weathers, so the shipped one is
+ * waxed and lit.
  */
 import type { Palette } from './types.js'
 
@@ -55,7 +57,7 @@ export const PALETTES: Readonly<Record<string, Palette>> = {
       ceiling: 'minecraft:tuff_brick_slab',
       accent: 'minecraft:oxidized_copper',
       trim: 'minecraft:tuff_brick_stairs',
-      light: 'minecraft:copper_bulb',
+      light: 'minecraft:waxed_copper_bulb[lit=true]',
     },
   },
 }

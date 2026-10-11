@@ -17,13 +17,16 @@ import {
   footprintsOverlap,
   horizontalOpeningSpan,
   openingYSpan,
+  paletteFor,
   parseBayKey,
   resolveCell,
+  resolveLight,
   socketVoids,
   sortedLevels,
   validMergeGroupIds,
   yIntervalsCollide,
 } from './geometry.js'
+import { lightEmission } from './lighting.js'
 import { SPINE_MODULE_ID, isBuiltCell } from './modules.js'
 import {
   GRAIN_AXIS_CELLS,
@@ -43,7 +46,7 @@ import {
 
 export type Severity = 'error' | 'warning'
 
-export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8'
+export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9'
 
 export interface Issue {
   id: IssueId
@@ -65,6 +68,7 @@ export function validate(project: Project): Issue[] {
     ...checkLevelAlignment(project),
     ...checkMergeGroups(project),
     ...checkWorldLimits(project),
+    ...checkDarkFloors(project),
   ]
 }
 
@@ -786,6 +790,55 @@ export function checkWorldLimits(project: Project): Issue[] {
         levelId: level.id,
       })
     }
+  }
+  return issues
+}
+
+// --------------------------------------------------------------------------
+// V9 — Dark floors (warning)
+// --------------------------------------------------------------------------
+
+/**
+ * Since 1.18, hostile mobs spawn on any floor whose block light is 0. Count
+ * those floors inside each level's cells, walls and doorways included, and
+ * name the palette light when it gives no light at all.
+ */
+export function checkDarkFloors(project: Project): Issue[] {
+  const light = resolveLight(project)
+  const issues: Issue[] = []
+  for (const level of sortedLevels(project)) {
+    const seen = new Set<string>()
+    const refs: CellRef[] = []
+    const unlit = new Set<string>()
+    let dark = 0
+    for (const ref of builtCellRefs(project).filter((entry) => entry.levelId === level.id)) {
+      const box = cellAABB(project, ref)
+      let darkHere = 0
+      for (let y = box.y0 + 1; y < box.y1; y++) {
+        for (let z = box.z0; z <= box.z1; z++) {
+          for (let x = box.x0; x <= box.x1; x++) {
+            const at = blockKey(x, y, z)
+            if (seen.has(at)) continue
+            seen.add(at)
+            if (light.isDarkSpawn(x, y, z)) darkHere++
+          }
+        }
+      }
+      if (darkHere === 0) continue
+      dark += darkHere
+      refs.push(ref)
+      const lamp = paletteFor(project, level, resolveCell(project, ref).cell).blocks.light
+      if (lightEmission(lamp) === 0) unlit.add(lamp)
+    }
+    if (dark === 0) continue
+    const cause = unlit.size > 0 ? `. Its palette light ${[...unlit].sort().join(', ')} gives no light` : ''
+    issues.push({
+      id: 'V9',
+      severity: 'warning',
+      message: `Level '${level.name}' has ${dark} dark floor block${dark === 1 ? '' : 's'} where mobs can spawn${cause}`,
+      refs,
+      levelId: level.id,
+    })
   }
   return issues
 }

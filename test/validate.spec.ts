@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { blockKey, cellAABB, cellPlenum, resolveBlocks, validMergeGroupIds } from '../src/domain/geometry.js'
 import { validate, type Issue, type IssueId } from '../src/domain/validate.js'
 import type { Cell, Project, Socket } from '../src/domain/types.js'
+import { PALETTES } from '../src/domain/palettes.js'
 import { bay, level, project, sockets } from './factory.js'
 
 const only = (issues: Issue[], id: IssueId) => issues.filter((issue) => issue.id === id)
@@ -721,5 +722,90 @@ describe('empty cells are unbuilt', () => {
   it('cannot cross the world limits (V8)', () => {
     const p = project([level('roof', 316, { A1: bay('merged', empty) })])
     expect(only(validate(p), 'V8')).toEqual([])
+  })
+})
+
+// --------------------------------------------------------------------------
+// V9 — Dark floors
+// --------------------------------------------------------------------------
+
+describe('V9 — dark floors', () => {
+  /** A one-bay room whose level palette uses `light` as its light block. */
+  const litBy = (light: string, overrides: Partial<Cell> = {}) => {
+    const p = project([level('ground', 0, { A1: bay('merged', () => overrides) }, { name: 'Ground' })])
+    p.palettes = { ...p.palettes, 'stone-brick': { ...p.palettes['stone-brick']!, blocks: { ...p.palettes['stone-brick']!.blocks, light } } }
+    return p
+  }
+
+  it('counts every floor block a mob could spawn on when the light gives none', () => {
+    // A copper bulb is unlit until a redstone pulse turns it on.
+    const issues = only(validate(litBy('minecraft:copper_bulb')), 'V9')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.severity).toBe('warning')
+    expect(issues[0]!.message).toBe(
+      "Level 'Ground' has 121 dark floor blocks where mobs can spawn. Its palette light minecraft:copper_bulb gives no light",
+    )
+    expect(issues[0]!.refs).toEqual([{ levelId: 'ground', bayKey: 'A1', cellIndex: 0 }])
+    expect(issues[0]!.levelId).toBe('ground')
+  })
+
+  it('lights a plain room in every shipped palette', () => {
+    for (const paletteId of Object.keys(PALETTES)) {
+      const p = project([level('ground', 0, { A1: bay('merged') }, { paletteId })])
+      expect(only(validate(p), 'V9'), paletteId).toEqual([])
+      // One light hangs under the ceiling at the room centre.
+      expect(resolveBlocks(p).get(blockKey(6, 3, 6)), paletteId).toBe(PALETTES[paletteId]!.blocks.light)
+    }
+  })
+
+  it('lowers the light on a chain so a tall room has no dark floor', () => {
+    const p = project([level('ground', 0, { A1: bay('merged', () => ({ heightCells: 2 })) })])
+    const blocks = resolveBlocks(p)
+    expect(only(validate(p), 'V9')).toEqual([])
+    expect(blocks.get(blockKey(6, 4, 6))).toBe('minecraft:lantern[hanging=true]')
+    for (const y of [5, 6, 7]) expect(blocks.get(blockKey(6, y, 6))).toBe('minecraft:chain')
+  })
+
+  it('lights the plenum above a dropped ceiling as well as the room', () => {
+    const p = project([level('ground', 0, { A1: bay('merged', () => ({ heightCells: 2, ceiling: 'dropped' })) })])
+    const blocks = resolveBlocks(p)
+    expect(only(validate(p), 'V9')).toEqual([])
+    expect(blocks.get(blockKey(6, 3, 6))).toBe('minecraft:lantern[hanging=true]')
+    expect(blocks.get(blockKey(6, 7, 6))).toBe('minecraft:lantern[hanging=true]')
+  })
+
+  it('lets one light serve the neighbours it reaches through doorways', () => {
+    // Nine 3x3 rooms joined by full-width doorways. The first light, in the
+    // north-west room, reaches every floor but the far east column's.
+    const inner = (index: number): Partial<Cell> => {
+      const a = index % 3
+      const b = Math.floor(index / 3)
+      const open = (edge: boolean): Socket => (edge ? 'solid' : 'corridor')
+      return { sockets: sockets({ w: open(a === 0), e: open(a === 2), n: open(b === 0), s: open(b === 2) }) }
+    }
+    const p = project([level('ground', 0, { A1: bay('fine', inner) })])
+    const lamps = [...resolveBlocks(p)].filter(([, id]) => id === 'minecraft:lantern[hanging=true]').map(([at]) => at)
+    expect(only(validate(p), 'V9')).toEqual([])
+    expect(lamps.sort()).toEqual([blockKey(10, 3, 6), blockKey(2, 3, 2)].sort())
+  })
+
+  it('lights a stair shaft from the landing it climbs to', () => {
+    // A lamp in the room north of the landing lights the landing, but not
+    // the far side of the stair 10 blocks below it.
+    const p = project([
+      level('lower', 0, {
+        A1: bay('fine', (index) => (index === 4 ? { heightCells: 2, sockets: sockets({ up: 'shaft' }) } : { module: 'empty' })),
+      }),
+      level('upper', 8, {
+        A1: bay('fine', (index) =>
+          index === 1
+            ? { sockets: sockets({ s: 'corridor' }) }
+            : index === 4
+              ? { sockets: sockets({ n: 'corridor', down: 'shaft' }) }
+              : { module: 'empty' }),
+      }),
+    ])
+    expect(only(validate(p), 'V9')).toEqual([])
+    expect(resolveBlocks(p).get(blockKey(6, 11, 6))).toBe('minecraft:lantern[hanging=true]')
   })
 })

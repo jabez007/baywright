@@ -15,12 +15,13 @@ The current editor includes the useful foundations from the discussion:
 - Multi-level layouts stamp a stair stack, a compact stair, a library with a gallery, an atrium with balconies, and a machinery hall over its service level. They add any level they need.
 - Named negative space distinguishes a courtyard, garden, cave, stair shaft, or reserved expansion from an unfinished plan.
 - The layered starter project assigns Mansion, Stronghold, Trial Chamber, and Mineshaft roles to separate levels and palettes.
-- Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, corner pillars, and a central light.
+- Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, and corner pillars.
 - Library cells export wall shelves, a lectern, and a rail around a gallery well.
 - Rail Line and Ice Highway cells export a continuous track. Rail lines get support frames, and ice lanes get edge barriers.
 - Nether Portal rooms export an unlit obsidian frame, and Super Smelters export a hopper-fed furnace row.
 - Trading Halls export stall dividers along both side walls around a clear aisle.
 - Item Trunks export a hopper chain that runs toward the nearest spine.
+- Every room that would have a floor dark enough for mobs to spawn gets its palette light, lowered on a chain in tall rooms, and V9 reports any floor still dark.
 - **Assemble a base** grows a seeded plan inside a footprint from the same pieces, previews it with the validators' result, and applies it as one undo step.
 - Infrastructure modules describe rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls.
 

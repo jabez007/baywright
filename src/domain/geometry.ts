@@ -16,6 +16,7 @@ import {
   type TrunkFlow,
   type WallFace,
 } from './details.js'
+import { LightField } from './lighting.js'
 import { isBuiltCell } from './modules.js'
 import {
   BAY_PITCH,
@@ -307,17 +308,32 @@ export function shellBlocks(project: Project, ref: CellRef): Map<ShellRole, Set<
  * detached map so callers cannot modify the cached copy.
  */
 export function resolveBlocks(project: Project): Map<string, string> {
-  const serialized = hashProject(project)
-  const hit = blockCache.get(project)
-  if (hit && hit.serialized === serialized) return new Map(hit.blocks)
-  const blocks = computeBlocks(project)
-  blockCache.set(project, { serialized, blocks })
-  return new Map(blocks)
+  return new Map(resolved(project).blocks)
 }
 
-const blockCache = new WeakMap<Project, { serialized: string; blocks: Map<string, string> }>()
+/** Block light over the blocks {@link resolveBlocks} returns. */
+export function resolveLight(project: Project): LightField {
+  return resolved(project).light
+}
 
-function computeBlocks(project: Project): Map<string, string> {
+interface Resolved {
+  serialized: string
+  blocks: Map<string, string>
+  light: LightField
+}
+
+function resolved(project: Project): Resolved {
+  const serialized = hashProject(project)
+  const hit = blockCache.get(project)
+  if (hit && hit.serialized === serialized) return hit
+  const entry = { serialized, ...computeBlocks(project) }
+  blockCache.set(project, entry)
+  return entry
+}
+
+const blockCache = new WeakMap<Project, Resolved>()
+
+function computeBlocks(project: Project): { blocks: Map<string, string>; light: LightField } {
   const blocks = new Map<string, string>()
   const claimed = new Map<string, number>()
   for (const ref of builtCellRefs(project)) {
@@ -336,7 +352,108 @@ function computeBlocks(project: Project): Map<string, string> {
   }
   carveValidMergeGroups(project, blocks)
   placeInteriorDetails(project, blocks)
-  return blocks
+  const light = placeLights(project, blocks)
+  return { blocks, light }
+}
+
+/** The chain a light hangs from when the room is too tall to light from its ceiling. */
+const CHAIN = 'minecraft:chain'
+
+/**
+ * A lamp leaves this many free blocks above the floor, which clears a
+ * player's head and still lights the corners of an 11×11 room.
+ */
+const LAMP_CLEARANCE = 3
+
+/**
+ * Hang the palette light in every room and plenum that still has a floor a
+ * mob could spawn on. Rooms go from the top level down, so a landing's light
+ * can serve the stair shaft below it, and a light that already reaches a
+ * neighbour's floor saves that neighbour a lamp. Returns the finished light.
+ */
+function placeLights(project: Project, blocks: Map<string, string>): LightField {
+  const light = new LightField(blocks)
+  const rooms = builtCellRefs(project)
+    .map((ref) => ({ ref, outer: cellAABB(project, ref), interior: cellInterior(project, ref), plenum: cellPlenum(project, ref) }))
+    .sort((l, r) => r.interior.y0 - l.interior.y0)
+  for (const { ref, outer, interior, plenum } of rooms) {
+    const { level, cell } = resolveCell(project, ref)
+    const lamp = paletteFor(project, level, cell).blocks.light
+    for (const volume of plenum ? [interior, plenum] : [interior]) {
+      // Doorways in the walls count too, as they do for V9.
+      if (!hasDarkFloor(light, { ...volume, x0: outer.x0, x1: outer.x1, z0: outer.z0, z1: outer.z1 })) continue
+      const spot = lampSpot(blocks, volume) ?? landingSpot(blocks, rooms, volume)
+      if (!spot) continue
+      for (let y = spot.y + 1; y <= spot.top; y++) {
+        blocks.set(blockKey(spot.x, y, spot.z), CHAIN)
+        light.place(spot.x, y, spot.z, CHAIN)
+      }
+      blocks.set(blockKey(spot.x, spot.y, spot.z), lamp)
+      light.place(spot.x, spot.y, spot.z, lamp)
+    }
+  }
+  return light
+}
+
+function hasDarkFloor(light: LightField, volume: AABB): boolean {
+  for (let y = volume.y0; y <= volume.y1; y++) {
+    for (let z = volume.z0; z <= volume.z1; z++) {
+      for (let x = volume.x0; x <= volume.x1; x++) if (light.isDarkSpawn(x, y, z)) return true
+    }
+  }
+  return false
+}
+
+interface LampSpot {
+  x: number
+  y: number
+  z: number
+  /** The highest block of the chain above the lamp, or `y` when it has none. */
+  top: number
+}
+
+/**
+ * The free top column nearest the volume's centre, hanging from the block
+ * above. A tall volume lowers the lamp on a chain, but never past a detail
+ * block, so a portal frame or a kit below keeps its space.
+ */
+function lampSpot(blocks: ReadonlyMap<string, string>, volume: AABB): LampSpot | null {
+  const cx = midpoint(volume.x0, volume.x1)
+  const cz = midpoint(volume.z0, volume.z1)
+  const columns: Array<[number, number]> = []
+  for (let z = volume.z0; z <= volume.z1; z++) for (let x = volume.x0; x <= volume.x1; x++) columns.push([x, z])
+  columns.sort(([lx, lz], [rx, rz]) => Math.abs(lx - cx) + Math.abs(lz - cz) - Math.abs(rx - cx) - Math.abs(rz - cz))
+
+  const lowest = Math.min(volume.y1, volume.y0 + LAMP_CLEARANCE)
+  for (const [x, z] of columns) {
+    if (!blocks.has(blockKey(x, volume.y1 + 1, z)) || blocks.has(blockKey(x, volume.y1, z))) continue
+    let y = volume.y1
+    while (y > lowest && !blocks.has(blockKey(x, y - 1, z))) y--
+    return { x, y, z, top: volume.y1 }
+  }
+  return null
+}
+
+/**
+ * A stair shaft has no ceiling to hang from, so its lamp hangs in the room
+ * the shaft opens into, climbing until a room has a ceiling.
+ */
+function landingSpot(
+  blocks: ReadonlyMap<string, string>,
+  rooms: ReadonlyArray<{ interior: AABB }>,
+  volume: AABB,
+): LampSpot | null {
+  let from = volume
+  for (let step = 0; step < 4; step++) {
+    const x = midpoint(from.x0, from.x1)
+    const z = midpoint(from.z0, from.z1)
+    const above = rooms.find(({ interior }) => interior.y0 > from.y1 && interior.y0 <= from.y1 + 2 && contains(interior, x, interior.y0, z))
+    if (!above) return null
+    const spot = lampSpot(blocks, above.interior)
+    if (spot) return spot
+    from = above.interior
+  }
+  return null
 }
 
 /** Details land last because floor trim intentionally replaces the shell palette. */

@@ -121,6 +121,12 @@ describe('F4 — plenum', () => {
   })
 })
 
+/**
+ * Every room with a dark floor gets a lamp. A 2-high merged room hangs it at
+ * y 4, three blocks above the floor, on a chain filling y 5 to 7.
+ */
+const HUNG_LAMP = 4
+
 describe('F9 — shell dedup', () => {
   const p = project([
     level('L1', 0, { A1: bay('merged', () => ({ heightCells: 2, ceiling: 'flat', sockets: sockets() })) }),
@@ -135,8 +141,8 @@ describe('F9 — shell dedup', () => {
     expect(volume(cellInterior(p, ref))).toBe(847)
   })
 
-  it('resolves to exactly 674 block entries', () => {
-    expect(resolveBlocks(p).size).toBe(674)
+  it('resolves to the 674 shell blocks and the lamp', () => {
+    expect(resolveBlocks(p).size).toBe(674 + HUNG_LAMP)
   })
 
   it('assigns every shell coordinate exactly one role', () => {
@@ -159,9 +165,10 @@ describe('unbuilt cells', () => {
   })
 
   it('places only the built cell of a mostly empty bay', () => {
-    // One fine cell: a 5x5x5 shell around a 3x3x3 room is 125 - 27 = 98 blocks.
+    // One fine cell: a 5x5x5 shell around a 3x3x3 room is 125 - 27 = 98
+    // blocks, and a lamp hangs under its ceiling.
     const p = project([level('L', 0, { A1: bay('fine', (index) => ({ module: index === 4 ? 'storage' : 'empty' })) })])
-    expect(resolveBlocks(p).size).toBe(98)
+    expect(resolveBlocks(p).size).toBe(98 + 1)
   })
 })
 
@@ -175,8 +182,8 @@ describe('shared planes are counted once', () => {
       }),
     ])
     // Naive summing would give 1348; the shared x = 12 plane (9 x 13 = 117) is one wall.
-    expect(resolveBlocks(one).size).toBe(674)
-    expect(resolveBlocks(two).size).toBe(674 * 2 - 117)
+    expect(resolveBlocks(one).size).toBe(674 + HUNG_LAMP)
+    expect(resolveBlocks(two).size).toBe(674 * 2 - 117 + 2 * HUNG_LAMP)
   })
 })
 
@@ -214,7 +221,8 @@ describe('merge groups', () => {
 /**
  * Not a §14 fixture, but §5.4 defines what each socket opens and §7 says the
  * shell must carve it, so the openings are pinned here too. Baseline is the F9
- * bay: a merged bay at y 0, heightCells 2, 674 shell blocks, interior 11 x 7 x 11.
+ * bay: a merged bay at y 0, heightCells 2, 674 shell blocks, interior 11 x 7 x 11,
+ * plus its lamp.
  */
 describe('§5.4 socket openings', () => {
   const withEast = (socket: Socket) =>
@@ -224,7 +232,7 @@ describe('§5.4 socket openings', () => {
   const ref: CellRef = { levelId: 'L1', bayKey: 'A1', cellIndex: 0 }
 
   it('carves the full interior width and height for a corridor', () => {
-    expect(resolveBlocks(withEast('corridor')).size).toBe(674 - 11 * 7)
+    expect(resolveBlocks(withEast('corridor')).size).toBe(674 - 11 * 7 + HUNG_LAMP)
   })
 
   it('centres an explicit five-block corridor on a merged face', () => {
@@ -238,7 +246,7 @@ describe('§5.4 socket openings', () => {
       }),
     ])
     const blocks = resolveBlocks(p)
-    expect(blocks.size).toBe(674 - 5 * 7)
+    expect(blocks.size).toBe(674 - 5 * 7 + HUNG_LAMP)
     expect(blocks.has(blockKey(12, 4, 3))).toBe(true)
     expect(blocks.has(blockKey(12, 4, 4))).toBe(false)
     expect(blocks.has(blockKey(12, 4, 8))).toBe(false)
@@ -250,18 +258,18 @@ describe('§5.4 socket openings', () => {
   })
 
   it('carves 2 blocks of height for an arch', () => {
-    expect(resolveBlocks(withEast('arch')).size).toBe(674 - 11 * 2)
+    expect(resolveBlocks(withEast('arch')).size).toBe(674 - 11 * 2 + HUNG_LAMP)
   })
 
   it('carves a single centred block for a window', () => {
     const blocks = resolveBlocks(withEast('window'))
-    expect(blocks.size).toBe(674 - 1)
+    expect(blocks.size).toBe(674 - 1 + HUNG_LAMP)
     expect(blocks.has(blockKey(12, 4, 6))).toBe(false)
   })
 
   it('fills a bars opening with iron bars rather than air', () => {
     const blocks = resolveBlocks(withEast('bars'))
-    expect(blocks.size).toBe(674)
+    expect(blocks.size).toBe(674 + HUNG_LAMP)
     expect(blocks.get(blockKey(12, 4, 6))).toBe('minecraft:iron_bars')
     expect(shellBlocks(withEast('bars'), ref).get('bars')?.size).toBe(11 * 7)
   })
@@ -270,6 +278,7 @@ describe('§5.4 socket openings', () => {
     const p = project([
       level('L1', 0, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),
     ])
+    // An open ceiling leaves nothing to hang a lamp from.
     expect(resolveBlocks(p).size).toBe(674 - 11 * 11)
   })
 
@@ -280,7 +289,7 @@ describe('§5.4 socket openings', () => {
         B1: bay('merged', () => ({ heightCells: 2 })),
       }),
     ])
-    expect(resolveBlocks(p).size).toBe(674 * 2 - 117)
+    expect(resolveBlocks(p).size).toBe(674 * 2 - 117 + 2 * HUNG_LAMP)
     expect(resolveBlocks(p).has(blockKey(12, 4, 6))).toBe(true)
   })
 
@@ -335,7 +344,8 @@ describe('§7 memoisation', () => {
     p.levels[0]!.bays['A1']!.cells[0]!.heightCells = 3
     const second = resolveBlocks(p)
     expect(second).not.toEqual(first)
-    expect(second.size).toBe(volume(cellAABB(p, { levelId: 'L1', bayKey: 'A1', cellIndex: 0 })) - 11 * 11 * 11)
+    // The 3-high room's lamp hangs at y 4 on a chain filling y 5 to 11.
+    expect(second.size).toBe(volume(cellAABB(p, { levelId: 'L1', bayKey: 'A1', cellIndex: 0 })) - 11 * 11 * 11 + 8)
   })
 
   it('does not let callers mutate the cached block map', () => {

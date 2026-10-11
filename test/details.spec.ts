@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { computeBom } from '../src/domain/bom.js'
 import { interiorDetailBlocks } from '../src/domain/details.js'
 import { blockKey, cellInterior, resolveBlocks } from '../src/domain/geometry.js'
+import { lightEmission } from '../src/domain/lighting.js'
 import { cellFromModule } from '../src/domain/modules.js'
 import { PALETTES } from '../src/domain/palettes.js'
 import type { Cell, CellRef } from '../src/domain/types.js'
@@ -24,22 +25,24 @@ describe('arena core and circulation ring', () => {
     expect(details.get('trim')).not.toContain(blockKey(2, 0, 3))
   })
 
-  it('places four full-height pillars and one central ceiling light', () => {
+  it('places four full-height pillars and leaves the light to the resolver', () => {
     const cell = arena.levels[0]!.bays['A1']!.cells[0]!
     const details = interiorDetailBlocks(arena.levels[0]!.bays['A1']!, cell, cellInterior(arena, ref))
 
     expect(details.get('accent')?.size).toBe(44)
     expect(details.get('accent')).toContain(blockKey(3, 1, 3))
     expect(details.get('accent')).toContain(blockKey(9, 11, 9))
-    expect(details.get('light')).toEqual(new Set([blockKey(6, 11, 6)]))
+    expect(details.has('light')).toBe(false)
   })
 
-  it('hangs the ceiling light from the ceiling in every shipped palette', () => {
-    // The light sits on the top interior block with air below it, so a
-    // lantern must hang and a torch cannot stand there at all.
+  it('ships a light in every palette that hangs and gives light', () => {
+    // The light hangs with air below it, so a lantern must hang and a torch
+    // cannot be placed at all. A copper bulb is a full block, but it must be
+    // lit and waxed to give full light that stays.
     for (const palette of Object.values(PALETTES)) {
       const light = palette.blocks.light
-      expect(light === 'minecraft:copper_bulb' || light.endsWith('[hanging=true]'), `${palette.id}: ${light}`).toBe(true)
+      expect(light === 'minecraft:waxed_copper_bulb[lit=true]' || light.endsWith('[hanging=true]'), `${palette.id}: ${light}`).toBe(true)
+      expect(lightEmission(light), `${palette.id}: ${light}`).toBe(15)
     }
   })
 
@@ -48,7 +51,9 @@ describe('arena core and circulation ring', () => {
 
     expect(blocks.get(blockKey(4, 0, 3))).toBe('minecraft:stone_brick_stairs')
     expect(blocks.get(blockKey(3, 5, 3))).toBe('minecraft:chiseled_stone_bricks')
-    expect(blocks.get(blockKey(6, 11, 6))).toBe('minecraft:lantern[hanging=true]')
+    // The 11-high arena lowers its lantern to y 4 on a chain.
+    expect(blocks.get(blockKey(6, 4, 6))).toBe('minecraft:lantern[hanging=true]')
+    expect(blocks.get(blockKey(6, 11, 6))).toBe('minecraft:chain')
   })
 
   it('does not detail modules without a kit, or a subdivided arena', () => {

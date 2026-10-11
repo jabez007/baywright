@@ -42,7 +42,10 @@ describe('block totals', () => {
   const bom = computeBom(shell('stone-brick'))
 
   it('totals every placed block', () => {
-    expect(bom.totalBlocks).toBe(674)
+    // The shell, plus a lantern hung at y 4 on three chain blocks.
+    expect(bom.totalBlocks).toBe(674 + 4)
+    expect(countOf(bom.blocks, 'minecraft:lantern')).toBe(1)
+    expect(countOf(bom.blocks, 'minecraft:chain')).toBe(3)
   })
 
   it('splits the shell across the palette roles', () => {
@@ -63,7 +66,9 @@ describe('block totals', () => {
 
     expect(countOf(detailed.blocks, 'minecraft:tuff_brick_stairs')).toBe(24)
     expect(countOf(detailed.blocks, 'minecraft:oxidized_copper')).toBe(44)
-    expect(countOf(detailed.blocks, 'minecraft:copper_bulb')).toBe(1)
+    // The 11-high room lowers its bulb to y 4 on a chain filling y 5 to 11.
+    expect(countOf(detailed.blocks, 'minecraft:waxed_copper_bulb')).toBe(1)
+    expect(countOf(detailed.blocks, 'minecraft:chain')).toBe(7)
   })
 })
 

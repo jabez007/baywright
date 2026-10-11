@@ -9,7 +9,7 @@ import { encodeLitematic, litematicPlacement, LITEMATICA_DATA_VERSION } from '..
 import { bay, level, project } from './factory.js'
 import { litematicaEntry, readGzippedNbt, type NbtCompound } from './nbt-reader.js'
 
-/** One merged storage bay, one cell tall, all faces solid: a 13x5x13 shell. */
+/** One merged storage bay, one cell tall, all faces solid: a 13x5x13 shell and its lantern. */
 const box = () => project([level('L', 0, { A1: bay('merged') })], { name: 'Box' })
 
 async function decode(bytes: Uint8Array) {
@@ -45,7 +45,7 @@ describe('Litematica export', () => {
     expect(regionName).toBe('Box')
     expect(size).toEqual([13, 5, 13])
     expect(region['Position']).toEqual({ x: 0, y: 0, z: 0 })
-    expect(palette).toEqual(['minecraft:air', 'minecraft:polished_andesite', 'minecraft:stone_bricks'])
+    expect(palette).toEqual(['minecraft:air', 'minecraft:lantern[hanging=true]', 'minecraft:polished_andesite', 'minecraft:stone_bricks'])
     for (const list of ['TileEntities', 'Entities', 'PendingBlockTicks', 'PendingFluidTicks']) {
       expect(region[list]).toEqual([])
     }
@@ -60,10 +60,10 @@ describe('Litematica export', () => {
     expect(blockAt(6, 2, 6)).toBe('minecraft:air')
   })
 
-  it('counts the 482 shell blocks and 845-block volume in the metadata', async () => {
+  it('counts the 482 shell blocks, the lantern, and the 845-block volume in the metadata', async () => {
     const { root, size, blockAt } = await decode(await encodeLitematic(box()))
     const metadata = root['Metadata'] as NbtCompound
-    expect(metadata['TotalBlocks']).toBe(482)
+    expect(metadata['TotalBlocks']).toBe(482 + 1)
     expect(metadata['TotalVolume']).toBe(845)
     expect(metadata['RegionCount']).toBe(1)
     expect(metadata['EnclosingSize']).toEqual({ x: 13, y: 5, z: 13 })
@@ -75,7 +75,8 @@ describe('Litematica export', () => {
         for (let x = 0; x < size[0]!; x++) if (blockAt(x, y, z) !== 'minecraft:air') solid++
       }
     }
-    expect(solid).toBe(482)
+    expect(solid).toBe(482 + 1)
+    expect(blockAt(6, 3, 6)).toBe('minecraft:lantern[hanging=true]')
   })
 
   it('matches the resolved block map block for block across a whole template', async () => {
