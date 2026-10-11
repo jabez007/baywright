@@ -697,3 +697,24 @@ test('copies a level palette and changes one of its blocks', async ({ page }) =>
   await inspector.getByRole('combobox', { name: /^Palette/ }).selectOption({ label: 'Stone Brick' })
   await expect(inspector.getByLabel('Wall block')).toHaveValue('minecraft:stone_bricks')
 })
+
+test('shows where to build the Nether side of a portal room', async ({ page }) => {
+  await page.goto('/')
+  const inspector = page.getByRole('complementary', { name: 'Inspector' })
+  await inspector.getByLabel('World x of A1').fill('100')
+  await inspector.getByLabel('World x of A1').press('Enter')
+  await inspector.getByLabel('World z of A1').fill('-36')
+  await inspector.getByLabel('World z of A1').press('Enter')
+
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('nether-portal')
+  await page.getByRole('button', { name: 'Merged · 13×13 bay', exact: true }).click()
+  await page.locator('[data-plan-target="bay"][data-bay="A1"]').click()
+
+  await useCellTool(page, 'Select')
+  await page.getByRole('button', { name: /^A1 cell 1 · Nether Portal/ }).click()
+  // The opening's middle column is x 106, z -30: 106 / 8 = 13.25 and -30 / 8 = -3.75.
+  await expect(inspector.getByText('x 106, y 2, z -30')).toBeVisible()
+  await expect(inspector.getByText('x 13, y 33, z -4')).toBeVisible()
+  await expect(inspector.getByText(/running east to west/)).toBeVisible()
+})

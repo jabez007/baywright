@@ -3,9 +3,11 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { allCellRefs, resolveCell } from '../domain/geometry.js'
 import { MODULE_LIST } from '../domain/modules.js'
+import { portalPairs } from '../domain/portals.js'
 import {
   GRAIN_CELL_PITCH,
   GRAIN_LABELS,
+  type AABB,
   type Ceiling,
   type Face,
   type Grain,
@@ -76,6 +78,26 @@ const ceilingValue = computed(() => common(cells.value.map((cell) => cell.ceilin
 const paletteValue = computed(() => common(cells.value.map((cell) => cell.paletteOverride ?? '__inherit__')) ?? '__mixed__')
 const canDropCeiling = computed(() => cells.value.every((cell) => cell.heightCells === 2))
 const hasMergeGroup = computed(() => cells.value.some((cell) => cell.mergeGroup !== undefined))
+
+/**
+ * The portal frame in the one selected cell, with where its Nether side goes.
+ * Only a portal room resolves the plan here, since that touches every block.
+ */
+const portalRoom = computed(() => refs.value.length === 1 && cells.value[0]?.module === 'nether-portal')
+const portal = computed(() => {
+  if (!portalRoom.value) return undefined
+  const ref = refs.value[0]!
+  return portalPairs(store.project).find(
+    (pair) => pair.ref.levelId === ref.levelId && pair.ref.bayKey === ref.bayKey && pair.ref.cellIndex === ref.cellIndex,
+  )
+})
+
+/** The bottom middle block of a portal opening, where a player stands to go through. */
+function standingBlock(opening: AABB): string {
+  const x = opening.x0 + Math.floor((opening.x1 - opening.x0) / 2)
+  const z = opening.z0 + Math.floor((opening.z1 - opening.z0) / 2)
+  return `x ${x}, y ${opening.y0}, z ${z}`
+}
 
 function common<T>(values: readonly T[]): T | undefined {
   const first = values[0]
@@ -473,6 +495,26 @@ function mergeSelected(): void {
           </p>
         </div>
 
+        <fieldset v-if="portalRoom" class="stack">
+          <legend>Nether portal</legend>
+          <template v-if="portal">
+            <dl class="portal-link">
+              <dt>Overworld opening</dt>
+              <dd class="mono">{{ standingBlock(portal.overworld) }}</dd>
+              <dt>Nether opening</dt>
+              <dd class="mono">{{ standingBlock(portal.nether) }}</dd>
+            </dl>
+            <p class="field-help">
+              Build the same frame in the Nether, running {{ portal.axis === 'x' ? 'east to west' : 'north to south' }},
+              with the bottom middle of its opening on that block. Then each side leads to the other.
+            </p>
+          </template>
+          <p v-else class="field-help">
+            No frame fits this room. It needs an interior 5 blocks wide and high, a solid floor, and no wall opening in
+            line with the frame.
+          </p>
+        </fieldset>
+
         <label v-if="refs.length === 1">
           <span>Note</span>
           <textarea :value="cells[0]?.note ?? ''" rows="3" placeholder="Construction note" @change="setNote" />
@@ -619,6 +661,22 @@ legend {
   padding: 0 5px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.portal-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.portal-link dt {
+  color: var(--muted);
+}
+
+.portal-link dd {
+  margin: 0;
 }
 
 .field-help {

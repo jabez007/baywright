@@ -311,25 +311,48 @@ function openRouteEnds(cell: Cell, axis: Axis, outer: AABB): number[] {
  * frame that would stand in front of an opening, since a gap breaks it.
  */
 function netherPortalKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const portal = netherPortalOpening(cell, interior, context)
+  if (!portal) return new Map()
+  const { opening } = portal
+  const blocks: string[] = []
+  const ns = portal.axis === 'x'
+  const place = (across: number, y: number) => (ns ? key(across, y, opening.z0) : key(opening.x0, y, across))
+  const [lo, hi] = ns ? [opening.x0, opening.x1] : [opening.z0, opening.z1]
+  for (let c = lo; c <= hi; c++) blocks.push(place(c, opening.y0 - 1), place(c, opening.y1 + 1))
+  for (let y = opening.y0; y <= opening.y1; y++) blocks.push(place(lo - 1, y), place(hi + 1, y))
+  return new Map([['minecraft:obsidian', new Set(blocks)]])
+}
+
+/** Where a portal's air opening is, and the axis its frame spans. */
+export interface PortalOpening {
+  /** `x` for a frame that runs east to west, `z` for one that runs north to south. */
+  axis: 'x' | 'z'
+  /** The 3×3 air the player lights, one block thick. */
+  opening: AABB
+}
+
+/** The opening the Nether portal kit frames in this cell, or null when it places no frame. */
+export function netherPortalOpening(cell: Cell, interior: AABB, context: DetailContext): PortalOpening | null {
+  if (cell.module !== 'nether-portal') return null
   const door = entrance(cell) ?? 'n'
-  const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
+  const ns = door === 'n' || door === 's'
+  const frame = routeFrame(ns ? 'ns' : 'ew', interior)
   const wide = frame.across[1] - frame.across[0] + 1
   const high = interior.y1 - interior.y0 + 1
-  if (wide < 5 || high < 5 || cell.sockets.down === 'shaft') return new Map()
+  if (wide < 5 || high < 5 || cell.sockets.down === 'shaft') return null
 
   const along = midpoint(frame.along[0], frame.along[1])
   const centre = midpoint(frame.across[0], frame.across[1])
-  const blocks: string[] = []
-  for (let c = centre - 1; c <= centre + 1; c++) {
-    blocks.push(frame.place(along, interior.y0, c), frame.place(along, interior.y0 + 4, c))
-  }
-  for (let y = interior.y0 + 1; y <= interior.y0 + 3; y++) {
-    blocks.push(frame.place(along, y, centre - 2), frame.place(along, y, centre + 2))
-  }
   for (let c = centre - 2; c <= centre + 2; c++) {
-    if (isOpening(context, frame.column(along, c))) return new Map()
+    if (isOpening(context, frame.column(along, c))) return null
   }
-  return new Map([['minecraft:obsidian', new Set(blocks)]])
+  const [y0, y1] = [interior.y0 + 1, interior.y0 + 3]
+  return {
+    axis: ns ? 'x' : 'z',
+    opening: ns
+      ? { x0: centre - 1, x1: centre + 1, y0, y1, z0: along, z1: along }
+      : { x0: along, x1: along, y0, y1, z0: centre - 1, z1: centre + 1 },
+  }
 }
 
 export const OPPOSITE: Readonly<Record<WallFace, WallFace>> = { n: 's', e: 'w', s: 'n', w: 'e' }

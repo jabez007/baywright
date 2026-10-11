@@ -18,7 +18,7 @@ The current editor includes the useful foundations from the discussion:
 - Merged Arena cells export an exact 7×7 purpose core, a two-block circulation ring, and corner pillars.
 - Library cells export wall shelves, a lectern, and a rail around a gallery well.
 - Rail Line and Ice Highway cells export a continuous track. Rail lines get support frames, and ice lanes get edge barriers.
-- Nether Portal rooms export an unlit obsidian frame, and Super Smelters export a hopper-fed furnace row.
+- Nether Portal rooms export an unlit obsidian frame, and Super Smelters export a hopper-fed furnace row. The inspector shows where each portal's Nether side goes, and V10 warns when two portal rooms would link to each other's.
 - Trading Halls export stall dividers along both side walls around a clear aisle.
 - Item Trunks export a hopper chain that runs toward the nearest spine.
 - Every room that would have a floor dark enough for mobs to spawn gets its palette light, lowered on a chain in tall rooms, and V9 reports any floor still dark.
@@ -120,7 +120,7 @@ Run the ordinary validators against each proposal. Do not create a second geomet
 The original discussion does not change the established non-goals. Baywright does not need:
 
 - redstone-state or throughput simulation;
-- villager, minecart, mob, or portal behavior simulation;
+- villager, minecart, or mob behavior simulation;
 - automatic adaptation to terrain or an existing world save;
 - freehand voxel editing; or
 - exact replicas of vanilla structures.

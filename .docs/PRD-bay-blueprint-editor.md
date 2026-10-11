@@ -106,7 +106,7 @@ A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `so
 
 `spine`, `corridor`, `junction`, `rail-line`, `ice-highway`, `stair`, `vestibule`, `storage`, `vault`, `library`, `arena`, `workshop`, `nether-portal`, `trading-hall`, `prison-cell`, `farm`, `item-trunk`, `mine-access`, `super-smelter`, `auto-crafter`, `plenum-access`, `empty`
 
-Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5, V8, and V9. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
+Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5 and V8 through V10. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
 
 Decoration hints record builder intent. Exact detail kits are optional, and only some modules have one. A kit derives its coordinates from `cellInterior`, uses a palette role where one fits, and uses a fixed block ID for a functional block such as a bookshelf. It leaves clear every interior column in front of a wall opening, including windows and bars.
 
@@ -117,7 +117,7 @@ Decoration hints record builder intent. Exact detail kits are optional, and only
 
 Rail Line and Ice Highway continue their track through each open end of the route, onto the shared wall line. A track block on the wall line lands only where that wall is open, so a route never cuts into a solid neighbour. Neither kit applies to a cell with a `down` shaft. Blue ice stays a raw input in the bill of materials, because icebergs drop it.
 
-- **Nether Portal.** A coarse or merged room at least 5 blocks wide and high gets a 5x5 obsidian frame without corners at the middle of the room. The frame plane faces the first `corridor` or `arch` face. Its 3x3 opening stays air for the player to light. A frame column in front of an opening would break the frame, so the kit then places nothing.
+- **Nether Portal.** A coarse or merged room at least 5 blocks wide and high gets a 5x5 obsidian frame without corners at the middle of the room. The frame plane faces the first `corridor` or `arch` face. Its 3x3 opening stays air for the player to light. A frame column in front of an opening would break the frame, so the kit then places nothing. The inspector shows where the frame's Nether side goes, as V10 defines it.
 - **Super Smelter.** A room at least 4 blocks high gets a furnace row along the interior row opposite the entrance. Each column holds a downward output hopper at the floor, a furnace facing the entrance, and a downward input hopper on top. A fuel hopper stands in front of each furnace, pointing at it. Nothing is placed above the input hoppers, so a chest or hopper minecart can feed them. Furnaces roll back to 8 cobblestone in the raw inputs.
 - **Trading Hall.** A room at least 5 blocks wide, measured across its entrance, gets stalls along the two walls that run away from the entrance. Accent dividers two blocks deep and two high stand at every other block along each wall, starting at the entrance end, so each stall is one block wide and two deep. The middle stays clear as the aisle. The kit places no workstations, since each depends on the villager's profession.
 - **Item Trunk.** Items flow toward a spine on the same level. A dropped-ceiling Item Trunk with a `corridor` or `arch` face onto a spine, whose facing socket is also one of those, sends items through that face. Flow then spreads back through Item Trunk cells joined by such doorways whose centre lines meet. Each reached cell gets sideways-facing hoppers on the bottom row of its plenum: one run from each feeding face in to the centre, and one from the centre out to the exit face, ending in a hopper on the shared wall line. A trunk that nothing feeds starts its run at the face opposite its exit. A trunk with no such line to a spine gets no hoppers.
@@ -306,6 +306,19 @@ Since 1.18, hostile mobs spawn on a floor whose block light is 0. Within each bu
 
 Message: `"Level '{name}' has {count} dark floor blocks where mobs can spawn"`
 
+### V10: portal links (warning)
+
+Every Nether Portal frame needs a Nether side of its own. The suggested Nether opening has the same size and axis. Its middle column is the Overworld opening's middle column with x and z divided by 8 and rounded down. Its bottom is the Overworld opening's bottom y, kept between 33 and 119, so the frame stands above the lava sea and below the bedrock roof.
+
+Report a warning when two Nether sides, frames included, would share a block. For the other portals, check the trip back. A player stands anywhere in the Nether opening, 0.3 blocks in from either side and halfway through it. The game multiplies that position by 8, rounds down to a block, and links to the nearest Overworld portal block within 128 blocks on x and z, by straight-line distance, taking the lower block on a tie. Report a warning when that can be another portal room's opening. The trip in needs no check: each Nether side holds every block a player going in can arrive at, so its own portal is always nearest. Portals outside the plan are unknown and not checked.
+
+Messages:
+
+- `"The portals at {portal} and {portal} need Nether portals that would overlap"`
+- `"The Nether portal for {portal} can lead back to the portal at {portal}"`
+
+A portal reads `{bayKey} on level '{name}'`, with ` cell {n}` after the bay key in a fine or coarse bay.
+
 ## 9. Bill of materials
 
 Computed from `resolveBlocks`. Output:
@@ -399,8 +412,9 @@ src/
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
-    validate.ts           # V1 through V9
+    validate.ts           # V1 through V10
     lighting.ts           # block light for lamps and V9
+    portals.ts            # Nether portal pairs for V10
     bom.ts                # material and smelting calculations
     modules.ts            # module presets
     palettes.ts           # palette definitions

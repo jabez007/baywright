@@ -10,9 +10,11 @@ import {
   edgeDetailBlocks,
   interiorDetailBlocks,
   isDoorway,
+  netherPortalOpening,
   OPPOSITE,
   type DetailContext,
   type DetailMaterial,
+  type PortalOpening,
   type TrunkFlow,
   type WallFace,
 } from './details.js'
@@ -316,10 +318,21 @@ export function resolveLight(project: Project): LightField {
   return resolved(project).light
 }
 
+/** A Nether portal frame the resolver placed, and the cell that holds it. */
+export interface ResolvedPortal extends PortalOpening {
+  ref: CellRef
+}
+
+/** Every Nether portal frame in {@link resolveBlocks}, in cell order. */
+export function resolvePortals(project: Project): ResolvedPortal[] {
+  return resolved(project).portals.map((portal) => ({ ...portal, ref: { ...portal.ref }, opening: { ...portal.opening } }))
+}
+
 interface Resolved {
   serialized: string
   blocks: Map<string, string>
   light: LightField
+  portals: ResolvedPortal[]
 }
 
 function resolved(project: Project): Resolved {
@@ -333,7 +346,7 @@ function resolved(project: Project): Resolved {
 
 const blockCache = new WeakMap<Project, Resolved>()
 
-function computeBlocks(project: Project): { blocks: Map<string, string>; light: LightField } {
+function computeBlocks(project: Project): Omit<Resolved, 'serialized'> {
   const blocks = new Map<string, string>()
   const claimed = new Map<string, number>()
   for (const ref of builtCellRefs(project)) {
@@ -351,9 +364,9 @@ function computeBlocks(project: Project): { blocks: Map<string, string>; light: 
     }
   }
   carveValidMergeGroups(project, blocks)
-  placeInteriorDetails(project, blocks)
+  const portals = placeInteriorDetails(project, blocks)
   const light = placeLights(project, blocks)
-  return { blocks, light }
+  return { blocks, light, portals }
 }
 
 /** The chain a light hangs from when the room is too tall to light from its ceiling. */
@@ -456,8 +469,12 @@ function landingSpot(
   return null
 }
 
-/** Details land last because floor trim intentionally replaces the shell palette. */
-function placeInteriorDetails(project: Project, blocks: Map<string, string>): void {
+/**
+ * Details land last because floor trim intentionally replaces the shell
+ * palette. Returns the Nether portal frames the kits placed.
+ */
+function placeInteriorDetails(project: Project, blocks: Map<string, string>): ResolvedPortal[] {
+  const portals: ResolvedPortal[] = []
   const merged = validMergeGroupIds(project)
   const trunks = trunkFlows(project)
   const edges: Array<{ at: string; blockId: string; whereAir: string }> = []
@@ -471,6 +488,8 @@ function placeInteriorDetails(project: Project, blocks: Map<string, string>): vo
       plenum: cellPlenum(project, ref),
       trunk: trunks.get(refKey(ref)),
     }
+    const portal = netherPortalOpening(cell, interior, context)
+    if (portal) portals.push({ ...portal, ref })
     for (const [material, coords] of interiorDetailBlocks(bay, cell, interior, context)) {
       const blockId = detailBlockId(material, palette)
       for (const key of coords) blocks.set(key, blockId)
@@ -484,6 +503,7 @@ function placeInteriorDetails(project: Project, blocks: Map<string, string>): vo
   // cannot decide whether a neighbour's edge detail counts as a wall.
   const landing = edges.filter((edge) => !blocks.has(edge.whereAir))
   for (const edge of landing) blocks.set(edge.at, edge.blockId)
+  return portals
 }
 
 function detailBlockId(material: DetailMaterial, palette: Palette): string {

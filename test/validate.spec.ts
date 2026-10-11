@@ -8,6 +8,8 @@ import { blockKey, cellAABB, cellPlenum, resolveBlocks, validMergeGroupIds } fro
 import { validate, type Issue, type IssueId } from '../src/domain/validate.js'
 import type { Cell, Project, Socket } from '../src/domain/types.js'
 import { PALETTES } from '../src/domain/palettes.js'
+import { cellFromModule } from '../src/domain/modules.js'
+import { bayKeyOf } from '../src/domain/geometry.js'
 import { bay, level, project, sockets } from './factory.js'
 
 const only = (issues: Issue[], id: IssueId) => issues.filter((issue) => issue.id === id)
@@ -807,5 +809,66 @@ describe('V9 — dark floors', () => {
     ])
     expect(only(validate(p), 'V9')).toEqual([])
     expect(resolveBlocks(p).get(blockKey(6, 11, 6))).toBe('minecraft:lantern[hanging=true]')
+  })
+})
+
+// --------------------------------------------------------------------------
+// V10 — Portal links
+// --------------------------------------------------------------------------
+
+describe('V10 — portal links', () => {
+  const portalBay = (grain: 'coarse' | 'merged' = 'merged') => bay(grain, () => cellFromModule('nether-portal'))
+  const twoPortals = (i: number) =>
+    project([level('L', 64, { A1: portalBay(), [bayKeyOf(i, 0)]: portalBay() }, { name: 'Ground' })], { bayCols: 8 })
+
+  it('warns when two Nether sides would overlap', () => {
+    // Bays 12 apart put their Nether openings at x -1..1 and 1..3.
+    const issues = only(validate(twoPortals(1)), 'V10')
+    expect(issues).toEqual([
+      {
+        id: 'V10',
+        severity: 'warning',
+        message: "The portals at A1 on level 'Ground' and B1 on level 'Ground' need Nether portals that would overlap",
+        refs: [
+          { levelId: 'L', bayKey: 'A1', cellIndex: 0 },
+          { levelId: 'L', bayKey: 'B1', cellIndex: 0 },
+        ],
+      },
+    ])
+  })
+
+  it('accepts portal rooms three bays apart', () => {
+    expect(only(validate(twoPortals(3)), 'V10')).toEqual([])
+  })
+
+  it('names the cells of a split bay', () => {
+    const p = project([level('L', 64, { A1: portalBay('coarse') }, { name: 'Ground' })])
+    expect(only(validate(p), 'V10').map((issue) => issue.message)).toEqual([
+      "The portals at A1 cell 1 on level 'Ground' and A1 cell 2 on level 'Ground' need Nether portals that would overlap",
+      "The portals at A1 cell 3 on level 'Ground' and A1 cell 4 on level 'Ground' need Nether portals that would overlap",
+    ])
+  })
+
+  it('accepts stacked portal rooms whose Nether sides keep their heights', () => {
+    const p = project([level('L', 64, { A1: portalBay() }), level('M', 72, { A1: portalBay() })])
+    expect(only(validate(p), 'V10')).toEqual([])
+  })
+
+  it('warns when coming back can land at the other portal room', () => {
+    // From the far west of B1's Nether side, a player arrives at x 10, y 74,
+    // z 4. A1's opening at x 7, y 68, z 6 is 49 away squared; B1's own at
+    // x 17, y 74 is 53.
+    const p = project([
+      level('L', 64, { A1: portalBay() }, { name: 'Ground' }),
+      level('M', 72, { B1: portalBay() }, { name: 'Upper' }),
+    ])
+    const issues = only(validate(p), 'V10')
+    expect(issues.map((issue) => issue.message)).toEqual([
+      "The Nether portal for B1 on level 'Upper' can lead back to the portal at A1 on level 'Ground'",
+    ])
+    expect(issues[0]!.refs).toEqual([
+      { levelId: 'M', bayKey: 'B1', cellIndex: 0 },
+      { levelId: 'L', bayKey: 'A1', cellIndex: 0 },
+    ])
   })
 })

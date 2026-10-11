@@ -27,6 +27,7 @@ import {
   yIntervalsCollide,
 } from './geometry.js'
 import { lightEmission } from './lighting.js'
+import { portalConflicts, portalPairs, type PortalConflict } from './portals.js'
 import { SPINE_MODULE_ID, isBuiltCell } from './modules.js'
 import {
   GRAIN_AXIS_CELLS,
@@ -46,7 +47,7 @@ import {
 
 export type Severity = 'error' | 'warning'
 
-export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9'
+export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9' | 'V10'
 
 export interface Issue {
   id: IssueId
@@ -69,6 +70,7 @@ export function validate(project: Project): Issue[] {
     ...checkMergeGroups(project),
     ...checkWorldLimits(project),
     ...checkDarkFloors(project),
+    ...checkPortalLinks(project),
   ]
 }
 
@@ -841,6 +843,33 @@ export function checkDarkFloors(project: Project): Issue[] {
     })
   }
   return issues
+}
+
+// --------------------------------------------------------------------------
+// V10 — Portal links (warning)
+// --------------------------------------------------------------------------
+
+/**
+ * Each portal room needs its own Nether portal, built where `portalPairs`
+ * puts it. Warn when two of those would overlap, or when stepping back
+ * through one could come out at another portal room.
+ */
+export function checkPortalLinks(project: Project): Issue[] {
+  const name = (ref: CellRef) => {
+    const { level, bay } = resolveCell(project, ref)
+    const cell = bay.grain === 'merged' ? '' : ` cell ${ref.cellIndex + 1}`
+    return `${ref.bayKey}${cell} on level '${level.name}'`
+  }
+  const messages: Record<PortalConflict['kind'], (from: string, to: string) => string> = {
+    overlap: (from, to) => `The portals at ${from} and ${to} need Nether portals that would overlap`,
+    back: (from, to) => `The Nether portal for ${from} can lead back to the portal at ${to}`,
+  }
+  return portalConflicts(portalPairs(project)).map(({ kind, from, to }) => ({
+    id: 'V10',
+    severity: 'warning',
+    message: messages[kind](name(from.ref), name(to.ref)),
+    refs: [from.ref, to.ref],
+  }))
 }
 
 // --------------------------------------------------------------------------
