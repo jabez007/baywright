@@ -150,7 +150,8 @@ export function createProject(options: NewProjectOptions = {}): Project {
     bayCols,
     bayRows,
     levels: [createLevel({ y: 0, name: 'Ground', bayCols, bayRows, grain: options.grain })],
-    palettes: { ...PALETTES },
+    // A deep copy, so editing this project's palettes leaves the shipped ones alone.
+    palettes: structuredClone(PALETTES),
   }
 }
 

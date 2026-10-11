@@ -129,6 +129,7 @@ export function projectFromTemplate(templateId: ProjectTemplateId, newId: () => 
       level(newId, 'Stronghold core', 12, 'stone-brick', CORE, CORE_CELLS),
       level(newId, 'Mansion living', 20, 'dark-oak', LIVING, LIVING_CELLS),
     ],
-    palettes: { ...PALETTES },
+    // A deep copy, so editing this project's palettes leaves the shipped ones alone.
+    palettes: structuredClone(PALETTES),
   }
 }

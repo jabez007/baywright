@@ -1097,6 +1097,13 @@ describe('palette editing', () => {
     expect(s.project.palettes['stone-brick']!.blocks.light).toBe('minecraft:lantern[hanging=true]')
   })
 
+  it('keeps a palette edit out of the next new project', () => {
+    const s = store()
+    s.setPaletteBlock('stone-brick', 'floor', 'minecraft:deepslate_tiles')
+    s.newProject()
+    expect(s.project.palettes['stone-brick']!.blocks.floor).toBe('minecraft:stone_bricks')
+  })
+
   it('rejects text that is not a block ID', () => {
     const s = store()
     for (const bad of ['', 'Stone Bricks', 'minecraft:lantern[hanging]', 'a:b:c']) {
