@@ -87,6 +87,11 @@ export interface Project {
   id: string
   name: string
   origin: { x: number; z: number }
+  /**
+   * The y of the top block of the ground where the base stands, such as the
+   * grass. Everything at or below it is solid ground. Absent when unknown.
+   */
+  surfaceY?: number
   /** How many letters (bay columns, the i axis). */
   bayCols: number
   /** How many numbers (bay rows, the j axis). */

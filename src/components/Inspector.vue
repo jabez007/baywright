@@ -144,6 +144,13 @@ function setOrigin(axis: 'x' | 'z', event: Event): void {
   input.value = String(store.project.origin[axis])
 }
 
+function setSurface(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const text = input.value.trim()
+  run(() => store.setSurfaceY(text === '' ? null : Number(text)))
+  input.value = store.project.surfaceY === undefined ? '' : String(store.project.surfaceY)
+}
+
 function moveLevel(event: Event): void {
   const current = level.value
   if (current) run(() => store.setLevelY(current.id, Number(valueOf(event))))
@@ -369,6 +376,20 @@ function mergeSelected(): void {
             </label>
           </div>
           <p class="field-help">The north-west corner of bay A1 in your world. Exports use these coordinates.</p>
+          <label>
+            <span>Ground surface y</span>
+            <input
+              :value="store.project.surfaceY ?? ''"
+              type="number"
+              step="1"
+              placeholder="Not set"
+              @change="setSurface"
+            />
+          </label>
+          <p class="field-help">
+            The y of the top block of the ground, such as the grass. The materials panel then counts what you dig. Leave
+            it blank if the whole base stands above ground.
+          </p>
         </fieldset>
       </form>
 

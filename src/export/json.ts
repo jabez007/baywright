@@ -15,6 +15,8 @@ import { PALETTES } from '../domain/palettes.js'
 import {
   MAX_BAY_FIELD,
   GRAIN_CELL_PITCH,
+  WORLD_MAX_Y,
+  WORLD_MIN_Y,
   cellCount,
   isSocketValidForFace,
   type Bay,
@@ -95,6 +97,7 @@ export function validateProject(raw: unknown): Project {
     levels: parsedLevels,
     palettes,
   }
+  if (doc['surfaceY'] !== undefined) project.surfaceY = worldY(doc['surfaceY'], '$.surfaceY')
 
   if (project.levels.length === 0) throw new ProjectParseError('a project needs at least one level', '$.levels')
 
@@ -334,6 +337,14 @@ function integer(value: unknown, path: string): number {
     throw new ProjectParseError(`expected an integer, got ${describe(value)}`, path)
   }
   return value
+}
+
+function worldY(value: unknown, path: string): number {
+  const y = integer(value, path)
+  if (y < WORLD_MIN_Y || y > WORLD_MAX_Y) {
+    throw new ProjectParseError(`expected a y from ${WORLD_MIN_Y} to ${WORLD_MAX_Y}, got ${y}`, path)
+  }
+  return y
 }
 
 function positiveInteger(value: unknown, path: string): number {

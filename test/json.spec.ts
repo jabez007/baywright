@@ -20,6 +20,11 @@ describe('round trip', () => {
     expect(parseProject(serializeProject(original))).toEqual(original)
   })
 
+  it('keeps the ground surface y', () => {
+    const original = project([level('ground', 0, {})], { surfaceY: -12 })
+    expect(parseProject(serializeProject(original)).surfaceY).toBe(-12)
+  })
+
   it('preserves the optional cell fields', () => {
     const original = project([
       level('ground', 0, {
@@ -87,6 +92,11 @@ describe('defensive import', () => {
   it('rejects malformed JSON with the path', () => {
     expect(() => parseProject('{ nope')).toThrow(ProjectParseError)
     expect(() => parseProject('{ nope')).toThrow(/^\$:/)
+  })
+
+  it('rejects a surface y that is not a whole block inside the world', () => {
+    expect(mangle((doc) => (doc.surfaceY = 62.5))).toThrow(/^\$\.surfaceY: expected an integer/)
+    expect(mangle((doc) => (doc.surfaceY = 400))).toThrow(/^\$\.surfaceY: expected a y from -64 to 319, got 400/)
   })
 
   it('rejects an unknown schemaVersion', () => {

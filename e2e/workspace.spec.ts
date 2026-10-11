@@ -718,3 +718,28 @@ test('shows where to build the Nether side of a portal room', async ({ page }) =
   await expect(inspector.getByText('x 13, y 33, z -4')).toBeVisible()
   await expect(inspector.getByText(/running east to west/)).toBeVisible()
 })
+
+test('counts the digging for a room below the ground surface', async ({ page }) => {
+  await page.goto('/')
+  const inspector = page.getByRole('complementary', { name: 'Inspector' })
+  await inspector.getByLabel('Ground surface y').fill('10')
+  await inspector.getByLabel('Ground surface y').press('Enter')
+
+  await useCellTool(page, 'Paint')
+  await page.getByLabel('Module', { exact: true }).selectOption('storage')
+  await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
+
+  await page.getByRole('button', { name: 'Materials', exact: true }).click()
+  const digging = page.getByRole('region', { name: 'Digging' })
+  // A fine cell one high is 5 × 5 × 5 blocks, all of it below y 6, where dirt gives way to stone.
+  await expect(digging).toContainText('125 blocks')
+  await expect(digging).toContainText('At or below the ground surface at y 10')
+  await expect(digging.getByRole('listitem').filter({ hasText: 'Ground · underground' })).toContainText('125')
+  await expect(digging.getByRole('listitem').filter({ hasText: 'cobblestone' })).toContainText('1 stack + 61')
+
+  // Back to the level inspector, which holds the project fields.
+  await page.keyboard.press('Escape')
+  await inspector.getByLabel('Ground surface y').fill('')
+  await inspector.getByLabel('Ground surface y').press('Enter')
+  await expect(digging).toHaveCount(0)
+})

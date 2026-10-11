@@ -211,6 +211,29 @@ describe('the world origin', () => {
   })
 })
 
+describe('the ground surface', () => {
+  it('sets and clears the surface y as undoable steps', () => {
+    const s = store()
+    expect(s.project.surfaceY).toBeUndefined()
+    s.setSurfaceY(63)
+    expect(s.project.surfaceY).toBe(63)
+    s.setSurfaceY(null)
+    expect('surfaceY' in s.project).toBe(false)
+    s.undo()
+    expect(s.project.surfaceY).toBe(63)
+    s.undo()
+    expect(s.project.surfaceY).toBeUndefined()
+  })
+
+  it('rejects a surface that is not a whole block inside the world', () => {
+    const s = store()
+    expect(() => s.setSurfaceY(62.5)).toThrow('surface y must be an integer, got 62.5')
+    expect(() => s.setSurfaceY(320)).toThrow('surface y 320 is outside the world, y -64 to 319')
+    expect(() => s.setSurfaceY(-65)).toThrow('surface y -65 is outside the world, y -64 to 319')
+    expect(s.project.surfaceY).toBeUndefined()
+  })
+})
+
 describe('levels', () => {
   it('refuses to remove the final level', () => {
     const s = store()

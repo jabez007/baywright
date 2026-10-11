@@ -32,7 +32,7 @@ Drawing, palettes, and exports support the main job: finding these errors before
 - Not a world editor. The app never reads or writes save files.
 - Not a general voxel editor. Everything snaps to the bay lattice; there is no freehand block placement.
 - No redstone or mob simulation. Block light is modelled only to hang lamps and to find floors where hostile mobs can spawn, which V9 reports.
-- No terrain, no biomes, no existing-world context.
+- No terrain, no biomes, no existing-world context. One optional number, the ground surface y, treats everything at or below it as plain solid ground so the materials list can count the digging.
 - No multiplayer, no cloud sync, no sharing in v1.
 
 ## 5. Domain model (normative)
@@ -192,6 +192,7 @@ interface Project {
   id: string
   name: string
   origin: { x: number; z: number }
+  surfaceY?: number          // top block of the ground; absent when unknown
   bayCols: number            // how many letters
   bayRows: number            // how many numbers
   levels: Level[]             // sparse, kept sorted ascending by y
@@ -332,6 +333,7 @@ Computed from `resolveBlocks`. Output:
   - planks ← logs (4:1)
 
 - A furnace-time estimate for the smelting chain, assuming 10 seconds per item per furnace, with a configurable furnace count.
+- When the project has a `surfaceY`, a digging count: every block position inside a built cell's outer bounds at or below `surfaceY`, walls included, since the plan places its own walls. A position two levels share counts once, on the lower level. Each level with built cells is underground when all its cells end at or below the surface, above ground when all start above it, and partly underground otherwise. The rough yield treats the top 4 blocks of ground as dirt, the rest as stone that drops cobblestone, and anything below y 0 as deepslate that drops cobbled deepslate. Ores, caves, and water are ignored.
 
 The BOM panel recomputes 200ms after the latest document change.
 

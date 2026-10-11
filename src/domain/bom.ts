@@ -5,8 +5,8 @@
  * exporter uses. The UI is responsible for debouncing the recompute (200ms is
  * fine); nothing here caches.
  */
-import { resolveBlocks } from './geometry.js'
-import type { Project } from './types.js'
+import { builtCellRefs, cellAABB, resolveBlocks, sortedLevels } from './geometry.js'
+import type { AABB, Project } from './types.js'
 
 /** Every block the shipped palettes use stacks to 64. */
 export const STACK_SIZE = 64
@@ -151,6 +151,29 @@ export interface Bom {
   /** What to gather, after rolling craftables back to their raw inputs. */
   rawInputs: BomEntry[]
   smelting: SmeltingEstimate
+  /** What building into the ground takes, or null when the surface is unknown. */
+  digging: Digging | null
+}
+
+/** Where a level's built cells sit against the ground. */
+export type GroundPlacement = 'underground' | 'partly' | 'above'
+
+export interface LevelDigging {
+  levelId: string
+  name: string
+  ground: GroundPlacement
+  /** Blocks dug for this level. A plane it shares with the level below counts there. */
+  blocks: number
+}
+
+export interface Digging {
+  surfaceY: number
+  /** Every block at or below the surface inside a built cell, walls included. */
+  blocks: number
+  /** Roughly what the digging gives back, most first. */
+  yields: BomEntry[]
+  /** Each level with built cells, lowest first. */
+  levels: LevelDigging[]
 }
 
 export interface BomOptions {
@@ -188,7 +211,7 @@ export function formatStacks(total: number): string {
 // --------------------------------------------------------------------------
 
 export function computeBom(project: Project, options: BomOptions = {}): Bom {
-  return bomFromBlocks(resolveBlocks(project), options)
+  return { ...bomFromBlocks(resolveBlocks(project), options), digging: computeDigging(project) }
 }
 
 /** The same computation over a block map, for exporters and tests. */
@@ -205,7 +228,87 @@ export function bomFromBlocks(blocks: ReadonlyMap<string, string>, options: BomO
     totalBlocks,
     rawInputs: toEntries(raw),
     smelting: estimateSmelting(smelts, furnaces),
+    digging: null,
   }
+}
+
+// --------------------------------------------------------------------------
+// Digging
+// --------------------------------------------------------------------------
+
+/** How many of the ground's top blocks are dirt, as under most grass. */
+export const DIRT_DEPTH = 4
+
+/**
+ * Every built cell below the surface is dug out whole, walls included, since
+ * the plan places its own walls. The yield assumes plain ground: dirt at the
+ * top, then stone, which drops cobblestone, then deepslate below y 0. Ores,
+ * caves, and water change the real numbers.
+ */
+function computeDigging(project: Project): Digging | null {
+  const surfaceY = project.surfaceY
+  if (surfaceY === undefined) return null
+
+  const boxesByLevel = new Map<string, AABB[]>()
+  for (const ref of builtCellRefs(project)) {
+    const boxes = boxesByLevel.get(ref.levelId) ?? []
+    boxes.push(cellAABB(project, ref))
+    boxesByLevel.set(ref.levelId, boxes)
+  }
+
+  const all = [...boxesByLevel.values()].flat()
+  if (all.length === 0) return { surfaceY, blocks: 0, yields: [], levels: [] }
+  const bounds = {
+    x0: Math.min(...all.map((box) => box.x0)),
+    y0: Math.min(...all.map((box) => box.y0)),
+    z0: Math.min(...all.map((box) => box.z0)),
+    x1: Math.max(...all.map((box) => box.x1)),
+    z1: Math.max(...all.map((box) => box.z1)),
+  }
+  const [sizeX, sizeZ] = [bounds.x1 - bounds.x0 + 1, bounds.z1 - bounds.z0 + 1]
+  const sizeY = Math.max(0, surfaceY - bounds.y0 + 1)
+  const dug = new Uint8Array(sizeX * sizeY * sizeZ)
+
+  const yields = new Map<string, number>()
+  const levels: LevelDigging[] = []
+  let total = 0
+  for (const level of sortedLevels(project)) {
+    const boxes = boxesByLevel.get(level.id)
+    if (!boxes) continue
+    let blocks = 0
+    for (const box of boxes) {
+      for (let y = box.y0; y <= Math.min(box.y1, surfaceY); y++) {
+        let layer = 0
+        for (let x = box.x0; x <= box.x1; x++) {
+          for (let z = box.z0; z <= box.z1; z++) {
+            const index = ((y - bounds.y0) * sizeX + (x - bounds.x0)) * sizeZ + (z - bounds.z0)
+            if (dug[index]) continue
+            dug[index] = 1
+            layer++
+          }
+        }
+        if (layer === 0) continue
+        const drop = groundDrop(y, surfaceY)
+        yields.set(drop, (yields.get(drop) ?? 0) + layer)
+        blocks += layer
+      }
+    }
+    total += blocks
+    levels.push({ levelId: level.id, name: level.name, ground: groundPlacement(boxes, surfaceY), blocks })
+  }
+  return { surfaceY, blocks: total, yields: toEntries(yields), levels }
+}
+
+/** What mining one block of plain ground at height `y` drops. */
+function groundDrop(y: number, surfaceY: number): string {
+  if (y > surfaceY - DIRT_DEPTH) return 'minecraft:dirt'
+  return y < 0 ? 'minecraft:cobbled_deepslate' : 'minecraft:cobblestone'
+}
+
+function groundPlacement(boxes: readonly AABB[], surfaceY: number): GroundPlacement {
+  if (boxes.every((box) => box.y1 <= surfaceY)) return 'underground'
+  if (boxes.every((box) => box.y0 > surfaceY)) return 'above'
+  return 'partly'
 }
 
 /**

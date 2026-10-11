@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 
-import { computeBom, type Bom } from '../domain/bom.js'
+import { computeBom, type Bom, type GroundPlacement } from '../domain/bom.js'
 import { useProjectStore } from '../stores/project.js'
 
 const store = useProjectStore()
@@ -49,6 +49,12 @@ onBeforeUnmount(() => {
   stopFurnaceWatch()
 })
 
+const GROUND_LABELS: Readonly<Record<GroundPlacement, string>> = {
+  underground: 'underground',
+  partly: 'partly underground',
+  above: 'above ground',
+}
+
 function blockName(blockId: string): string {
   return blockId.replace(/^minecraft:/, '').replaceAll('_', ' ')
 }
@@ -90,16 +96,41 @@ function blockName(blockId: string): string {
         </ol>
       </div>
 
-      <div class="smelting">
-        <label>
-          <span>Furnaces</span>
-          <input v-model.number="furnaces" type="number" min="1" step="1" @change="normalizeFurnaces" />
-        </label>
-        <div>
-          <span class="muted">Smelting duration</span>
-          <strong class="duration mono">{{ bom.smelting.label }}</strong>
-          <small class="muted">{{ bom.smelting.items.toLocaleString() }} item{{ bom.smelting.items === 1 ? '' : 's' }}</small>
+      <div class="side">
+        <div class="smelting">
+          <label>
+            <span>Furnaces</span>
+            <input v-model.number="furnaces" type="number" min="1" step="1" @change="normalizeFurnaces" />
+          </label>
+          <div>
+            <span class="muted">Smelting duration</span>
+            <strong class="duration mono">{{ bom.smelting.label }}</strong>
+            <small class="muted">{{ bom.smelting.items.toLocaleString() }} item{{ bom.smelting.items === 1 ? '' : 's' }}</small>
+          </div>
         </div>
+
+        <section v-if="bom.digging" class="digging" aria-labelledby="digging-title">
+          <h3 id="digging-title">Digging</h3>
+          <div>
+            <strong class="mono">{{ bom.digging.blocks.toLocaleString() }} blocks</strong>
+            <small class="muted">At or below the ground surface at y {{ bom.digging.surfaceY }}</small>
+          </div>
+          <ol class="materials">
+            <li v-for="entry in bom.digging.levels" :key="entry.levelId">
+              <span>{{ entry.name }} · {{ GROUND_LABELS[entry.ground] }}</span>
+              <strong class="mono">{{ entry.blocks.toLocaleString() }}</strong>
+            </li>
+          </ol>
+          <template v-if="bom.digging.yields.length > 0">
+            <h3>Gives back, roughly</h3>
+            <ol class="materials">
+              <li v-for="entry in bom.digging.yields" :key="entry.blockId">
+                <span :title="entry.blockId">{{ blockName(entry.blockId) }}</span>
+                <strong class="mono">{{ entry.stacks.label }}</strong>
+              </li>
+            </ol>
+          </template>
+        </section>
       </div>
     </div>
   </section>
@@ -190,6 +221,31 @@ h3 {
   font-size: 11px;
 }
 
+.side {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.digging {
+  display: grid;
+  gap: 8px;
+}
+
+.digging h3 {
+  margin: 0;
+}
+
+.digging div {
+  display: grid;
+  gap: 4px;
+}
+
+.digging small {
+  font-size: 11px;
+}
+
 .smelting {
   display: grid;
   align-content: start;
@@ -236,7 +292,7 @@ h3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .smelting {
+  .side {
     grid-column: 1 / -1;
   }
 }
@@ -246,7 +302,7 @@ h3 {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .smelting {
+  .side {
     grid-column: auto;
   }
 }

@@ -178,3 +178,54 @@ describe('bomFromBlocks', () => {
     expect(countOf(bom.rawInputs, 'minecraft:oak_log')).toBe(2)
   })
 })
+
+describe('digging', () => {
+  // One merged bay is 13 × 13 = 169 blocks a layer, walls included.
+  const LAYER = 169
+  const buried = (...levels: Array<[string, number, 1 | 2]>) =>
+    project(levels.map(([id, y, heightCells]) => level(id, y, { A1: bay('merged', () => ({ heightCells })) }, { name: id })))
+
+  it('digs nothing when the ground surface is unknown', () => {
+    expect(computeBom(buried(['Deep', -8, 2])).digging).toBeNull()
+  })
+
+  it('digs out every block of a buried room, walls included, and counts what it gives back', () => {
+    // y -8 to 0: eight layers of deepslate below y 0 and one of stone at y 0.
+    const p = { ...buried(['Deep', -8, 2]), surfaceY: 63 }
+    const digging = computeBom(p).digging!
+    expect(digging.surfaceY).toBe(63)
+    expect(digging.blocks).toBe(9 * LAYER)
+    expect(digging.yields.map(({ blockId, count }) => [blockId, count])).toEqual([
+      ['minecraft:cobbled_deepslate', 8 * LAYER],
+      ['minecraft:cobblestone', LAYER],
+    ])
+    expect(digging.levels).toEqual([{ levelId: 'Deep', name: 'Deep', ground: 'underground', blocks: 9 * LAYER }])
+  })
+
+  it('takes the top four blocks of ground as dirt', () => {
+    // y 60 to 64 against a surface at 62: layers 60, 61 and 62 lie in the ground.
+    const p = { ...buried(['Half', 60, 1]), surfaceY: 62 }
+    const digging = computeBom(p).digging!
+    expect(digging.blocks).toBe(3 * LAYER)
+    expect(digging.yields.map(({ blockId, count }) => [blockId, count])).toEqual([['minecraft:dirt', 3 * LAYER]])
+    expect(digging.levels[0]!.ground).toBe('partly')
+
+    const deeper = computeBom({ ...buried(['Half', 52, 1]), surfaceY: 58 }).digging!
+    // y 52 to 56: 52 to 54 are stone, and 55 and 56 are within four of the surface.
+    expect(deeper.yields.map(({ blockId, count }) => [blockId, count])).toEqual([
+      ['minecraft:cobblestone', 3 * LAYER],
+      ['minecraft:dirt', 2 * LAYER],
+    ])
+  })
+
+  it('counts a plane two levels share once, on the lower level', () => {
+    const p = { ...buried(['Lower', -8, 2], ['Upper', 0, 1], ['Tower', 64, 1]), surfaceY: 63 }
+    const digging = computeBom(p).digging!
+    expect(digging.blocks).toBe(13 * LAYER)
+    expect(digging.levels).toEqual([
+      { levelId: 'Lower', name: 'Lower', ground: 'underground', blocks: 9 * LAYER },
+      { levelId: 'Upper', name: 'Upper', ground: 'underground', blocks: 4 * LAYER },
+      { levelId: 'Tower', name: 'Tower', ground: 'above', blocks: 0 },
+    ])
+  })
+})

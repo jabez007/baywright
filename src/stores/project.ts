@@ -25,6 +25,8 @@ import {
   LEVEL_PITCH,
   MAX_BAY_FIELD,
   GRAIN_CELL_PITCH,
+  WORLD_MAX_Y,
+  WORLD_MIN_Y,
   cellCount,
   isSocketValidForFace,
   type Bay,
@@ -358,6 +360,20 @@ export const useProjectStore = defineStore('project', () => {
     if (!Number.isInteger(z)) throw new Error(`origin z must be an integer, got ${z}`)
     mutate(() => {
       project.value.origin = { x, z }
+    })
+  }
+
+  /** Where the ground's top block is, or null when it is unknown. */
+  function setSurfaceY(y: number | null): void {
+    if (y !== null) {
+      if (!Number.isInteger(y)) throw new Error(`surface y must be an integer, got ${y}`)
+      if (y < WORLD_MIN_Y || y > WORLD_MAX_Y) {
+        throw new Error(`surface y ${y} is outside the world, y ${WORLD_MIN_Y} to ${WORLD_MAX_Y}`)
+      }
+    }
+    mutate(() => {
+      if (y === null) delete project.value.surfaceY
+      else project.value.surfaceY = y
     })
   }
 
@@ -1060,6 +1076,7 @@ export const useProjectStore = defineStore('project', () => {
     newProject,
     renameProject,
     setOrigin,
+    setSurfaceY,
     toJSON,
     addLevel,
     removeLevel,
