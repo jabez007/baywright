@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** PRD §10 v1 workspace: stack, plan, inspector, issues, and materials. */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { AssemblyProposal } from './domain/assembly.js'
@@ -25,12 +25,17 @@ import LevelRail from './components/LevelRail.vue'
 import PlanCanvas from './components/PlanCanvas.vue'
 import Toolbar from './components/Toolbar.vue'
 
+/** three.js is most of its weight, so it loads only when the 3D view opens. */
+const BlockView = defineAsyncComponent(() => import('./components/BlockView.vue'))
+
 const store = useProjectStore()
 const autosave = useAutosave(store)
 const route = useRoute()
 const router = useRouter()
 
-const view = ref<'bay' | 'cell'>('bay')
+const view = ref<'bay' | 'cell' | '3d'>('bay')
+/** The plan view to go back to from 3D. */
+const planView = ref<'bay' | 'cell'>('bay')
 type Tool = 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint' | 'space'
 
 const tool = ref<Tool>('select')
@@ -39,8 +44,18 @@ const mode = computed<'bay' | 'cell' | 'footprint' | 'space'>(() =>
     ? 'footprint'
     : tool.value === 'space'
       ? 'space'
-      : tool.value === 'stamp' || tool.value === 'layout' ? 'bay' : view.value,
+      : tool.value === 'stamp' || tool.value === 'layout' ? 'bay' : view.value === '3d' ? planView.value : view.value,
 )
+/** Tools that work on whole bays or the footprint bring the plan back. */
+const show3d = computed(() => view.value === '3d' && (tool.value === 'select' || tool.value === 'paint' || tool.value === 'empty'))
+
+watch(view, (next) => {
+  if (next !== '3d') planView.value = next
+})
+// The 3D view cannot be painted on, so painting goes back to the plan.
+watch(tool, (next) => {
+  if (view.value === '3d' && (next === 'paint' || next === 'empty')) view.value = planView.value
+})
 const moduleId = ref<string>(MODULE_LIST[0]?.id ?? 'empty')
 const patternId = ref<string>(BAY_PATTERN_LIST[0]?.id ?? '')
 const patternRotation = ref<PatternRotation>('auto')
@@ -86,7 +101,9 @@ async function closeInspector(): Promise<void> {
 
 /** The gestures differ per mode, and a hint for tools you cannot reach is noise. */
 const hint = computed(() =>
-  mode.value === 'footprint'
+  show3d.value
+    ? 'Drag to turn, right-drag to pan, scroll or pinch to zoom. Click a block to name it.'
+    : mode.value === 'footprint'
     ? 'Click or drag to add and remove bays. Ctrl/Cmd+Z undoes the last change.'
     : mode.value === 'space'
       ? 'Click or drag across absent bays to name intentional courtyards, gardens, caves, shafts, or future expansion.'
@@ -553,7 +570,7 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
             <strong>{{ store.currentLevel.name }}</strong>
             <span class="muted mono">y {{ store.currentLevel.y }} · {{ store.project.bayCols }}×{{ store.project.bayRows }} bays</span>
           </span>
-          <span class="legend" aria-label="Module categories">
+          <span v-if="!show3d" class="legend" aria-label="Module categories">
             <span v-for="category in CATEGORIES" :key="category.id" class="legend-item">
               <span class="swatch" :style="{ background: `var(--cat-${category.id})` }" />
               {{ category.label }}
@@ -575,9 +592,10 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
             Inspector
           </button>
         </header>
-        <div class="canvas-stage">
+        <div class="canvas-stage" :class="{ 'stage-3d': show3d }">
+          <BlockView v-if="booted && show3d" />
           <PlanCanvas
-            v-if="booted"
+            v-else-if="booted"
             ref="planCanvas"
             :mode="mode"
             :tool="tool === 'footprint' || tool === 'space' ? 'select' : tool"
@@ -800,6 +818,11 @@ async function onSized(options: { bayCols: number; bayRows: number; templateId?:
   display: grid;
   place-items: center;
   padding: 14px;
+}
+
+.canvas-stage.stage-3d {
+  display: block;
+  padding: 0;
 }
 
 .canvas-hint {

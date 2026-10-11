@@ -6,7 +6,7 @@
  * fine); nothing here caches.
  */
 import { builtCellRefs, cellAABB, parseBlockKey, resolveBlocks, sortedLevels } from './geometry.js'
-import type { AABB, Project } from './types.js'
+import type { AABB, Level, Project } from './types.js'
 
 /** Every block the shipped palettes use stacks to 64. */
 export const STACK_SIZE = 64
@@ -259,31 +259,50 @@ function materialsOf(blocks: ReadonlyMap<string, string>, options: BomOptions): 
 // --------------------------------------------------------------------------
 
 /**
- * Hand each placed block to the lowest level whose built cells hold it. A
- * level's rounding to whole logs and slabs happens per level, so its raw
- * inputs can add up to a little more than the whole base's.
+ * Hand each placed block to its level. A level rounds to whole logs and
+ * slabs on its own, so the levels' raw inputs can add up to a little more
+ * than the whole base's.
  */
 function materialsByLevel(project: Project, blocks: ReadonlyMap<string, string>, options: BomOptions): LevelMaterials[] {
+  const { levels, ownerAt } = blockOwners(project)
+  const split = levels.map(() => new Map<string, string>())
+  for (const [key, blockId] of blocks) {
+    const { x, y, z } = parseBlockKey(key)
+    split[ownerAt(x, y, z)]!.set(key, blockId)
+  }
+  return levels.map((level, index) => ({ levelId: level.id, name: level.name, ...materialsOf(split[index]!, options) }))
+}
+
+export interface BlockOwners {
+  /** Each level with built cells, lowest first. */
+  levels: Level[]
+  /** The index in `levels` of the level a block position belongs to. */
+  ownerAt(x: number, y: number, z: number): number
+}
+
+/**
+ * Which level each block belongs to: the lowest level whose built cells hold
+ * it, so a plane two levels share goes to the lower one, as digging does.
+ */
+export function blockOwners(project: Project): BlockOwners {
   const boxesByLevel = builtBoxesByLevel(project)
   const levels = sortedLevels(project).filter((level) => boxesByLevel.has(level.id))
-  if (levels.length === 0) return []
+  if (levels.length === 0) return { levels, ownerAt: () => 0 }
 
-  const all = [...boxesByLevel.values()].flat()
-  const owners = new BoxGrid(all)
+  const owners = new BoxGrid([...boxesByLevel.values()].flat())
   // Highest first, so the lower level writes last and keeps a shared plane.
   for (let index = levels.length - 1; index >= 0; index--) {
     for (const box of boxesByLevel.get(levels[index]!.id)!) owners.fill(box, index + 1)
   }
-
-  const split = levels.map(() => new Map<string, string>())
-  for (const [key, blockId] of blocks) {
-    const { x, y, z } = parseBlockKey(key)
-    const owner = owners.get(x, y, z)
-    // Every block the resolver places lies in a cell; this is only a guard.
-    const index = owner > 0 ? owner - 1 : Math.max(0, levels.filter((level) => level.y <= y).length - 1)
-    split[index]!.set(key, blockId)
+  return {
+    levels,
+    ownerAt(x, y, z) {
+      const owner = owners.get(x, y, z)
+      if (owner > 0) return owner - 1
+      // Every block the resolver places lies in a cell; this is only a guard.
+      return Math.max(0, levels.filter((level) => level.y <= y).length - 1)
+    },
   }
-  return levels.map((level, index) => ({ levelId: level.id, name: level.name, ...materialsOf(split[index]!, options) }))
 }
 
 /** Built cell boxes by level ID. */

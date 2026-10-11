@@ -2,7 +2,7 @@
 
 A browser-based floor plan and blueprint tool for designing modular Minecraft bases with 13x13 structural bays, 7x7 rooms, 5x5 utility units, service plenums, and multi-level vertical validation.
 
-**Status:** v1 implemented. Validators V3 and V5 were completed early. Litematica export is implemented. The 3D preview remains planned for v2. Parts of the v3 content catalog are implemented. See [the project direction](PROJECT-DIRECTION.md) for the ordered roadmap.
+**Status:** v1 implemented. Validators V3 and V5 were completed early. Litematica export and the 3D view with its layer guide are implemented. Parts of the v3 content catalog are implemented. See [the project direction](PROJECT-DIRECTION.md) for the ordered roadmap.
 **Stack:** Vue 3 + TypeScript + Vite
 
 ## 1. Problem
@@ -348,6 +348,7 @@ Four regions:
 - **Plan canvas.** Use SVG with separate view and tool controls. Bay view shows the full level. Cell view expands one bay and subdivides it by grain. Select is the default tool and never changes the plan. Paint applies a module. Stamp applies a rotated bay pattern. Empty clears modules without changing bay grain. Footprint adds or removes bays.
 
 - **Inspector.** Show properties for the selected level, bay, or cells. Controls include module, `heightCells`, ceiling, palette, sockets, opening widths, merge groups, and a cell note.
+- **3D view.** A third view, beside Bays and Cells, draws every resolved block. See §10.1.
 - **Output drawer.** Keep Issues and Materials collapsed until the user opens one. Group repeated connectivity warnings by bay. Clicking an issue changes to its level and selects the referenced cells. Materials shows placed blocks, raw inputs, and a smelting estimate.
 
 ### Interaction model
@@ -374,6 +375,16 @@ Use SVG rather than a canvas element. SVG supports Vue templates and per-target 
 
 Colour encodes module category, not module identity. Circulation, room, service, and storage get four distinct fills. Error cells get a dashed danger border rather than a fill change, so the category remains visible.
 
+### 10.1 3D view and layer guide
+
+The 3D view draws the blocks `resolveBlocks` places, so it shows what the Litematica export holds. Each block is a box coloured roughly like its texture. Thin blocks draw thin: slabs fill half a block, rails and carpets a sliver, fences, walls, chains and bars a post, and lanterns and torches a small box. Light sources draw unshaded and glass draws see-through. A block the colour table does not know gets a muted colour hashed from its name, so a block from a mod or a typed palette ID still draws the same way every time.
+
+Drag turns the view, right-drag pans, and scroll or pinch zooms. Angle and Top put the camera back over the whole base, at an angle or straight down with north at the top. A click that does not turn the view names the block under the pointer, with its full ID and world position.
+
+The layer slider runs from the lowest block's y to one stop past the highest, which shows every layer. At a layer, the view hides every block above it and fades the ones below toward the background, so the layer being built stands out over what is already built. The guide beside the view lists that layer's levels, its block count, the x and z it spans, and its placed blocks in stacks. A layer belongs to the levels that own its blocks, by the same rule as the per-level materials. Down and Up buttons step one layer at a time for a touch screen.
+
+The view renders only when something changes. The chunk with three.js loads only when the view first opens. Without WebGL, the view says so and the layer guide still works. Choosing Paint or Empty while in 3D goes back to the plan view the user came from, because nothing can be painted in 3D.
+
 ### Undo
 
 Snapshot the serialised project into a ring buffer of 50 on every mutation. Do not build a command pattern. Project documents contain intent rather than block maps, so cloning them is acceptable at the v1 field limit.
@@ -387,7 +398,7 @@ Snapshot the serialised project into a ring buffer of 50 on every mutation. Do n
 | `.litematic`      | v2       | Implemented without dependencies. A small NBT writer and the browser's `CompressionStream` produce a gzipped schema-6 file with data version 3955 (Minecraft 1.21.1). It holds one region whose bounds are the bounds of `resolveBlocks`, with palette index 0 as air. Palette IDs may carry block-state properties such as `[hanging=true]`. The app reports the world position of the schematic origin after each download. |
 | `.nbt` structure  | v3       | Planned. The vanilla structure format has a 48x48x48 size limit, so larger plans require splitting. |
 
-Prioritise Litematica export before the 3D preview because it makes the plan usable as an in-game build guide.
+Litematica export came before the 3D view because it puts the plan in the game. The 3D view's layer guide serves players without Litematica, such as Bedrock players on a Geyser server.
 
 ## 12. Tech stack and conventions
 
@@ -399,7 +410,7 @@ Prioritise Litematica export before the 3D preview because it makes the plan usa
 - **Vitest** for domain, store, export, and persistence tests.
 - **Playwright** for browser-level workspace tests in Chromium.
 - **ESLint** for Vue and TypeScript static analysis.
-- **`@tresjs/core`** is planned for the 3D preview. It is not installed in v1.
+- **three.js** draws the 3D view with one instanced mesh per finish. TresJS was planned, but the view is one scene that redraws on demand, and plain three.js keeps it smaller with nothing in between.
 - No CSS framework. Plain CSS with custom properties. Dark mode via `prefers-color-scheme`.
 
 ### Repo layout
@@ -419,6 +430,7 @@ src/
     lighting.ts           # block light for lamps and V9
     portals.ts            # Nether portal pairs for V10
     bom.ts                # material and smelting calculations
+    scene.ts              # block colours, shapes, and layers for the 3D view
     modules.ts            # module presets
     palettes.ts           # palette definitions
   stores/
@@ -429,6 +441,7 @@ src/
   components/
     AssembleDialog.vue
     BayTile.vue
+    BlockView.vue         # 3D view and layer guide
     BomPanel.vue
     CellTile.vue
     FieldSizeDialog.vue
@@ -489,11 +502,11 @@ The v0 acceptance flow is covered by the current app and persistence tests.
 
 The fixtures in §14 produce the expected geometry and validation results.
 
-### v2: connectivity, Litematica, and 3D, partial
+### v2: connectivity, Litematica, and 3D
 
 - Implemented: validators V3 and V5.
 - Implemented: `.litematic` export.
-- Planned: TresJS 3D preview with instanced meshes.
+- Implemented: a three.js 3D view with instanced meshes and a layer-by-layer build guide.
 
 ### v3: content and sharing, partial
 

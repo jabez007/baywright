@@ -254,7 +254,7 @@ function memo<T>(cache: Map<string, T>, blockId: string, compute: (blockId: stri
 }
 
 /** `minecraft:copper_bulb[lit=true]` -> `copper_bulb` and `{ lit: 'true' }`. */
-function parseBlockId(blockId: string): { name: string; state: Record<string, string> } {
+export function parseBlockId(blockId: string): { name: string; state: Record<string, string> } {
   const open = blockId.indexOf('[')
   const id = open === -1 ? blockId : blockId.slice(0, open)
   const name = id.slice(id.indexOf(':') + 1)

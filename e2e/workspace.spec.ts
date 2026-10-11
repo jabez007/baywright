@@ -764,3 +764,64 @@ test('lists the materials for one level at a time', async ({ page }) => {
   await bom.getByLabel('Materials for').selectOption({ label: 'Whole base' })
   await expect(bom.getByText('11,015 blocks')).toBeVisible()
 })
+
+async function openLayeredExample(page: Page): Promise<void> {
+  await page.goto('/')
+  await openProjectMenu(page)
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
+  await page.getByLabel('Starting point').selectOption('layered-base')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await openProjectMenu(page)
+}
+
+test('steps through the layers of the base in 3D', async ({ page }) => {
+  await openLayeredExample(page)
+  await page.getByRole('group', { name: 'View' }).getByRole('button', { name: '3D' }).click()
+
+  const view = page.getByRole('region', { name: '3D view' })
+  await expect(view.locator('canvas')).toBeVisible()
+  const layer = view.getByRole('region', { name: 'Layer guide' })
+  await expect(layer).toContainText('All layers')
+  await expect(layer).toContainText('11,015 blocks')
+  await expect(layer).toContainText('y -4 to 28')
+
+  await view.getByRole('slider', { name: 'Layer' }).fill('13')
+  await expect(layer).toContainText('Layer y 13')
+  await expect(layer).toContainText('Stronghold core')
+  await expect(layer).toContainText('400 blocks')
+  await expect(layer).toContainText('x 0 to 60, z 0 to 60')
+  await expect(layer.getByRole('listitem').filter({ hasText: 'bookshelf' })).toContainText('1 stack + 52')
+
+  await view.getByRole('button', { name: 'Down a layer' }).click()
+  await expect(layer).toContainText('Layer y 12')
+  await expect(layer).toContainText('Trial machinery, Stronghold core')
+  await expect(layer).toContainText('1,056 blocks')
+
+  await view.getByRole('slider', { name: 'Layer' }).fill('-4')
+  await expect(view.getByRole('button', { name: 'Down a layer' })).toBeDisabled()
+  await view.getByRole('button', { name: 'Up a layer' }).click()
+  await expect(layer).toContainText('Layer y -3')
+  await expect(layer.getByRole('listitem').filter({ hasText: 'rail' })).toContainText('50')
+})
+
+test('names the block you click in the 3D view', async ({ page }) => {
+  await openLayeredExample(page)
+  await page.getByRole('group', { name: 'View' }).getByRole('button', { name: '3D' }).click()
+  const view = page.getByRole('region', { name: '3D view' })
+
+  await view.getByRole('slider', { name: 'Layer' }).fill('13')
+  await view.getByRole('button', { name: 'Top', exact: true }).click()
+  // Straight down over the middle of the base, x 30.5 and z 30.5, nothing
+  // stands at y 13, so the first block is the stone brick floor below.
+  await view.locator('canvas').click()
+  const picked = view.getByRole('status')
+  await expect(picked).toContainText('stone bricks')
+  await expect(picked).toContainText('minecraft:stone_bricks')
+  await expect(picked).toContainText('x 30, y 12, z 30')
+
+  await view.getByRole('button', { name: 'Angle', exact: true }).click()
+  // Nothing can be painted in 3D, so painting goes back to the plan.
+  await page.getByRole('group', { name: 'Tool' }).getByRole('button', { name: 'Paint', exact: true }).click()
+  await expect(view).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Bays' })).toHaveAttribute('aria-pressed', 'true')
+})

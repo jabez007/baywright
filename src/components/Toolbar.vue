@@ -26,7 +26,7 @@ const LAYOUT_OPTIONS = LAYOUT_PATTERN_LIST.map((layout) => {
 })
 
 const props = defineProps<{
-  view: 'bay' | 'cell'
+  view: 'bay' | 'cell' | '3d'
   tool: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint' | 'space'
   moduleId: string
   patternId: string
@@ -41,7 +41,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'set-view': [value: 'bay' | 'cell']
+  'set-view': [value: 'bay' | 'cell' | '3d']
   'set-tool': [value: 'select' | 'paint' | 'stamp' | 'layout' | 'empty' | 'footprint' | 'space']
   'set-module': [value: string]
   'set-pattern': [value: string]
@@ -70,6 +70,7 @@ const GRAINS: readonly Grain[] = ['fine', 'coarse', 'merged']
 const VIEWS = [
   { id: 'bay', label: 'Bays' },
   { id: 'cell', label: 'Cells' },
+  { id: '3d', label: '3D' },
 ] as const
 
 const TOOLS = [

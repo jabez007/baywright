@@ -51,6 +51,7 @@ The v1 editor provides:
 
 - multi-level plans with level gaps, custom footprints, named negative space, and fields up to 8 by 8 bays;
 - bay and cell views, plus Footprint and Space tools on an SVG plan;
+- a 3D view of every placed block, with a layer slider that works as a build guide;
 - module painting, connection-aware bay stamps, rotatable multi-bay layouts, seeded base assembly with a preview, grain changes, merge groups, cell heights, ceilings, sockets, centred opening widths, notes, and palette overrides;
 - a sparse four-level starter project with mansion, stronghold, trial, and mineshaft palettes;
 - a level rail, selection inspector, issue list, and bill-of-materials panel;
@@ -76,6 +77,8 @@ A coarse or merged Library lines its walls with bookshelves three high and stand
 Since 1.18, hostile mobs spawn on any floor with a block light of 0, so every room that would have such a floor gets its palette light hung under the ceiling, near the centre. A room two or more cells tall lowers the light on a chain to 3 blocks above the floor, which lights the corners of an 11×11 room. A stair shaft has no ceiling, so its light hangs in the landing above. One light often reaches the floors of the rooms next to it, and then they get none of their own. Plenums above dropped ceilings get lights too. The Tuff & Copper palette uses a waxed, lit copper bulb. A copper bulb you place by hand starts unlit, so give it one redstone pulse. V9 warns about any floor still dark, and names the palette light when it gives no light at all.
 
 Select a Nether Portal room and the inspector shows two blocks: the bottom middle of its opening, and the same spot for its Nether side. The Nether side has the Overworld x and z divided by 8, and the same y, kept between y 33 and 119 so the frame clears the lava sea and the bedrock roof. Build the same frame there, facing the same way, and each portal leads to the other. V10 warns when two portal rooms would need overlapping Nether portals, or when stepping back through one could come out at another room. Bays three apart are safe on one level. Baywright can't see portals elsewhere in your world, so keep other portals well clear.
+
+Choose **3D** in the View group to see every block the plan places, coloured roughly like its texture. Drag to turn the view, right-drag to pan, and scroll or pinch to zoom. Click a block to see its ID and world position. Move the **Layer** slider down to build one layer at a time. Layers above disappear, layers below fade, and the guide lists the chosen layer's blocks with the x and z it covers. **Top** looks straight down with north at the top, so the layer reads like a grid to copy block by block. This works on a phone next to the game, and it's how to follow a plan without Litematica.
 
 The materials panel covers the whole base until you pick a level under **Materials for**. It then lists only that level's placed blocks, raw inputs, and furnace time, so you can gather for one level at a time. A floor that is also the roof of the level below counts with the lower level, since you build it to close that level in. Each level rounds its logs and slabs up on its own, so the levels' raw inputs can add up to a few more than the whole base's.
 

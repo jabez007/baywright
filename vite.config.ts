@@ -14,4 +14,9 @@ export default defineConfig(({ mode }) => ({
     // `npm run dev:lan` when another device genuinely needs to reach it.
     host: 'localhost',
   },
+  build: {
+    // The 3D view's chunk is mostly three.js, about 570 kB, and loads only
+    // when that view opens. The main bundle stays well under the default.
+    chunkSizeWarningLimit: 600,
+  },
 }))
