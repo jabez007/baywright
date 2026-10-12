@@ -81,12 +81,36 @@ const nextToBuild = computed(() => {
   return null
 })
 
+/**
+ * Ticking a layer moves up to the next one still to build, which is the one a
+ * player starts on next. Unticking stays put, since that corrects a mistake.
+ */
 const layerBuilt = computed({
   get: () => layer.value !== null && builtLayers.value.has(layer.value),
   set: (built: boolean) => {
-    if (layer.value !== null) store.setLayerBuilt(layer.value, built)
+    if (layer.value === null) return
+    store.setLayerBuilt(layer.value, built)
+    if (built) goUpToUnbuilt()
   },
 })
+
+/** For a base that already stands: every layer from the bottom to this one. */
+function builtUpToHere(): void {
+  if (layer.value === null || !bounds.value) return
+  store.setLayersBuilt(bounds.value.y0, layer.value, true)
+  goUpToUnbuilt()
+}
+
+function goUpToUnbuilt(): void {
+  const box = bounds.value
+  if (layer.value === null || !box) return
+  for (let y = layer.value + 1; y <= box.y1; y++) {
+    if (!builtLayers.value.has(y)) {
+      layer.value = y
+      return
+    }
+  }
+}
 
 function goToNext(): void {
   if (nextToBuild.value !== null) layer.value = nextToBuild.value
@@ -421,10 +445,14 @@ onBeforeUnmount(() => {
             <div class="layer-heading">
               <h3>Layer y {{ summary.y }}</h3>
               <label class="built">
-                <input v-model="layerBuilt" type="checkbox" />
+                <!-- Keyed, because v-model leaves the box ticked when one unbuilt layer follows another. -->
+                <input :key="summary.y" v-model="layerBuilt" type="checkbox" />
                 <span>Built</span>
               </label>
             </div>
+            <button v-if="bounds && summary.y > bounds.y0" type="button" class="built-below" @click="builtUpToHere">
+              Built up to here
+            </button>
             <p v-if="summary.levels.length > 0" class="muted">{{ summary.levels.join(', ') }}</p>
             <p class="mono">{{ summary.blocks.toLocaleString() }} blocks</p>
             <p v-if="summary.bounds" class="mono">
@@ -573,6 +601,10 @@ canvas {
   align-items: center;
   gap: 4px;
   font-size: 12px;
+}
+
+.built-below {
+  justify-self: start;
 }
 
 .readout {

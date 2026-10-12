@@ -264,6 +264,23 @@ describe('build progress', () => {
     expect(s.canUndo).toBe(false)
   })
 
+  it('ticks a run of layers at once, keeping the ones already ticked', () => {
+    const s = store()
+    s.setLayerBuilt(6, true)
+    s.setLayersBuilt(-2, 2, true)
+    expect(s.project.builtLayers).toEqual([-2, -1, 0, 1, 2, 6])
+    s.setLayersBuilt(1, 6, false)
+    expect(s.project.builtLayers).toEqual([-2, -1, 0])
+    expect(s.canUndo).toBe(false)
+  })
+
+  it('rejects a run that leaves the world or runs backwards, and changes nothing', () => {
+    const s = store()
+    expect(() => s.setLayersBuilt(310, 320, true)).toThrow('layer y 320 is outside the world, y -64 to 319')
+    expect(() => s.setLayersBuilt(4, 2, true)).toThrow('a run of layers must go up, got y 4 to 2')
+    expect(s.project.builtLayers).toBeUndefined()
+  })
+
   it('rejects a layer that is not a whole block inside the world', () => {
     const s = store()
     expect(() => s.setLayerBuilt(1.5, true)).toThrow('layer y must be an integer, got 1.5')

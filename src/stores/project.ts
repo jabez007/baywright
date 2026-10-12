@@ -390,13 +390,23 @@ export const useProjectStore = defineStore('project', () => {
 
   /** Tick one block layer off as built, or back. Not an undoable step. */
   function setLayerBuilt(y: number, built: boolean): void {
-    if (!Number.isInteger(y)) throw new Error(`layer y must be an integer, got ${y}`)
-    if (y < WORLD_MIN_Y || y > WORLD_MAX_Y) {
-      throw new Error(`layer y ${y} is outside the world, y ${WORLD_MIN_Y} to ${WORLD_MAX_Y}`)
+    setLayersBuilt(y, y, built)
+  }
+
+  /** Tick every layer from `y0` up to `y1` off as built, or back. Not an undoable step. */
+  function setLayersBuilt(y0: number, y1: number, built: boolean): void {
+    for (const y of [y0, y1]) {
+      if (!Number.isInteger(y)) throw new Error(`layer y must be an integer, got ${y}`)
+      if (y < WORLD_MIN_Y || y > WORLD_MAX_Y) {
+        throw new Error(`layer y ${y} is outside the world, y ${WORLD_MIN_Y} to ${WORLD_MAX_Y}`)
+      }
     }
+    if (y1 < y0) throw new Error(`a run of layers must go up, got y ${y0} to ${y1}`)
     const layers = new Set(project.value.builtLayers)
-    if (built) layers.add(y)
-    else layers.delete(y)
+    for (let y = y0; y <= y1; y++) {
+      if (built) layers.add(y)
+      else layers.delete(y)
+    }
     if (layers.size === 0) delete project.value.builtLayers
     else project.value.builtLayers = [...layers].sort((a, b) => a - b)
   }
@@ -1102,6 +1112,7 @@ export const useProjectStore = defineStore('project', () => {
     setOrigin,
     setSurfaceY,
     setLayerBuilt,
+    setLayersBuilt,
     toJSON,
     addLevel,
     removeLevel,

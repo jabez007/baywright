@@ -841,10 +841,13 @@ test('ticks off built layers, keeps them after a reload, and counts what is left
 
   await layer.getByRole('button', { name: 'Next to build' }).click()
   await expect(layer).toContainText('Layer y -4')
-  await layer.getByLabel('Built').check()
-  await layer.getByRole('button', { name: 'Next to build' }).click()
+  // Ticking a layer moves straight up to the next one, still unticked.
+  await layer.getByLabel('Built').click()
   await expect(layer).toContainText('Layer y -3')
-  await layer.getByLabel('Built').check()
+  await expect(layer).toContainText('1 of 33 layers built')
+  await expect(layer.getByLabel('Built')).not.toBeChecked()
+  await layer.getByLabel('Built').click()
+  await expect(layer).toContainText('Layer y -2')
   await expect(layer).toContainText('2 of 33 layers built')
   await expect(page.getByRole('status').filter({ hasText: 'Autosave status' })).toContainText('Saved')
 
@@ -864,6 +867,27 @@ test('ticks off built layers, keeps them after a reload, and counts what is left
   await expect(bom.getByText('10,377 blocks left')).toBeVisible()
   await leaveOut.uncheck()
   await expect(bom.getByText('11,072 blocks', { exact: true })).toBeVisible()
+})
+
+test('marks every layer up to the one in view as built', async ({ page }) => {
+  await openLayeredExample(page)
+  await page.getByRole('group', { name: 'View' }).getByRole('button', { name: '3D' }).click()
+  const view = page.getByRole('region', { name: '3D view' })
+  const layer = view.getByRole('region', { name: 'Layer guide' })
+
+  // A base already standing up to y 12, so y -4 to 12 are done.
+  await view.getByRole('slider', { name: 'Layer' }).fill('12')
+  await layer.getByRole('button', { name: 'Built up to here' }).click()
+  await expect(layer).toContainText('17 of 33 layers built')
+  await expect(layer).toContainText('Layer y 13')
+  await expect(layer.getByLabel('Built')).not.toBeChecked()
+  for (const y of ['12', '-4']) {
+    await view.getByRole('slider', { name: 'Layer' }).fill(y)
+    await expect(layer.getByLabel('Built')).toBeChecked()
+  }
+
+  await page.getByRole('button', { name: 'Materials', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Bill of materials' }).getByLabel('Leave out the 17 built layers')).toBeChecked()
 })
 
 test('names the block you click in the 3D view', async ({ page }) => {
