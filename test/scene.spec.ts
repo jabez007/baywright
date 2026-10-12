@@ -57,6 +57,52 @@ describe('blockLook', () => {
     expect(blockLook('minecraft:stone_bricks').shape).toBe('cube')
   })
 
+  describe('stairs', () => {
+    // Boxes from the vanilla stair models, in sixteenths of a block, as
+    // [x0, y0, z0, x1, y1, z1]. Facing names the side the step rises toward.
+    const parts = (blockId: string) => blockLook(blockId).parts.map((part) => part.map((edge) => edge * 16))
+
+    it('raises the step on the side the stair faces', () => {
+      expect(blockLook('minecraft:oak_stairs[facing=east]').shape).toBe('stairs')
+      expect(parts('minecraft:oak_stairs[facing=east,half=bottom,shape=straight]')).toEqual([
+        [0, 0, 0, 16, 8, 16],
+        [8, 8, 0, 16, 16, 16],
+      ])
+      expect(parts('minecraft:oak_stairs[facing=south]')[1]).toEqual([0, 8, 8, 16, 16, 16])
+      expect(parts('minecraft:oak_stairs[facing=west]')[1]).toEqual([0, 8, 0, 8, 16, 16])
+      expect(parts('minecraft:oak_stairs[facing=north]')[1]).toEqual([0, 8, 0, 16, 16, 8])
+    })
+
+    it('faces north when the ID gives no facing, as the game does', () => {
+      expect(parts('minecraft:stone_brick_stairs')).toEqual(parts('minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight]'))
+      expect(parts('minecraft:stone_brick_stairs')[1]).toEqual([0, 8, 0, 16, 16, 8])
+    })
+
+    it('hangs the step under the slab of an upside-down stair', () => {
+      expect(parts('minecraft:oak_stairs[facing=east,half=top]')).toEqual([
+        [0, 8, 0, 16, 16, 16],
+        [8, 0, 0, 16, 8, 16],
+      ])
+    })
+
+    it('turns corners as the outer and inner stair models do', () => {
+      // Facing east, left is north and right is south.
+      expect(parts('minecraft:oak_stairs[facing=east,shape=outer_left]').slice(1)).toEqual([[8, 8, 0, 16, 16, 8]])
+      expect(parts('minecraft:oak_stairs[facing=east,shape=outer_right]').slice(1)).toEqual([[8, 8, 8, 16, 16, 16]])
+      expect(parts('minecraft:oak_stairs[facing=east,shape=inner_left]').slice(1)).toEqual([
+        [8, 8, 0, 16, 16, 16],
+        [0, 8, 0, 8, 16, 8],
+      ])
+      expect(parts('minecraft:oak_stairs[facing=east,shape=inner_right]').slice(1)).toEqual([
+        [8, 8, 0, 16, 16, 16],
+        [0, 8, 8, 8, 16, 16],
+      ])
+      // Facing south, left is east: the corner an arena's north-west trim takes.
+      expect(parts('minecraft:oak_stairs[facing=south,shape=outer_left]').slice(1)).toEqual([[8, 8, 8, 16, 16, 16]])
+      expect(parts('minecraft:oak_stairs[facing=south,half=top,shape=outer_left]').slice(1)).toEqual([[8, 0, 8, 16, 8, 16]])
+    })
+  })
+
   it('makes light sources glow and glass see-through', () => {
     expect(blockLook('minecraft:waxed_copper_bulb[lit=true]').finish).toBe('glow')
     expect(blockLook('minecraft:copper_bulb').finish).toBe('solid')

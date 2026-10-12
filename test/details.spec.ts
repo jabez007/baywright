@@ -16,13 +16,39 @@ const ref: CellRef = { levelId: 'L1', bayKey: 'A1', cellIndex: 0 }
 
 describe('arena core and circulation ring', () => {
   it('marks a centred 7×7 core inside the 11×11 interior', () => {
-    const cell = arena.levels[0]!.bays['A1']!.cells[0]!
-    const details = interiorDetailBlocks(arena.levels[0]!.bays['A1']!, cell, cellInterior(arena, ref))
+    const trim = positionsOf(resolveBlocks(arena), 'minecraft:stone_brick_stairs')
 
-    expect(details.get('trim')?.size).toBe(24)
-    expect(details.get('trim')).toContain(blockKey(3, 0, 3))
-    expect(details.get('trim')).toContain(blockKey(9, 0, 9))
-    expect(details.get('trim')).not.toContain(blockKey(2, 0, 3))
+    expect(trim).toHaveLength(24)
+    expect(trim).toContain(blockKey(3, 0, 3))
+    expect(trim).toContain(blockKey(9, 0, 9))
+    expect(trim).not.toContain(blockKey(2, 0, 3))
+  })
+
+  it('faces every trim stair toward the core, with outer corners', () => {
+    // The step rises on the core side, as the game shapes a ring placed by hand.
+    const blocks = resolveBlocks(arena)
+    const at = (x: number, z: number) => blocks.get(blockKey(x, 0, z))
+
+    expect(at(6, 3)).toBe('minecraft:stone_brick_stairs[facing=south]')
+    expect(at(6, 9)).toBe('minecraft:stone_brick_stairs[facing=north]')
+    expect(at(3, 6)).toBe('minecraft:stone_brick_stairs[facing=east]')
+    expect(at(9, 6)).toBe('minecraft:stone_brick_stairs[facing=west]')
+    expect(at(3, 3)).toBe('minecraft:stone_brick_stairs[facing=south,shape=outer_left]')
+    expect(at(9, 3)).toBe('minecraft:stone_brick_stairs[facing=south,shape=outer_right]')
+    expect(at(3, 9)).toBe('minecraft:stone_brick_stairs[facing=north,shape=outer_right]')
+    expect(at(9, 9)).toBe('minecraft:stone_brick_stairs[facing=north,shape=outer_left]')
+  })
+
+  it('keeps a palette trim that is not a stair as the palette names it', () => {
+    const withTrim = (trim: string) =>
+      resolveBlocks(
+        project([level('L1', 0, { A1: bay('merged', () => cellFromModule('arena')) })], {
+          palettes: { ...PALETTES, 'stone-brick': { ...PALETTES['stone-brick']!, blocks: { ...PALETTES['stone-brick']!.blocks, trim } } },
+        }),
+      ).get(blockKey(6, 0, 3))
+
+    expect(withTrim('minecraft:chiseled_stone_bricks')).toBe('minecraft:chiseled_stone_bricks')
+    expect(withTrim('minecraft:oak_stairs[half=top]')).toBe('minecraft:oak_stairs[facing=south,half=top]')
   })
 
   it('places four full-height pillars and leaves the light to the resolver', () => {
@@ -49,7 +75,7 @@ describe('arena core and circulation ring', () => {
   it('resolves detail roles through the room palette', () => {
     const blocks = resolveBlocks(arena)
 
-    expect(blocks.get(blockKey(4, 0, 3))).toBe('minecraft:stone_brick_stairs')
+    expect(blocks.get(blockKey(4, 0, 3))).toBe('minecraft:stone_brick_stairs[facing=south]')
     expect(blocks.get(blockKey(3, 5, 3))).toBe('minecraft:chiseled_stone_bricks')
     // The 11-high arena lowers its lantern to y 4 on a chain.
     expect(blocks.get(blockKey(6, 4, 6))).toBe('minecraft:lantern[hanging=true]')

@@ -27,7 +27,7 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
-import { blockLook, buildScene, layerSummary, type BlockFinish, type BlockShape, type Scene } from '../domain/scene.js'
+import { blockLook, buildScene, layerSummary, type BlockFinish, type Scene } from '../domain/scene.js'
 import { useProjectStore } from '../stores/project.js'
 
 const store = useProjectStore()
@@ -72,16 +72,6 @@ function blockName(blockId: string): string {
 
 const FINISHES: readonly BlockFinish[] = ['solid', 'glow', 'glass']
 
-/** Where a shape sits in its block, as a centre offset and a scale, both from the block's corner. */
-const SHAPES: Readonly<Record<BlockShape, { centre: [number, number, number]; scale: [number, number, number] }>> = {
-  cube: { centre: [0.5, 0.5, 0.5], scale: [1, 1, 1] },
-  'bottom-slab': { centre: [0.5, 0.25, 0.5], scale: [1, 0.5, 1] },
-  'top-slab': { centre: [0.5, 0.75, 0.5], scale: [1, 0.5, 1] },
-  flat: { centre: [0.5, 0.05, 0.5], scale: [1, 0.1, 1] },
-  post: { centre: [0.5, 0.5, 0.5], scale: [0.25, 1, 0.25] },
-  small: { centre: [0.5, 0.4, 0.5], scale: [0.4, 0.5, 0.4] },
-}
-
 /** How far a layer below the chosen one fades toward the background. */
 const FADE = 0.55
 
@@ -89,7 +79,7 @@ interface Group {
   mesh: InstancedMesh
   /** Each instance's y, ascending, since blocks go in layer by layer. */
   ys: Int32Array
-  /** Each instance's index in the scene's blocks. */
+  /** Each instance's index in the scene's blocks. A stair has two or three instances. */
   blocks: Int32Array
   colours: Float32Array
 }
@@ -197,23 +187,29 @@ function fillWorld(next: Scene, refit: boolean): void {
   const colour = new Color()
   groups = FINISHES.filter((finish) => indices[finish].length > 0).map((finish) => {
     const members = indices[finish]
-    const mesh = new InstancedMesh(cube, materials[finish], members.length)
-    const ys = new Int32Array(members.length)
-    const colours = new Float32Array(members.length * 3)
-    members.forEach((blockIndex, instance) => {
+    const size = members.reduce((total, blockIndex) => total + blockLook(next.blocks[blockIndex]!.blockId).parts.length, 0)
+    const mesh = new InstancedMesh(cube, materials[finish], size)
+    const ys = new Int32Array(size)
+    const blocks = new Int32Array(size)
+    const colours = new Float32Array(size * 3)
+    let instance = 0
+    for (const blockIndex of members) {
       const block = next.blocks[blockIndex]!
       const look = blockLook(block.blockId)
-      const shape = SHAPES[look.shape]
-      position.set(block.x + shape.centre[0], block.y + shape.centre[1], block.z + shape.centre[2])
-      scale.set(...shape.scale)
-      mesh.setMatrixAt(instance, matrix.compose(position, rotation, scale))
       colour.setHex(look.colour, SRGBColorSpace)
-      colour.toArray(colours, instance * 3)
-      ys[instance] = block.y
-    })
+      for (const [x0, y0, z0, x1, y1, z1] of look.parts) {
+        position.set(block.x + (x0 + x1) / 2, block.y + (y0 + y1) / 2, block.z + (z0 + z1) / 2)
+        scale.set(x1 - x0, y1 - y0, z1 - z0)
+        mesh.setMatrixAt(instance, matrix.compose(position, rotation, scale))
+        colour.toArray(colours, instance * 3)
+        ys[instance] = block.y
+        blocks[instance] = blockIndex
+        instance++
+      }
+    }
     mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(colours), 3)
     world!.add(mesh)
-    return { mesh, ys, blocks: Int32Array.from(members), colours }
+    return { mesh, ys, blocks, colours }
   })
 
   if (refit) fitCamera('angle')

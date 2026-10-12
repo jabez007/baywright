@@ -8,8 +8,12 @@
  */
 import type { AABB, Bay, Cell, MaterialRole } from './types.js'
 
-/** A palette role, resolved per room, or a fixed block ID. */
-export type DetailMaterial = MaterialRole | `minecraft:${string}`
+/**
+ * A palette role, resolved per room, or a fixed block ID. A role may carry
+ * a block state, as in `trim[facing=south]`, that the resolver adds when the
+ * palette's block is a stair.
+ */
+export type DetailMaterial = MaterialRole | `${MaterialRole}[${string}]` | `minecraft:${string}`
 
 export type DetailBlocks = Map<DetailMaterial, Set<string>>
 
@@ -104,6 +108,9 @@ function galleryRail(cell: Cell, outer: AABB, interior: AABB, context: DetailCon
  * A merged arena has an 11×11 interior. Its centred 7×7 purpose core leaves
  * a two-block circulation ring on every side. The trim marks that boundary,
  * and four pillars rise from its corners. The resolver hangs its light.
+ *
+ * Trim stairs face the core, so their steps rise along its edge. Each corner
+ * takes the outer shape the game gives a ring placed by hand.
  */
 function arenaKit(bay: Bay, _cell: Cell, interior: AABB): DetailBlocks {
   if (bay.grain !== 'merged') return new Map()
@@ -115,16 +122,20 @@ function arenaKit(bay: Bay, _cell: Cell, interior: AABB): DetailBlocks {
     z1: interior.z1 - 2,
   }
   const out: DetailBlocks = new Map()
-  const trim = roleSet(out, 'trim')
+  const trim = (state: string) => roleSet(out, `trim[${state}]`)
   const floorY = interior.y0 - 1
-  for (let x = core.x0; x <= core.x1; x++) {
-    trim.add(key(x, floorY, core.z0))
-    trim.add(key(x, floorY, core.z1))
+  for (let x = core.x0 + 1; x < core.x1; x++) {
+    trim('facing=south').add(key(x, floorY, core.z0))
+    trim('facing=north').add(key(x, floorY, core.z1))
   }
-  for (let z = core.z0; z <= core.z1; z++) {
-    trim.add(key(core.x0, floorY, z))
-    trim.add(key(core.x1, floorY, z))
+  for (let z = core.z0 + 1; z < core.z1; z++) {
+    trim('facing=east').add(key(core.x0, floorY, z))
+    trim('facing=west').add(key(core.x1, floorY, z))
   }
+  trim('facing=south,shape=outer_left').add(key(core.x0, floorY, core.z0))
+  trim('facing=south,shape=outer_right').add(key(core.x1, floorY, core.z0))
+  trim('facing=north,shape=outer_right').add(key(core.x0, floorY, core.z1))
+  trim('facing=north,shape=outer_left').add(key(core.x1, floorY, core.z1))
 
   const accent = roleSet(out, 'accent')
   for (const [x, z] of [

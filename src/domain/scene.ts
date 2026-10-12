@@ -14,11 +14,15 @@ import type { AABB, Project } from './types.js'
 // --------------------------------------------------------------------------
 
 /**
- * A cube, or the part of one a thin block fills: slabs fill half, rails and
- * carpets a sliver at the bottom, fences and chains a post up the middle, and
- * lanterns and torches a small block in the middle.
+ * A cube, or the part of one a thin block fills: slabs fill half, stairs a
+ * half and a step, rails and carpets a sliver at the bottom, fences and
+ * chains a post up the middle, and lanterns and torches a small block in the
+ * middle.
  */
-export type BlockShape = 'cube' | 'bottom-slab' | 'top-slab' | 'flat' | 'post' | 'small'
+export type BlockShape = 'cube' | 'bottom-slab' | 'top-slab' | 'stairs' | 'flat' | 'post' | 'small'
+
+/** A box inside the block, as `[x0, y0, z0, x1, y1, z1]` from 0 to 1. */
+export type BlockPart = readonly [number, number, number, number, number, number]
 
 /** Light sources draw unshaded so they read as lit; glass draws see-through. */
 export type BlockFinish = 'solid' | 'glow' | 'glass'
@@ -27,6 +31,8 @@ export interface BlockLook {
   /** `0xRRGGBB`, roughly the average colour of the block's texture. */
   colour: number
   shape: BlockShape
+  /** The boxes the shape fills, one for most blocks and up to three for stairs. */
+  parts: readonly BlockPart[]
   finish: BlockFinish
 }
 
@@ -221,7 +227,9 @@ const looks = new Map<string, BlockLook>()
 function lookOf(blockId: string): BlockLook {
   const { name: full, state } = parseBlockId(blockId)
   const name = full.replace(/^waxed_/, '')
-  return { colour: colourOf(name), shape: shapeOf(name, state), finish: finishOf(blockId, name) }
+  const shape = shapeOf(name, state)
+  const parts = shape === 'stairs' ? stairParts(state) : [PARTS[shape]]
+  return { colour: colourOf(name), shape, parts, finish: finishOf(blockId, name) }
 }
 
 function colourOf(name: string): number {
@@ -271,10 +279,77 @@ function shapeOf(name: string, state: Record<string, string>): BlockShape {
     if (state.type === 'double') return 'cube'
     return state.type === 'top' ? 'top-slab' : 'bottom-slab'
   }
+  if (name.endsWith('_stairs')) return 'stairs'
   if (FLAT.test(name)) return 'flat'
   if (POST.test(name)) return 'post'
   if (SMALL.test(name) || (name.endsWith('lantern') && name !== 'sea_lantern' && name !== 'jack_o_lantern')) return 'small'
   return 'cube'
+}
+
+const PARTS: Readonly<Record<Exclude<BlockShape, 'stairs'>, BlockPart>> = {
+  cube: [0, 0, 0, 1, 1, 1],
+  'bottom-slab': [0, 0, 0, 1, 0.5, 1],
+  'top-slab': [0, 0.5, 0, 1, 1, 1],
+  flat: [0, 0, 0, 1, 0.1, 1],
+  post: [0.375, 0, 0.375, 0.625, 1, 0.625],
+  small: [0.3, 0.15, 0.3, 0.7, 0.65, 0.7],
+}
+
+type Facing = 'north' | 'east' | 'south' | 'west'
+
+/** The half of a block's plan on each side, as `[x0, z0, x1, z1]`. */
+const HALVES: Readonly<Record<Facing, readonly [number, number, number, number]>> = {
+  north: [0, 0, 1, 0.5],
+  east: [0.5, 0, 1, 1],
+  south: [0, 0.5, 1, 1],
+  west: [0, 0, 0.5, 1],
+}
+
+/** Turning clockwise, seen from above. */
+const CLOCKWISE: Readonly<Record<Facing, Facing>> = { north: 'east', east: 'south', south: 'west', west: 'north' }
+const OPPOSITE: Readonly<Record<Facing, Facing>> = { north: 'south', east: 'west', south: 'north', west: 'east' }
+
+/**
+ * A stair is a slab and a step, as the vanilla models build it. The step
+ * rises on the side the stair faces, and an upside-down stair hangs it below
+ * the slab. An outer corner keeps a quarter of the step, on the facing side
+ * toward its left or right. An inner corner adds the quarter behind the step
+ * on that side. The game places a stair with no state facing north, upright
+ * and straight.
+ */
+function stairParts(state: Record<string, string>): BlockPart[] {
+  const facing: Facing = state.facing && state.facing in HALVES ? (state.facing as Facing) : 'north'
+  const right = CLOCKWISE[facing]
+  const left = OPPOSITE[right]
+  const top = state.half === 'top'
+  const [slabY0, slabY1, stepY0, stepY1] = top ? [0.5, 1, 0, 0.5] : [0, 0.5, 0.5, 1]
+  const step = ([x0, z0, x1, z1]: readonly [number, number, number, number]): BlockPart => [x0, stepY0, z0, x1, stepY1, z1]
+
+  const steps: BlockPart[] = []
+  switch (state.shape) {
+    case 'outer_left':
+      steps.push(step(quarter(facing, left)))
+      break
+    case 'outer_right':
+      steps.push(step(quarter(facing, right)))
+      break
+    case 'inner_left':
+      steps.push(step(HALVES[facing]), step(quarter(OPPOSITE[facing], left)))
+      break
+    case 'inner_right':
+      steps.push(step(HALVES[facing]), step(quarter(OPPOSITE[facing], right)))
+      break
+    default:
+      steps.push(step(HALVES[facing]))
+  }
+  return [[0, slabY0, 0, 1, slabY1, 1], ...steps]
+}
+
+/** The quarter of the plan where two halves on crossing axes meet. */
+function quarter(one: Facing, other: Facing): readonly [number, number, number, number] {
+  const [ax0, az0, ax1, az1] = HALVES[one]
+  const [bx0, bz0, bx1, bz1] = HALVES[other]
+  return [Math.max(ax0, bx0), Math.max(az0, bz0), Math.min(ax1, bx1), Math.min(az1, bz1)]
 }
 
 function finishOf(blockId: string, name: string): BlockFinish {

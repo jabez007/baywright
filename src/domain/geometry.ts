@@ -18,7 +18,7 @@ import {
   type TrunkFlow,
   type WallFace,
 } from './details.js'
-import { LightField } from './lighting.js'
+import { LightField, parseBlockId } from './lighting.js'
 import { isBuiltCell } from './modules.js'
 import {
   BAY_PITCH,
@@ -507,11 +507,27 @@ function placeInteriorDetails(project: Project, blocks: Map<string, string>): Re
 }
 
 function detailBlockId(material: DetailMaterial, palette: Palette): string {
-  return isMaterialRole(material) ? palette.blocks[material] : material
+  if (material.includes(':')) return material
+  const open = material.indexOf('[')
+  if (open === -1) return palette.blocks[material as MaterialRole]
+  const blockId = palette.blocks[material.slice(0, open) as MaterialRole]
+  return isStairs(blockId) ? withState(blockId, parseBlockId(material).state) : blockId
 }
 
-function isMaterialRole(material: DetailMaterial): material is MaterialRole {
-  return !material.includes(':')
+function isStairs(blockId: string): boolean {
+  return parseBlockId(blockId).name.endsWith('_stairs')
+}
+
+/** The block with `state` added, over any state of its own, in the game's key order. */
+function withState(blockId: string, state: Readonly<Record<string, string>>): string {
+  const parsed = parseBlockId(blockId)
+  const merged = { ...parsed.state, ...state }
+  const open = blockId.indexOf('[')
+  const base = open === -1 ? blockId : blockId.slice(0, open)
+  const pairs = Object.keys(merged)
+    .sort()
+    .map((name) => `${name}=${merged[name]}`)
+  return `${base}[${pairs.join(',')}]`
 }
 
 /**
