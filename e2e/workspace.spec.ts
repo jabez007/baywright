@@ -294,6 +294,29 @@ test('starts a new project from the layered base example', async ({ page }) => {
   await expect(page.getByText(/5×5 bays/)).toBeVisible()
 })
 
+test('closes the Project menu once you choose a command or look away', async ({ page }) => {
+  await page.goto('/')
+  const exportJson = page.getByRole('button', { name: 'Export JSON', exact: true })
+
+  // Escape closes the menu without also clearing the selection behind it.
+  await useCellTool(page)
+  await page.getByRole('button', { name: /^A1 cell 1 · Empty/ }).click()
+  await openProjectMenu(page)
+  await page.keyboard.press('Escape')
+  await expect(exportJson).toBeHidden()
+  await expect(page.locator('summary').filter({ hasText: /^Project$/ })).toBeFocused()
+  await expect(page.locator('.selection-overlay')).toHaveCount(1)
+
+  await openProjectMenu(page)
+  await page.getByRole('complementary', { name: 'Levels' }).click()
+  await expect(exportJson).toBeHidden()
+
+  await openProjectMenu(page)
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(exportJson).toBeHidden()
+})
+
 test('shows the feature chamber five-wide openings in the inspector', async ({ page }) => {
   await page.goto('/')
 
@@ -450,6 +473,7 @@ test('PNG export preserves selection and browser history without exporting its o
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export PNG plans' }).click()
   await download
+  await openProjectMenu(page)
   await expect(page.getByRole('button', { name: 'Export PNG plans' })).toBeEnabled()
 
   expect(await page.evaluate(() => (window as Window & { __pngSelectionCounts?: number[] }).__pngSelectionCounts)).toEqual([0])
@@ -504,6 +528,8 @@ test('locks project edits while a PNG export is running', async ({ page }) => {
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export PNG plans' }).click()
 
+  // The menu closes once a command runs, so open it again to read it.
+  await openProjectMenu(page)
   for (const name of ['Import project', 'Resize field', 'New project', 'Undo', 'Redo']) {
     await expect(page.getByRole('button', { name, exact: true })).toBeDisabled()
   }
@@ -519,6 +545,7 @@ test('locks project edits while a PNG export is running', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Bays', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
   await download
+  await openProjectMenu(page)
   await expect(page.getByRole('button', { name: 'Import project', exact: true })).toBeEnabled()
   await expect(page.getByRole('button', { name: /^A1 cell 1 · Spine/ })).toBeVisible()
 })

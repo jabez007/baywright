@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** PRD §10: project commands above, contextual canvas controls below. */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { LAYOUT_PATTERN_LIST, layoutLevelOffsets } from '../domain/layouts.js'
 import { LITEMATICA_TARGET_LABEL } from '../export/litematic.js'
@@ -118,6 +118,37 @@ const STATUS_TEXT: Record<SaveStatus, string> = {
   error: 'Save failed',
 }
 
+/**
+ * A native `<details>` stays open until its summary is clicked again. The
+ * Project menu closes as a menu does: once a command runs, on a click outside
+ * it, or on Escape, which hands focus back to its summary.
+ */
+const projectMenu = ref<HTMLDetailsElement | null>(null)
+
+function closeProjectMenu(): void {
+  if (projectMenu.value) projectMenu.value.open = false
+}
+
+/** Disabled buttons fire no click, so only a command that runs closes the menu. */
+function onProjectMenuClick(event: MouseEvent): void {
+  if ((event.target as Element).closest('button')) closeProjectMenu()
+}
+
+/** Stops here so the workspace does not also clear the selection. */
+function onProjectMenuEscape(event: KeyboardEvent): void {
+  if (!projectMenu.value?.open) return
+  event.stopPropagation()
+  closeProjectMenu()
+  projectMenu.value.querySelector('summary')?.focus()
+}
+
+function onPointerDownOutside(event: PointerEvent): void {
+  if (projectMenu.value?.open && !projectMenu.value.contains(event.target as Node)) closeProjectMenu()
+}
+
+onMounted(() => document.addEventListener('pointerdown', onPointerDownOutside))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDownOutside))
+
 function chooseGrain(grain: Grain): void {
   emit('set-grain', grain)
 }
@@ -176,9 +207,9 @@ function chooseNegativeSpace(event: Event): void {
         </span>
         <button type="button" :disabled="pngBusy || !store.canUndo" title="Undo (Ctrl/Cmd+Z)" @click="store.undo()">Undo</button>
         <button type="button" :disabled="pngBusy || !store.canRedo" title="Redo (Ctrl/Cmd+Shift+Z)" @click="store.redo()">Redo</button>
-        <details class="project-menu">
+        <details ref="projectMenu" class="project-menu" @keydown.esc="onProjectMenuEscape">
           <summary>Project</summary>
-          <div class="menu-panel">
+          <div class="menu-panel" @click="onProjectMenuClick">
             <button type="button" @click="emit('export')">Export JSON</button>
             <button type="button" :disabled="pngBusy" @click="emit('png')">{{ pngBusy ? 'Rendering plans…' : 'Export PNG plans' }}</button>
             <button type="button" :disabled="pngBusy" :title="`Litematica schematic for ${LITEMATICA_TARGET_LABEL}`" @click="emit('litematic')">Export Litematica</button>
