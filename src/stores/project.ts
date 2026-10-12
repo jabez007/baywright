@@ -236,11 +236,22 @@ export const useProjectStore = defineStore('project', () => {
     return mutate(change)
   }
 
+  /**
+   * Build progress records what stands in the world, not a design choice, so a
+   * history jump carries the current progress over rather than rewinding it.
+   */
+  function restore(document: Project): void {
+    const built = project.value.builtLayers
+    if (built) document.builtLayers = [...built]
+    else delete document.builtLayers
+    project.value = document
+  }
+
   function undo(): boolean {
     const previous = undoStack.pop()
     if (!previous) return false
     pushCapped(redoStack, snapshot())
-    project.value = previous
+    restore(previous)
     reconcile()
     syncDepths()
     return true
@@ -250,7 +261,7 @@ export const useProjectStore = defineStore('project', () => {
     const next = redoStack.pop()
     if (!next) return false
     pushCapped(undoStack, snapshot())
-    project.value = next
+    restore(next)
     reconcile()
     syncDepths()
     return true
@@ -375,6 +386,19 @@ export const useProjectStore = defineStore('project', () => {
       if (y === null) delete project.value.surfaceY
       else project.value.surfaceY = y
     })
+  }
+
+  /** Tick one block layer off as built, or back. Not an undoable step. */
+  function setLayerBuilt(y: number, built: boolean): void {
+    if (!Number.isInteger(y)) throw new Error(`layer y must be an integer, got ${y}`)
+    if (y < WORLD_MIN_Y || y > WORLD_MAX_Y) {
+      throw new Error(`layer y ${y} is outside the world, y ${WORLD_MIN_Y} to ${WORLD_MAX_Y}`)
+    }
+    const layers = new Set(project.value.builtLayers)
+    if (built) layers.add(y)
+    else layers.delete(y)
+    if (layers.size === 0) delete project.value.builtLayers
+    else project.value.builtLayers = [...layers].sort((a, b) => a - b)
   }
 
   /**
@@ -1077,6 +1101,7 @@ export const useProjectStore = defineStore('project', () => {
     renameProject,
     setOrigin,
     setSurfaceY,
+    setLayerBuilt,
     toJSON,
     addLevel,
     removeLevel,

@@ -92,6 +92,11 @@ export interface Project {
    * grass. Everything at or below it is solid ground. Absent when unknown.
    */
   surfaceY?: number
+  /**
+   * The block layers, by y, ticked off as built in the 3D guide, ascending.
+   * Absent when nothing is ticked.
+   */
+  builtLayers?: number[]
   /** How many letters (bay columns, the i axis). */
   bayCols: number
   /** How many numbers (bay rows, the j axis). */

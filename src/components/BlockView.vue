@@ -62,6 +62,36 @@ function step(by: 1 | -1): void {
   sliderValue.value = Math.min(allStop.value, Math.max(bounds.value.y0, sliderValue.value + by))
 }
 
+const builtLayers = computed(() => new Set(store.project.builtLayers))
+
+/** Ticked layers the base reaches, out of all its layers. */
+const progress = computed(() => {
+  const box = bounds.value
+  if (!box) return null
+  let built = 0
+  for (let y = box.y0; y <= box.y1; y++) if (builtLayers.value.has(y)) built++
+  return { built, layers: box.y1 - box.y0 + 1 }
+})
+
+/** The lowest layer not yet ticked off, or null once every layer is. */
+const nextToBuild = computed(() => {
+  const box = bounds.value
+  if (!box) return null
+  for (let y = box.y0; y <= box.y1; y++) if (!builtLayers.value.has(y)) return y
+  return null
+})
+
+const layerBuilt = computed({
+  get: () => layer.value !== null && builtLayers.value.has(layer.value),
+  set: (built: boolean) => {
+    if (layer.value !== null) store.setLayerBuilt(layer.value, built)
+  },
+})
+
+function goToNext(): void {
+  if (nextToBuild.value !== null) layer.value = nextToBuild.value
+}
+
 function blockName(blockId: string): string {
   return blockId.replace(/^[a-z0-9_.-]+:/, '').replace(/\[.*$/, '').replaceAll('_', ' ')
 }
@@ -382,9 +412,19 @@ onBeforeUnmount(() => {
             <button type="button" aria-label="Down a layer" :disabled="sliderValue <= bounds.y0" @click="step(-1)">Down</button>
             <button type="button" aria-label="Up a layer" :disabled="layer === null" @click="step(1)">Up</button>
           </div>
+          <div v-if="progress" class="progress">
+            <p class="mono">{{ progress.built }} of {{ progress.layers }} layers built</p>
+            <button type="button" :disabled="nextToBuild === null" @click="goToNext">Next to build</button>
+          </div>
 
           <div v-if="summary" class="readout">
-            <h3>Layer y {{ summary.y }}</h3>
+            <div class="layer-heading">
+              <h3>Layer y {{ summary.y }}</h3>
+              <label class="built">
+                <input v-model="layerBuilt" type="checkbox" />
+                <span>Built</span>
+              </label>
+            </div>
             <p v-if="summary.levels.length > 0" class="muted">{{ summary.levels.join(', ') }}</p>
             <p class="mono">{{ summary.blocks.toLocaleString() }} blocks</p>
             <p v-if="summary.bounds" class="mono">
@@ -401,7 +441,10 @@ onBeforeUnmount(() => {
             <h3>All layers</h3>
             <p class="mono">{{ scene.blocks.length.toLocaleString() }} blocks</p>
             <p class="mono">y {{ bounds.y0 }} to {{ bounds.y1 }}</p>
-            <p class="muted">Move the slider down to build one layer at a time. Faded blocks are already built.</p>
+            <p class="muted">
+              Move the slider down to build one layer at a time. Faded blocks are below the layer you are on. Tick each layer
+              off as you finish it, and the bill of materials counts what is left.
+            </p>
           </div>
         </template>
         <p v-else class="muted">Nothing is built yet. Paint a module to see it here.</p>
@@ -506,6 +549,30 @@ canvas {
 
 .steps button {
   flex: 1;
+}
+
+.progress {
+  display: grid;
+  gap: 6px;
+}
+
+.progress p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.layer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.built {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
 }
 
 .readout {

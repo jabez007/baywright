@@ -28,6 +28,7 @@ The current editor includes the useful foundations from the discussion:
 - Every room that would have a floor dark enough for mobs to spawn gets its palette light, lowered on a chain in tall rooms and repeated up to four times in a room that stays dark, and V9 reports any floor still dark.
 - An optional ground surface y lets the materials list count the blocks to dig and what they give back, without modelling terrain.
 - The materials list splits by level, and the 3D view shows every placed block with a layer slider that serves as a build guide for players without Litematica.
+- Layers ticked off as built in the 3D guide save with the project, so a build picks up where it stopped, and the materials list counts only what is left.
 - **Assemble a base** grows a seeded plan inside a footprint from the same pieces, previews it with the validators' result, and applies it as one undo step.
 - Infrastructure modules describe rail lines, ice highways, item trunks, mine access, Nether portals, super smelters, auto crafters, and trading halls.
 

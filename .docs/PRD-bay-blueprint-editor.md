@@ -199,6 +199,7 @@ interface Project {
   name: string
   origin: { x: number; z: number }
   surfaceY?: number          // top block of the ground; absent when unknown
+  builtLayers?: number[]     // block layers ticked off as built, ascending; absent when none
   bayCols: number            // how many letters
   bayRows: number            // how many numbers
   levels: Level[]             // sparse, kept sorted ascending by y
@@ -352,7 +353,9 @@ Computed from `resolveBlocks`. Output:
 - When the project has a `surfaceY`, a digging count: every block position inside a built cell's outer bounds at or below `surfaceY`, walls included, since the plan places its own walls. A position two levels share counts once, on the lower level. Each level with built cells is underground when all its cells end at or below the surface, above ground when all start above it, and partly underground otherwise. The rough yield treats the top 4 blocks of ground as dirt, the rest as stone that drops cobblestone, and anything below y 0 as deepslate that drops cobbled deepslate. Ores, caves, and water are ignored.
 - The same placed blocks, raw inputs, and furnace time for each level with built cells, so a base can be gathered for one level at a time. Each block belongs to the lowest level whose built cells hold it, so a plane two levels share counts on the lower level, as it does for digging. Each level rounds its raw inputs up to whole items on its own, so the levels' raw inputs can add up to slightly more than the whole base's.
 
-The BOM panel recomputes 200ms after the latest document change.
+- When asked, the same materials and digging for only the block layers not in `builtLayers`, so the list shows what is left to gather and dig.
+
+The BOM panel recomputes 200ms after the latest document change. Once any layer is built, it counts only what is left until the user unticks **Leave out the built layers**.
 
 ## 10. UI requirements
 
@@ -398,6 +401,8 @@ The 3D view draws the blocks `resolveBlocks` places, so it shows what the Litema
 Drag turns the view, right-drag pans, and scroll or pinch zooms. Angle and Top put the camera back over the whole base, at an angle or straight down with north at the top. A click that does not turn the view names the block under the pointer, with its full ID and world position.
 
 The layer slider runs from the lowest block's y to one stop past the highest, which shows every layer. At a layer, the view hides every block above it and fades the ones below toward the background, so the layer being built stands out over what is already built. The guide beside the view lists that layer's levels, its block count, the x and z it spans, and its placed blocks in stacks. A layer belongs to the levels that own its blocks, by the same rule as the per-level materials. Down and Up buttons step one layer at a time for a touch screen.
+
+A **Built** checkbox on each layer ticks it off in `builtLayers`, which saves with the project, so progress carries over between sessions and devices that share the file. The guide counts the built layers out of all the base's layers, and **Next to build** goes to the lowest layer not yet ticked. Build progress records the world, not the design, so it is not an undo step, and undo and redo keep the current progress. A tick stays on its y when the plan changes, so a layer redrawn after it was built stays ticked.
 
 The view renders only when something changes. The chunk with three.js loads only when the view first opens. Without WebGL, the view says so and the layer guide still works. Choosing Paint or Empty while in 3D goes back to the plan view the user came from, because nothing can be painted in 3D.
 

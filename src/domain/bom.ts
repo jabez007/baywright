@@ -197,6 +197,8 @@ export interface Digging {
 export interface BomOptions {
   /** How many furnaces run in parallel for the time estimate. */
   furnaces?: number
+  /** Count only the block layers not yet ticked off in `Project.builtLayers`. */
+  leaveOutBuilt?: boolean
 }
 
 // --------------------------------------------------------------------------
@@ -229,12 +231,19 @@ export function formatStacks(total: number): string {
 // --------------------------------------------------------------------------
 
 export function computeBom(project: Project, options: BomOptions = {}): Bom {
-  const blocks = resolveBlocks(project)
+  const built = new Set(options.leaveOutBuilt ? project.builtLayers : [])
+  const blocks = built.size > 0 ? unbuilt(resolveBlocks(project), built) : resolveBlocks(project)
   return {
     ...materialsOf(blocks, options),
-    digging: computeDigging(project),
+    digging: computeDigging(project, built),
     levels: materialsByLevel(project, blocks, options),
   }
+}
+
+function unbuilt(blocks: ReadonlyMap<string, string>, built: ReadonlySet<number>): Map<string, string> {
+  const left = new Map<string, string>()
+  for (const [key, blockId] of blocks) if (!built.has(parseBlockKey(key).y)) left.set(key, blockId)
+  return left
 }
 
 /** The same computation over a block map, for exporters and tests. */
@@ -370,9 +379,10 @@ export const DIRT_DEPTH = 4
  * Every built cell below the surface is dug out whole, walls included, since
  * the plan places its own walls. The yield assumes plain ground: dirt at the
  * top, then stone, which drops cobblestone, then deepslate below y 0. Ores,
- * caves, and water change the real numbers.
+ * caves, and water change the real numbers. A layer ticked off as built is
+ * already dug.
  */
-function computeDigging(project: Project): Digging | null {
+function computeDigging(project: Project, built: ReadonlySet<number>): Digging | null {
   const surfaceY = project.surfaceY
   if (surfaceY === undefined) return null
 
@@ -399,6 +409,7 @@ function computeDigging(project: Project): Digging | null {
     let blocks = 0
     for (const box of boxes) {
       for (let y = box.y0; y <= Math.min(box.y1, surfaceY); y++) {
+        if (built.has(y)) continue
         let layer = 0
         for (let x = box.x0; x <= box.x1; x++) {
           for (let z = box.z0; z <= box.z1; z++) {

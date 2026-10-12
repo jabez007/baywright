@@ -271,3 +271,46 @@ describe('materials by level', () => {
     expect(levels.map((entry) => entry.smelting.furnaces)).toEqual([3, 3])
   })
 })
+
+describe('what is left to build', () => {
+  const LAYER = 169
+  const built = (p: ReturnType<typeof project>, builtLayers: number[]) => ({ ...p, builtLayers })
+
+  it('leaves out the layers ticked off as built', () => {
+    // The floor at y 0 and the ceiling at y 8 are built, which leaves the 336
+    // wall blocks and the lantern on its chain.
+    const left = computeBom(built(shell('stone-brick'), [0, 8]), { leaveOutBuilt: true })
+    expect(left.totalBlocks).toBe(336 + 4)
+    expect(countOf(left.blocks, 'minecraft:stone_bricks')).toBe(336)
+    expect(countOf(left.blocks, 'minecraft:polished_andesite')).toBeUndefined()
+
+    // One wall layer at y 5 is 48 blocks round the 13 × 13 bay, and a chain link.
+    const layer = computeBom(built(shell('stone-brick'), [5]), { leaveOutBuilt: true })
+    expect(layer.totalBlocks).toBe(674 + 4 - 48 - 1)
+    expect(countOf(layer.blocks, 'minecraft:chain')).toBe(2)
+  })
+
+  it('counts everything unless asked to leave the built layers out', () => {
+    expect(computeBom(built(shell('stone-brick'), [0, 8])).totalBlocks).toBe(674 + 4)
+  })
+
+  it('leaves the built layers out of each level and of the digging', () => {
+    const lower = level('Lower', -8, { A1: bay('merged', () => ({ heightCells: 2 })) }, { name: 'Lower' })
+    const upper = level('Upper', 0, { A1: bay('merged', () => ({ heightCells: 1 })) }, { name: 'Upper' })
+    const p = { ...project([lower, upper]), surfaceY: 63 }
+    const whole = computeBom(p)
+    // The lower level's floor at y -8, a 48-block wall layer at y -7, and the
+    // plane at y 0 the two levels share, which belongs to the lower one.
+    const left = computeBom({ ...p, builtLayers: [-8, -7, 0] }, { leaveOutBuilt: true })
+    expect(left.levels[0]!.totalBlocks).toBe(whole.levels[0]!.totalBlocks - LAYER - 48 - LAYER)
+    expect(left.levels[1]!.totalBlocks).toBe(whole.levels[1]!.totalBlocks)
+
+    const digging = left.digging!
+    expect(digging.blocks).toBe(whole.digging!.blocks - 3 * LAYER)
+    expect(digging.levels.map((entry) => entry.blocks)).toEqual([6 * LAYER, 4 * LAYER])
+    expect(digging.yields.map(({ blockId, count }) => [blockId, count])).toEqual([
+      ['minecraft:cobbled_deepslate', 6 * LAYER],
+      ['minecraft:cobblestone', 4 * LAYER],
+    ])
+  })
+})

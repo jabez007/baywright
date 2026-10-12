@@ -831,6 +831,41 @@ test('steps through the layers of the base in 3D', async ({ page }) => {
   await expect(layer.getByRole('listitem').filter({ hasText: 'rail' })).toContainText('50')
 })
 
+test('ticks off built layers, keeps them after a reload, and counts what is left', async ({ page }) => {
+  await openLayeredExample(page)
+  const show3D = () => page.getByRole('group', { name: 'View' }).getByRole('button', { name: '3D' }).click()
+  await show3D()
+  const view = page.getByRole('region', { name: '3D view' })
+  const layer = view.getByRole('region', { name: 'Layer guide' })
+  await expect(layer).toContainText('0 of 33 layers built')
+
+  await layer.getByRole('button', { name: 'Next to build' }).click()
+  await expect(layer).toContainText('Layer y -4')
+  await layer.getByLabel('Built').check()
+  await layer.getByRole('button', { name: 'Next to build' }).click()
+  await expect(layer).toContainText('Layer y -3')
+  await layer.getByLabel('Built').check()
+  await expect(layer).toContainText('2 of 33 layers built')
+  await expect(page.getByRole('status').filter({ hasText: 'Autosave status' })).toContainText('Saved')
+
+  await page.reload()
+  await show3D()
+  await expect(layer).toContainText('2 of 33 layers built')
+  await layer.getByRole('button', { name: 'Next to build' }).click()
+  await expect(layer).toContainText('Layer y -2')
+  await expect(layer.getByLabel('Built')).not.toBeChecked()
+  await view.getByRole('button', { name: 'Down a layer' }).click()
+  await expect(layer.getByLabel('Built')).toBeChecked()
+
+  await page.getByRole('button', { name: 'Materials', exact: true }).click()
+  const bom = page.getByRole('region', { name: 'Bill of materials' })
+  const leaveOut = bom.getByLabel('Leave out the 2 built layers')
+  await expect(leaveOut).toBeChecked()
+  await expect(bom.getByText('10,377 blocks left')).toBeVisible()
+  await leaveOut.uncheck()
+  await expect(bom.getByText('11,072 blocks', { exact: true })).toBeVisible()
+})
+
 test('names the block you click in the 3D view', async ({ page }) => {
   await openLayeredExample(page)
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: '3D' }).click()

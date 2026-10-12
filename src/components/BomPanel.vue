@@ -11,6 +11,9 @@ const error = ref<string | null>(null)
 const pending = ref(true)
 /** The level the material lists cover, or '' for the whole base. */
 const scope = ref('')
+/** Count only what is left once some layers are ticked off as built. */
+const leaveOutBuilt = ref(true)
+const builtCount = computed(() => store.project.builtLayers?.length ?? 0)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 /**
@@ -28,7 +31,7 @@ function scheduleBom(): void {
   timer = setTimeout(() => {
     timer = undefined
     try {
-      bom.value = computeBom(store.toJSON(), { furnaces: furnaceCount() })
+      bom.value = computeBom(store.toJSON(), { furnaces: furnaceCount(), leaveOutBuilt: leaveOutBuilt.value })
       error.value = null
     } catch (cause) {
       error.value = (cause as Error).message
@@ -43,7 +46,7 @@ function normalizeFurnaces(): void {
 }
 
 const stopProjectWatch = watch(() => store.project, scheduleBom, { deep: true, immediate: true })
-const stopFurnaceWatch = watch(furnaces, scheduleBom)
+const stopFurnaceWatch = watch([furnaces, leaveOutBuilt], scheduleBom)
 
 onBeforeUnmount(() => {
   if (timer !== undefined) clearTimeout(timer)
@@ -83,7 +86,13 @@ function blockName(blockId: string): string {
             <option v-for="level in bom.levels" :key="level.levelId" :value="level.levelId">{{ level.name }}</option>
           </select>
         </label>
-        <strong class="total mono">{{ shown.totalBlocks.toLocaleString() }} blocks</strong>
+        <label v-if="builtCount > 0" class="left">
+          <input v-model="leaveOutBuilt" type="checkbox" />
+          <span>Leave out the {{ builtCount }} built layer{{ builtCount === 1 ? '' : 's' }}</span>
+        </label>
+        <strong class="total mono">
+          {{ shown.totalBlocks.toLocaleString() }} blocks{{ builtCount > 0 && leaveOutBuilt ? ' left' : '' }}
+        </strong>
       </div>
     </header>
 
@@ -194,7 +203,9 @@ function blockName(blockId: string): string {
 .scope {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 12px;
   min-width: 0;
 }
 

@@ -25,6 +25,15 @@ describe('round trip', () => {
     expect(parseProject(serializeProject(original)).surfaceY).toBe(-12)
   })
 
+  it('keeps the layers ticked off as built, in height order', () => {
+    const original = project([level('ground', 0, {})], { builtLayers: [-3, 0, 12] })
+    expect(parseProject(serializeProject(original)).builtLayers).toEqual([-3, 0, 12])
+    const shuffled = project([level('ground', 0, {})], { builtLayers: [12, -3, 12, 0] })
+    expect(parseProject(serializeProject(shuffled)).builtLayers).toEqual([-3, 0, 12])
+    const none = project([level('ground', 0, {})], { builtLayers: [] })
+    expect('builtLayers' in parseProject(serializeProject(none))).toBe(false)
+  })
+
   it('preserves the optional cell fields', () => {
     const original = project([
       level('ground', 0, {
@@ -97,6 +106,12 @@ describe('defensive import', () => {
   it('rejects a surface y that is not a whole block inside the world', () => {
     expect(mangle((doc) => (doc.surfaceY = 62.5))).toThrow(/^\$\.surfaceY: expected an integer/)
     expect(mangle((doc) => (doc.surfaceY = 400))).toThrow(/^\$\.surfaceY: expected a y from -64 to 319, got 400/)
+  })
+
+  it('rejects a built layer that is not a whole block inside the world', () => {
+    expect(mangle((doc) => ((doc as { builtLayers: unknown }).builtLayers = 4))).toThrow(/^\$\.builtLayers: expected an array/)
+    expect(mangle((doc) => (doc.builtLayers = [0, 1.5]))).toThrow(/^\$\.builtLayers\[1\]: expected an integer/)
+    expect(mangle((doc) => (doc.builtLayers = [-65]))).toThrow(/^\$\.builtLayers\[0\]: expected a y from -64 to 319, got -65/)
   })
 
   it('rejects an unknown schemaVersion', () => {

@@ -98,6 +98,12 @@ export function validateProject(raw: unknown): Project {
     palettes,
   }
   if (doc['surfaceY'] !== undefined) project.surfaceY = worldY(doc['surfaceY'], '$.surfaceY')
+  if (doc['builtLayers'] !== undefined) {
+    const layers = array(doc['builtLayers'], '$.builtLayers').map((y, index) => worldY(y, `$.builtLayers[${index}]`))
+    // A hand-edited file may repeat or shuffle them, which changes nothing.
+    const built = [...new Set(layers)].sort((a, b) => a - b)
+    if (built.length > 0) project.builtLayers = built
+  }
 
   if (project.levels.length === 0) throw new ProjectParseError('a project needs at least one level', '$.levels')
 

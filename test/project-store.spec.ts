@@ -234,6 +234,44 @@ describe('the ground surface', () => {
   })
 })
 
+describe('build progress', () => {
+  it('ticks block layers off as built and back, in height order', () => {
+    const s = store()
+    expect(s.project.builtLayers).toBeUndefined()
+    s.setLayerBuilt(4, true)
+    s.setLayerBuilt(-3, true)
+    s.setLayerBuilt(4, true)
+    expect(s.project.builtLayers).toEqual([-3, 4])
+    s.setLayerBuilt(-3, false)
+    expect(s.project.builtLayers).toEqual([4])
+    s.setLayerBuilt(4, false)
+    expect('builtLayers' in s.project).toBe(false)
+  })
+
+  it('keeps progress out of the undo history, and undo leaves it alone', () => {
+    const s = store()
+    s.renameProject('Keep')
+    s.setLayerBuilt(0, true)
+    expect(s.canUndo).toBe(true)
+    s.undo()
+    expect(s.project.name).toBe('Untitled base')
+    expect(s.project.builtLayers).toEqual([0])
+    s.setLayerBuilt(1, true)
+    s.redo()
+    expect(s.project.name).toBe('Keep')
+    expect(s.project.builtLayers).toEqual([0, 1])
+    s.undo()
+    expect(s.canUndo).toBe(false)
+  })
+
+  it('rejects a layer that is not a whole block inside the world', () => {
+    const s = store()
+    expect(() => s.setLayerBuilt(1.5, true)).toThrow('layer y must be an integer, got 1.5')
+    expect(() => s.setLayerBuilt(320, true)).toThrow('layer y 320 is outside the world, y -64 to 319')
+    expect(s.project.builtLayers).toBeUndefined()
+  })
+})
+
 describe('levels', () => {
   it('refuses to remove the final level', () => {
     const s = store()
