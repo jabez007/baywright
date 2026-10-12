@@ -30,6 +30,7 @@ const ALWAYS_LIT: Readonly<Record<string, number>> = {
   soul_lantern: 10,
   soul_torch: 10,
   soul_wall_torch: 10,
+  enchanting_table: 7,
   glow_lichen: 7,
   redstone_torch: 7,
   redstone_wall_torch: 7,
@@ -101,8 +102,11 @@ function takesSpawns(blockId: string): boolean {
   const { name, state } = parseBlockId(blockId)
   if (name.endsWith('_slab')) return state.type === 'top' || state.type === 'double'
   if (name.endsWith('_stairs')) return state.half === 'top'
-  return name !== 'magma_block'
+  return name !== 'magma_block' && !LOW_TOPPED.test(name)
 }
+
+/** Blocks short of a full block, so no mob spawns on top of them. */
+const LOW_TOPPED = /^(enchanting_table|anvil|chipped_anvil|damaged_anvil|grindstone|stonecutter|chest|trapped_chest|ender_chest|farmland|dirt_path)$/
 
 /** Bit flags for what fills a position. Air is 0: empty, lets light through, takes no spawn. */
 const OCCUPIED = 1

@@ -21,6 +21,7 @@ The current editor includes the useful foundations from the discussion:
 - Nether Portal rooms export an unlit obsidian frame, and Super Smelters export a hopper-fed furnace row. The inspector shows where each portal's Nether side goes, and V10 warns when two portal rooms would link to each other's.
 - Trading Halls export stall dividers along both side walls around a clear aisle.
 - Item Trunks export a hopper chain that runs toward the nearest spine.
+- Workshops export an enchanting table with the 15 bookshelves level 30 needs, laid out so both Java and Bedrock count them all, and merged workshops line the back wall with crafting stations.
 - Stair rooms export a climb: a trim-stair spiral round a 3×3 core in 5- and 11-wide rooms, or a ladder in narrow ones. The landing above opens only the stairwell, and V4 reports a stairwell that comes up under a solid floor.
 - Every room that would have a floor dark enough for mobs to spawn gets its palette light, lowered on a chain in tall rooms and repeated up to four times in a room that stays dark, and V9 reports any floor still dark.
 - An optional ground surface y lets the materials list count the blocks to dig and what they give back, without modelling terrain.
@@ -68,7 +69,7 @@ Resolve every target level, bay, and cell before changing the project. Reject an
 
 ### 2. Exact detail kits for selected modules
 
-Decoration hints record builder intent. The Arena, Library, Rail Line, Ice Highway, Nether Portal, Super Smelter, Trading Hall, Item Trunk, and Stair kits produce exact blocks. Every kit on the list above is in place.
+Decoration hints record builder intent. The Arena, Library, Rail Line, Ice Highway, Nether Portal, Super Smelter, Trading Hall, Item Trunk, Stair, and Workshop kits produce exact blocks. Every kit on the list above is in place.
 
 Add exact detail kits where the result has one dependable interpretation:
 
@@ -78,8 +79,9 @@ Add exact detail kits where the result has one dependable interpretation:
 - Item Trunk transport channels;
 - Nether Portal frame and clearance;
 - Super Smelter furnace rows and feed clearance;
-- Trading Hall stalls and circulation clearance; and
-- Stair spirals and ladders with headroom up to the landing.
+- Trading Hall stalls and circulation clearance;
+- Stair spirals and ladders with headroom up to the landing; and
+- Workshop enchanting setups and crafting stations.
 
 Each kit must derive coordinates from `cellInterior` and use the selected palette when a material role applies. Functional Minecraft blocks may use fixed block IDs. Do not turn every decoration hint into geometry merely because the hint exists.
 

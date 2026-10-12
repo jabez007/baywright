@@ -44,6 +44,7 @@ const KITS: Readonly<Record<string, Kit>> = {
   stair: stairKit,
   arena: arenaKit,
   library: libraryKit,
+  workshop: workshopKit,
   'rail-line': railLineKit,
   'ice-highway': iceHighwayKit,
   'nether-portal': netherPortalKit,
@@ -280,6 +281,60 @@ function libraryKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext
 }
 
 const FACING: Readonly<Record<WallFace, string>> = { n: 'north', e: 'east', s: 'south', w: 'west' }
+
+/** An enchanting table counts at most 15 bookshelves, enough for level 30. */
+const FULL_POWER = 15
+
+/** Along the back wall of a room large enough, in order across it. */
+const STATIONS = ['crafting_table', 'smithing_table', 'anvil', 'grindstone', 'stonecutter'] as const
+
+/**
+ * An enchanting table stands in the middle of the room with 15 bookshelves on
+ * the ring two blocks out. Java counts a shelf when the block halfway to it,
+ * at the shelf's height, is air. Bedrock needs air at both heights, so the
+ * ring between table and shelves stays empty. The shelf spot facing the
+ * entrance is the way in. Shelves go level with the table first and then
+ * one higher, back of the room first, never in front of an opening. A room
+ * without places for all 15 gets no table, since a weaker one would look
+ * finished in the plan and not be. A room with a free row between the
+ * shelves and the back wall also lines that wall with crafting stations.
+ */
+function workshopKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+
+  const door = entrance(cell) ?? 'n'
+  const [toDoorX, toDoorZ] = STEP[door]
+  const cx = midpoint(interior.x0, interior.x1)
+  const cz = midpoint(interior.z0, interior.z1)
+  const depth = ([dx, dz]: readonly [number, number]) => -(dx * toDoorX + dz * toDoorZ)
+  const free = RING.filter(([dx, dz]) => !(dx === 2 * toDoorX && dz === 2 * toDoorZ) && !isOpening(context, `${cx + dx},${cz + dz}`))
+  const backFirst = [...free].sort((l, r) => depth(r) - depth(l))
+  const shelves = [
+    ...free.map(([dx, dz]) => key(cx + dx, interior.y0, cz + dz)),
+    ...backFirst.map(([dx, dz]) => key(cx + dx, interior.y0 + 1, cz + dz)),
+  ].slice(0, FULL_POWER)
+
+  const out: DetailBlocks = new Map()
+  if (shelves.length === FULL_POWER) {
+    roleSet(out, 'minecraft:enchanting_table').add(key(cx, interior.y0, cz))
+    for (const shelf of shelves) roleSet(out, 'minecraft:bookshelf').add(shelf)
+  }
+
+  const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
+  const fromFar = door === 'n' || door === 'w'
+  const back = fromFar ? frame.along[1] : frame.along[0]
+  const middle = door === 'n' || door === 's' ? cz : cx
+  if (Math.abs(back - middle) < 4) return out
+  const across = midpoint(frame.across[0], frame.across[1])
+  STATIONS.forEach((station, index) => {
+    const c = across - 2 + index
+    if (isOpening(context, frame.column(back, c))) return
+    const state =
+      station === 'grindstone' ? `[face=floor,facing=${FACING[door]}]` : station === 'anvil' || station === 'stonecutter' ? `[facing=${FACING[door]}]` : ''
+    roleSet(out, `minecraft:${station}${state}`).add(frame.place(back, interior.y0, c))
+  })
+  return out
+}
 
 /** The first wall face a person can walk through, checked n, e, s, w. */
 function entrance(cell: Cell): WallFace | undefined {
