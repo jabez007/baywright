@@ -15,11 +15,12 @@ import type { AABB, Project } from './types.js'
 
 /**
  * A cube, or the part of one a thin block fills: slabs fill half, stairs a
- * half and a step, rails and carpets a sliver at the bottom, fences and
+ * half and a step, ladders a panel on their wall, rails and carpets a sliver
+ * at the bottom, fences and
  * chains a post up the middle, and lanterns and torches a small block in the
  * middle.
  */
-export type BlockShape = 'cube' | 'bottom-slab' | 'top-slab' | 'stairs' | 'flat' | 'post' | 'small'
+export type BlockShape = 'cube' | 'bottom-slab' | 'top-slab' | 'stairs' | 'ladder' | 'flat' | 'post' | 'small'
 
 /** A box inside the block, as `[x0, y0, z0, x1, y1, z1]` from 0 to 1. */
 export type BlockPart = readonly [number, number, number, number, number, number]
@@ -165,6 +166,7 @@ const COLOURS: Readonly<Record<string, number>> = {
   end_rod: 0xe6dcd3,
   // Furniture and machines
   bookshelf: 0x75603b,
+  ladder: 0x7c5f3a,
   chiseled_bookshelf: 0x6b5638,
   lectern: 0xaf8a54,
   crafting_table: 0x815e3a,
@@ -228,7 +230,7 @@ function lookOf(blockId: string): BlockLook {
   const { name: full, state } = parseBlockId(blockId)
   const name = full.replace(/^waxed_/, '')
   const shape = shapeOf(name, state)
-  const parts = shape === 'stairs' ? stairParts(state) : [PARTS[shape]]
+  const parts = shape === 'stairs' ? stairParts(state) : shape === 'ladder' ? [ladderPart(state)] : [PARTS[shape]]
   return { colour: colourOf(name), shape, parts, finish: finishOf(blockId, name) }
 }
 
@@ -280,13 +282,14 @@ function shapeOf(name: string, state: Record<string, string>): BlockShape {
     return state.type === 'top' ? 'top-slab' : 'bottom-slab'
   }
   if (name.endsWith('_stairs')) return 'stairs'
+  if (name === 'ladder') return 'ladder'
   if (FLAT.test(name)) return 'flat'
   if (POST.test(name)) return 'post'
   if (SMALL.test(name) || (name.endsWith('lantern') && name !== 'sea_lantern' && name !== 'jack_o_lantern')) return 'small'
   return 'cube'
 }
 
-const PARTS: Readonly<Record<Exclude<BlockShape, 'stairs'>, BlockPart>> = {
+const PARTS: Readonly<Record<Exclude<BlockShape, 'stairs' | 'ladder'>, BlockPart>> = {
   cube: [0, 0, 0, 1, 1, 1],
   'bottom-slab': [0, 0, 0, 1, 0.5, 1],
   'top-slab': [0, 0.5, 0, 1, 1, 1],
@@ -303,6 +306,21 @@ const HALVES: Readonly<Record<Facing, readonly [number, number, number, number]>
   east: [0.5, 0, 1, 1],
   south: [0, 0.5, 1, 1],
   west: [0, 0, 0.5, 1],
+}
+
+/** A ladder faces away from its wall, so its panel lies on the opposite side. */
+function ladderPart(state: Record<string, string>): BlockPart {
+  const thin = 3 / 16
+  switch (state.facing) {
+    case 'west':
+      return [1 - thin, 0, 0, 1, 1, 1]
+    case 'east':
+      return [0, 0, 0, thin, 1, 1]
+    case 'south':
+      return [0, 0, 0, 1, 1, thin]
+    default:
+      return [0, 0, 1 - thin, 1, 1, 1]
+  }
 }
 
 /** Turning clockwise, seen from above. */

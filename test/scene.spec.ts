@@ -103,6 +103,15 @@ describe('blockLook', () => {
     })
   })
 
+  it('draws a ladder as a thin panel on the wall behind it', () => {
+    // The vanilla ladder's collision box: 3/16 thick against its wall.
+    const parts = (blockId: string) => blockLook(blockId).parts.map((part) => part.map((edge) => edge * 16))
+    expect(parts('minecraft:ladder[facing=west]')).toEqual([[13, 0, 0, 16, 16, 16]])
+    expect(parts('minecraft:ladder[facing=east]')).toEqual([[0, 0, 0, 3, 16, 16]])
+    expect(parts('minecraft:ladder[facing=north]')).toEqual([[0, 0, 13, 16, 16, 16]])
+    expect(parts('minecraft:ladder[facing=south]')).toEqual([[0, 0, 0, 16, 16, 3]])
+  })
+
   it('makes light sources glow and glass see-through', () => {
     expect(blockLook('minecraft:waxed_copper_bulb[lit=true]').finish).toBe('glow')
     expect(blockLook('minecraft:copper_bulb').finish).toBe('solid')

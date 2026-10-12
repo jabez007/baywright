@@ -135,6 +135,19 @@ describe('F10 — stair continuity', () => {
     expect(only(validate(p), 'V4')).toHaveLength(1)
   })
 
+  it('rejects a stairwell that climbs into a solid floor', () => {
+    // The hall's spiral tops out by the east wall, but only the middle fine
+    // cell of the landing opens its floor.
+    const p = project([
+      level('low', 0, { A1: bay('merged', () => cellFromModule('stair')) }),
+      level('high', 8, { A1: bay('fine', (index) => (index === 4 ? { module: 'junction', sockets: sockets({ w: 'corridor', down: 'shaft' }) } : {})) }, { name: 'High' }),
+    ])
+    const issues = only(validate(p), 'V4')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.message).toBe("Stair at A1 climbs into a solid floor in level 'High'")
+    expect(issues[0]!.refs).toEqual([{ levelId: 'low', bayKey: 'A1', cellIndex: 0 }])
+  })
+
   it('rises past a level that has nothing built over the shaft', () => {
     const p = project([
       level('lower', 0, { A1: bay('merged', () => ({ heightCells: 2, sockets: sockets({ up: 'shaft' }) })) }),

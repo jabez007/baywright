@@ -28,6 +28,7 @@ import {
 } from './geometry.js'
 import { lightEmission } from './lighting.js'
 import { portalConflicts, portalPairs, type PortalConflict } from './portals.js'
+import { stairWell } from './details.js'
 import { SPINE_MODULE_ID, isBuiltCell } from './modules.js'
 import {
   GRAIN_AXIS_CELLS,
@@ -296,6 +297,24 @@ export function checkStairContinuity(project: Project): Issue[] {
             severity: 'error',
             message: `Stair at ${bayKey} rises ${rise} but the level above is ${delta} higher`,
             refs: [belowRef, ...matching],
+          })
+          continue
+        }
+
+        // The landing opens its floor only inside its shaft cells' interiors,
+        // so a well over a wall line or a closed cell ends at a solid floor.
+        const well = stairWell(cell, cellInterior(project, belowRef), cellPlenum(project, belowRef))
+        const openings = matching.map((ref) => cellInterior(project, ref))
+        const blocked = [...(well ?? [])].some((column) => {
+          const [x, z] = column.split(',').map(Number) as [number, number]
+          return !openings.some((box) => x >= box.x0 && x <= box.x1 && z >= box.z0 && z <= box.z1)
+        })
+        if (blocked) {
+          issues.push({
+            id: 'V4',
+            severity: 'error',
+            message: `Stair at ${bayKey} climbs into a solid floor in level '${above.name}'`,
+            refs: [belowRef],
           })
         }
       }

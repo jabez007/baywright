@@ -753,16 +753,16 @@ test('lists the materials for one level at a time', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Materials', exact: true }).click()
   const bom = page.getByRole('region', { name: 'Bill of materials' })
-  await expect(bom.getByText('11,015 blocks')).toBeVisible()
+  await expect(bom.getByText('11,072 blocks')).toBeVisible()
 
   await bom.getByLabel('Materials for').selectOption({ label: 'Stronghold core' })
-  await expect(bom.getByText('3,965 blocks')).toBeVisible()
+  await expect(bom.getByText('3,983 blocks')).toBeVisible()
   await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('stone bricks')
   await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('39 stacks + 47')
   await expect(bom.getByText('7h 3m 50s')).toBeVisible()
 
   await bom.getByLabel('Materials for').selectOption({ label: 'Whole base' })
-  await expect(bom.getByText('11,015 blocks')).toBeVisible()
+  await expect(bom.getByText('11,072 blocks')).toBeVisible()
 })
 
 async function openLayeredExample(page: Page): Promise<void> {
@@ -782,20 +782,20 @@ test('steps through the layers of the base in 3D', async ({ page }) => {
   await expect(view.locator('canvas')).toBeVisible()
   const layer = view.getByRole('region', { name: 'Layer guide' })
   await expect(layer).toContainText('All layers')
-  await expect(layer).toContainText('11,015 blocks')
+  await expect(layer).toContainText('11,072 blocks')
   await expect(layer).toContainText('y -4 to 28')
 
   await view.getByRole('slider', { name: 'Layer' }).fill('13')
   await expect(layer).toContainText('Layer y 13')
   await expect(layer).toContainText('Stronghold core')
-  await expect(layer).toContainText('400 blocks')
+  await expect(layer).toContainText('401 blocks')
   await expect(layer).toContainText('x 0 to 60, z 0 to 60')
   await expect(layer.getByRole('listitem').filter({ hasText: 'bookshelf' })).toContainText('1 stack + 52')
 
   await view.getByRole('button', { name: 'Down a layer' }).click()
   await expect(layer).toContainText('Layer y 12')
   await expect(layer).toContainText('Trial machinery, Stronghold core')
-  await expect(layer).toContainText('1,056 blocks')
+  await expect(layer).toContainText('1,065 blocks')
 
   await view.getByRole('slider', { name: 'Layer' }).fill('-4')
   await expect(view.getByRole('button', { name: 'Down a layer' })).toBeDisabled()

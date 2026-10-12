@@ -41,6 +41,7 @@ const NO_CONTEXT: DetailContext = { openings: {}, merged: false }
 type Kit = (bay: Bay, cell: Cell, interior: AABB, context: DetailContext) => DetailBlocks
 
 const KITS: Readonly<Record<string, Kit>> = {
+  stair: stairKit,
   arena: arenaKit,
   library: libraryKit,
   'rail-line': railLineKit,
@@ -75,6 +76,7 @@ export interface EdgeDetail {
 type EdgeKit = (cell: Cell, outer: AABB, interior: AABB, context: DetailContext) => EdgeDetail[]
 
 const EDGE_KITS: Readonly<Record<string, EdgeKit>> = {
+  stair: stairTop,
   library: galleryRail,
   'rail-line': railThroughOpenings,
   'ice-highway': iceThroughOpenings,
@@ -102,6 +104,111 @@ function galleryRail(cell: Cell, outer: AABB, interior: AABB, context: DetailCon
     }
   }
   return rail
+}
+
+/**
+ * How a stair room climbs to the landing above. A room five or more blocks
+ * wide winds a spiral around a 3×3 core: 16 steps to a lap, one block up per
+ * step, clockwise seen from above. The step at height y takes the ring
+ * position y mod 16, so a stair that continues from the room below picks up
+ * where that one stopped. A three-wide room is too narrow to turn in, so it
+ * gets a ladder on a solid wall, opposite its door when it can. A five-wide
+ * room whose floor is a shaft gets a ladder too: its spiral would fill the
+ * room and cut the floor off from the steps.
+ *
+ * The climb ends in the landing's floor plane, with a step or a rung there.
+ * A spiral keeps the plane open over its last three steps below that, so a
+ * climber's head clears it.
+ */
+type Climb =
+  | { kind: 'spiral'; cx: number; cz: number }
+  | { kind: 'ladder'; x: number; z: number; facing: string }
+
+/** The spiral ring around the core, as offsets from the centre, clockwise from the north-west corner. */
+const RING: ReadonlyArray<readonly [number, number]> = [
+  [-2, -2], [-1, -2], [0, -2], [1, -2],
+  [2, -2], [2, -1], [2, 0], [2, 1],
+  [2, 2], [1, 2], [0, 2], [-1, 2],
+  [-2, 2], [-2, 1], [-2, 0], [-2, -1],
+]
+
+/** Steps the spiral leaves open above, under the plane its top step lies in. */
+const WELL_HEADROOM = 3
+
+function climbOf(cell: Cell, interior: AABB, plenum: AABB | null | undefined): Climb | null {
+  if (cell.module !== 'stair' || cell.sockets.up !== 'shaft' || plenum) return null
+  const width = Math.min(interior.x1 - interior.x0, interior.z1 - interior.z0) + 1
+  const cx = midpoint(interior.x0, interior.x1)
+  const cz = midpoint(interior.z0, interior.z1)
+  if (width >= 11 || (width >= 5 && cell.sockets.down !== 'shaft')) return { kind: 'spiral', cx, cz }
+
+  const door = entrance(cell)
+  const face = [...(door ? [OPPOSITE[door]] : []), ...WALL_FACES].find((candidate) => cell.sockets[candidate] === 'solid')
+  if (!face) return null
+  const x = face === 'e' ? interior.x1 : face === 'w' ? interior.x0 : cx
+  const z = face === 's' ? interior.z1 : face === 'n' ? interior.z0 : cz
+  return { kind: 'ladder', x, z, facing: FACING[OPPOSITE[face]] }
+}
+
+/** The spiral step at height `y`, and the way a climber faces walking onto it. */
+function spiralStep(climb: { cx: number; cz: number }, y: number): { x: number; z: number; facing: string } {
+  const index = ((y % RING.length) + RING.length) % RING.length
+  const [ox, oz] = RING[index]!
+  const [px, pz] = RING[(index + RING.length - 1) % RING.length]!
+  const facing = ox > px ? 'east' : ox < px ? 'west' : oz > pz ? 'south' : 'north'
+  return { x: climb.cx + ox, z: climb.cz + oz, facing }
+}
+
+/** The block a climb puts at height `y`. */
+function climbBlock(climb: Climb, y: number): { x: number; z: number; material: DetailMaterial } {
+  if (climb.kind === 'ladder') return { x: climb.x, z: climb.z, material: `minecraft:ladder[facing=${climb.facing}]` }
+  const { x, z, facing } = spiralStep(climb, y)
+  return { x, z, material: `trim[facing=${facing}]` }
+}
+
+/**
+ * The columns, as `"x,z"`, a stair room's upward shaft opens in the plane
+ * above it, or null when the room has no climb and the shaft opens its whole
+ * footprint.
+ */
+export function stairWell(cell: Cell, interior: AABB, plenum: AABB | null): ReadonlySet<string> | null {
+  const climb = climbOf(cell, interior, plenum)
+  if (!climb) return null
+  const top = interior.y1 + 1
+  const well = new Set<string>()
+  const lowest = climb.kind === 'spiral' ? top - WELL_HEADROOM : top
+  for (let y = lowest; y <= top; y++) {
+    const { x, z } = climbBlock(climb, y)
+    well.add(`${x},${z}`)
+  }
+  return well
+}
+
+function stairKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  const climb = climbOf(cell, interior, context.plenum)
+  const out: DetailBlocks = new Map()
+  if (!climb) return out
+  for (let y = interior.y0; y <= interior.y1; y++) {
+    const { x, z, material } = climbBlock(climb, y)
+    roleSet(out, material).add(key(x, y, z))
+  }
+  if (climb.kind === 'spiral') {
+    const core = roleSet(out, 'wall')
+    for (let y = interior.y0; y <= interior.y1; y++) {
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) core.add(key(climb.cx + dx, y, climb.cz + dz))
+    }
+  }
+  return out
+}
+
+/** The last step or rung, in the landing's floor plane. */
+function stairTop(cell: Cell, _outer: AABB, interior: AABB, context: DetailContext): EdgeDetail[] {
+  const climb = climbOf(cell, interior, context.plenum)
+  if (!climb) return []
+  const y = interior.y1 + 1
+  const { x, z, material } = climbBlock(climb, y)
+  const at = key(x, y, z)
+  return [{ at, material, whereAir: at }]
 }
 
 /**

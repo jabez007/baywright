@@ -12,13 +12,14 @@ import {
   isDoorway,
   netherPortalOpening,
   OPPOSITE,
+  stairWell,
   type DetailContext,
   type DetailMaterial,
   type PortalOpening,
   type TrunkFlow,
   type WallFace,
 } from './details.js'
-import { LightField, parseBlockId } from './lighting.js'
+import { LightField, lightEmission, parseBlockId } from './lighting.js'
 import { isBuiltCell } from './modules.js'
 import {
   BAY_PITCH,
@@ -273,7 +274,7 @@ export function shellBlocks(project: Project, ref: CellRef): Map<ShellRole, Set<
   const interior = cellInterior(project, ref)
   const plenum = cellPlenum(project, ref)
   const dropped = droppedCeilingY(level, cell)
-  const { voids, bars } = socketOpenings(outer, interior, plenum, cell.sockets, cell.openingWidths)
+  const { voids, bars } = socketOpenings(outer, interior, plenum, cell.sockets, cell.openingWidths, shaftWells(project, ref))
 
   const out = new Map<ShellRole, Set<string>>()
   for (let y = outer.y0; y <= outer.y1; y++) {
@@ -378,11 +379,17 @@ const CHAIN = 'minecraft:chain'
  */
 const LAMP_CLEARANCE = 3
 
+/** The most lamps one room or plenum gets. */
+const MAX_LAMPS = 4
+
 /**
  * Hang the palette light in every room and plenum that still has a floor a
  * mob could spawn on. Rooms go from the top level down, so a landing's light
  * can serve the stair shaft below it, and a light that already reaches a
- * neighbour's floor saves that neighbour a lamp. Returns the finished light.
+ * neighbour's floor saves that neighbour a lamp. A room still dark after its
+ * first lamp, such as a stair hall with a core in the middle, gets another
+ * nearest the middle of the dark floor that remains. Returns the finished
+ * light.
  */
 function placeLights(project: Project, blocks: Map<string, string>): LightField {
   const light = new LightField(blocks)
@@ -394,27 +401,40 @@ function placeLights(project: Project, blocks: Map<string, string>): LightField 
     const lamp = paletteFor(project, level, cell).blocks.light
     for (const volume of plenum ? [interior, plenum] : [interior]) {
       // Doorways in the walls count too, as they do for V9.
-      if (!hasDarkFloor(light, { ...volume, x0: outer.x0, x1: outer.x1, z0: outer.z0, z1: outer.z1 })) continue
-      const spot = lampSpot(blocks, volume) ?? landingSpot(blocks, rooms, volume)
-      if (!spot) continue
-      for (let y = spot.y + 1; y <= spot.top; y++) {
-        blocks.set(blockKey(spot.x, y, spot.z), CHAIN)
-        light.place(spot.x, y, spot.z, CHAIN)
+      const floor = { ...volume, x0: outer.x0, x1: outer.x1, z0: outer.z0, z1: outer.z1 }
+      for (let lamps = 0; lamps < MAX_LAMPS; lamps++) {
+        const dark = darkFloor(light, floor)
+        if (dark.length === 0) break
+        const spot = lamps === 0 ? (lampSpot(blocks, volume) ?? landingSpot(blocks, rooms, volume)) : lampSpot(blocks, volume, middle(dark))
+        if (!spot) break
+        for (let y = spot.y + 1; y <= spot.top; y++) {
+          blocks.set(blockKey(spot.x, y, spot.z), CHAIN)
+          light.place(spot.x, y, spot.z, CHAIN)
+        }
+        blocks.set(blockKey(spot.x, spot.y, spot.z), lamp)
+        light.place(spot.x, spot.y, spot.z, lamp)
+        // A lamp that gives no light would only be repeated. V9 names it.
+        if (lightEmission(lamp) === 0) break
       }
-      blocks.set(blockKey(spot.x, spot.y, spot.z), lamp)
-      light.place(spot.x, spot.y, spot.z, lamp)
     }
   }
   return light
 }
 
-function hasDarkFloor(light: LightField, volume: AABB): boolean {
+function darkFloor(light: LightField, volume: AABB): Array<[number, number]> {
+  const dark: Array<[number, number]> = []
   for (let y = volume.y0; y <= volume.y1; y++) {
     for (let z = volume.z0; z <= volume.z1; z++) {
-      for (let x = volume.x0; x <= volume.x1; x++) if (light.isDarkSpawn(x, y, z)) return true
+      for (let x = volume.x0; x <= volume.x1; x++) if (light.isDarkSpawn(x, y, z)) dark.push([x, z])
     }
   }
-  return false
+  return dark
+}
+
+/** The column at the middle of some columns, rounded down. */
+function middle(columns: ReadonlyArray<readonly [number, number]>): [number, number] {
+  const sum = columns.reduce(([sx, sz], [x, z]) => [sx + x, sz + z], [0, 0])
+  return [Math.floor(sum[0] / columns.length), Math.floor(sum[1] / columns.length)]
 }
 
 interface LampSpot {
@@ -426,13 +446,16 @@ interface LampSpot {
 }
 
 /**
- * The free top column nearest the volume's centre, hanging from the block
- * above. A tall volume lowers the lamp on a chain, but never past a detail
- * block, so a portal frame or a kit below keeps its space.
+ * The free top column nearest the volume's centre, or nearest the column
+ * given, hanging from the block above. A tall volume lowers the lamp on a chain, but never past a detail
+ * block, so a portal frame or a kit below keeps its space. A column a stair
+ * or ladder climbs through stays clear for the climber's head.
  */
-function lampSpot(blocks: ReadonlyMap<string, string>, volume: AABB): LampSpot | null {
-  const cx = midpoint(volume.x0, volume.x1)
-  const cz = midpoint(volume.z0, volume.z1)
+function lampSpot(
+  blocks: ReadonlyMap<string, string>,
+  volume: AABB,
+  [cx, cz]: readonly [number, number] = [midpoint(volume.x0, volume.x1), midpoint(volume.z0, volume.z1)],
+): LampSpot | null {
   const columns: Array<[number, number]> = []
   for (let z = volume.z0; z <= volume.z1; z++) for (let x = volume.x0; x <= volume.x1; x++) columns.push([x, z])
   columns.sort(([lx, lz], [rx, rz]) => Math.abs(lx - cx) + Math.abs(lz - cz) - Math.abs(rx - cx) - Math.abs(rz - cz))
@@ -440,12 +463,23 @@ function lampSpot(blocks: ReadonlyMap<string, string>, volume: AABB): LampSpot |
   const lowest = Math.min(volume.y1, volume.y0 + LAMP_CLEARANCE)
   for (const [x, z] of columns) {
     if (!blocks.has(blockKey(x, volume.y1 + 1, z)) || blocks.has(blockKey(x, volume.y1, z))) continue
+    if (isClimbColumn(blocks, volume, x, z)) continue
     let y = volume.y1
     while (y > lowest && !blocks.has(blockKey(x, y - 1, z))) y--
     return { x, y, z, top: volume.y1 }
   }
   return null
 }
+
+function isClimbColumn(blocks: ReadonlyMap<string, string>, volume: AABB, x: number, z: number): boolean {
+  for (let y = volume.y0; y <= volume.y1; y++) {
+    const blockId = blocks.get(blockKey(x, y, z))
+    if (blockId && CLIMBS.test(parseBlockId(blockId).name)) return true
+  }
+  return false
+}
+
+const CLIMBS = /_stairs$|^ladder$/
 
 /**
  * A stair shaft has no ceiling to hang from, so its lamp hangs in the room
@@ -724,7 +758,37 @@ export function socketVoids(project: Project, ref: CellRef): ReadonlySet<string>
     cellPlenum(project, ref),
     cell.sockets,
     cell.openingWidths,
+    shaftWells(project, ref),
   ).voids
+}
+
+/** The columns, as `"x,z"`, each shaft opens. Null opens the whole interior footprint. */
+interface ShaftWells {
+  up: ReadonlySet<string> | null
+  down: ReadonlySet<string> | null
+}
+
+/**
+ * A stair room's shaft opens only the well its climb passes through, so the
+ * landing keeps the rest of its floor. The landing's own shaft opens the
+ * wells of the stairs that climb into it. Any other shaft, or a landing over
+ * a room with no climb, opens the whole footprint.
+ */
+function shaftWells(project: Project, ref: CellRef): ShaftWells {
+  const { cell } = resolveCell(project, ref)
+  const wells: ShaftWells = { up: null, down: null }
+  if (cell.sockets.up === 'shaft') wells.up = stairWell(cell, cellInterior(project, ref), cellPlenum(project, ref))
+  if (cell.sockets.down !== 'shaft') return wells
+
+  const outer = cellAABB(project, ref)
+  const below = builtCellRefs(project).filter((other) => {
+    if (other.bayKey !== ref.bayKey || other.levelId === ref.levelId) return false
+    const box = cellAABB(project, other)
+    return box.y1 === outer.y0 && footprintsOverlap(box, outer) && resolveCell(project, other).cell.sockets.up === 'shaft'
+  })
+  const climbs = below.map((other) => stairWell(resolveCell(project, other).cell, cellInterior(project, other), cellPlenum(project, other)))
+  if (climbs.length > 0 && climbs.every((well) => well !== null)) wells.down = new Set(climbs.flatMap((well) => [...well!]))
+  return wells
 }
 
 /**
@@ -741,6 +805,7 @@ function socketOpenings(
   plenum: AABB | null,
   sockets: Record<Face, Socket>,
   openingWidths: Partial<Record<Face, OpeningWidth>> = {},
+  wells: ShaftWells = { up: null, down: null },
 ): { voids: Set<string>; bars: Set<string> } {
   const voids = new Set<string>()
   const bars = new Set<string>()
@@ -769,13 +834,16 @@ function socketOpenings(
     }
   }
 
-  // §5.4: `shaft` is the only socket that opens a horizontal plane, and it
-  // opens the full interior footprint.
+  // §5.4: `shaft` is the only socket that opens a horizontal plane. It opens
+  // the full interior footprint, or a stair's well within it.
   for (const face of ['up', 'down'] as const) {
     if (sockets[face] !== 'shaft') continue
     const y = face === 'up' ? outer.y1 : outer.y0
+    const well = wells[face]
     for (let z = interior.z0; z <= interior.z1; z++) {
-      for (let x = interior.x0; x <= interior.x1; x++) voids.add(blockKey(x, y, z))
+      for (let x = interior.x0; x <= interior.x1; x++) {
+        if (!well || well.has(`${x},${z}`)) voids.add(blockKey(x, y, z))
+      }
     }
   }
 
