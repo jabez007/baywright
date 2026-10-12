@@ -167,7 +167,7 @@ describe('unbuilt cells', () => {
   it('places only the built cell of a mostly empty bay', () => {
     // One fine cell: a 5x5x5 shell around a 3x3x3 room is 125 - 27 = 98
     // blocks, and a lamp hangs under its ceiling.
-    const p = project([level('L', 0, { A1: bay('fine', (index) => ({ module: index === 4 ? 'storage' : 'empty' })) })])
+    const p = project([level('L', 0, { A1: bay('fine', (index) => ({ module: index === 4 ? 'vault' : 'empty' })) })])
     expect(resolveBlocks(p).size).toBe(98 + 1)
   })
 })

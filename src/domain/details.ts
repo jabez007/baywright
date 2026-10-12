@@ -46,6 +46,7 @@ const KITS: Readonly<Record<string, Kit>> = {
   library: libraryKit,
   workshop: workshopKit,
   farm: farmKit,
+  storage: storageKit,
   'rail-line': railLineKit,
   'ice-highway': iceHighwayKit,
   'nether-portal': netherPortalKit,
@@ -282,6 +283,25 @@ function libraryKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext
 }
 
 const FACING: Readonly<Record<WallFace, string>> = { n: 'north', e: 'east', s: 'south', w: 'west' }
+
+/**
+ * Barrels line every wall column not in front of an opening, three high,
+ * the most a player reaches from the floor. A barrel holds as much as a
+ * single chest, opens from any side, and opens with a block on top, so
+ * barrels stack where chests could not. Each faces into the room.
+ */
+function storageKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (context.merged || cell.sockets.down === 'shaft') return new Map()
+  const out: DetailBlocks = new Map()
+  const top = Math.min(interior.y0 + 2, interior.y1)
+  for (const [x, z] of wallColumns(interior)) {
+    if (isOpening(context, `${x},${z}`)) continue
+    const facing = z === interior.z1 ? 'north' : z === interior.z0 ? 'south' : x === interior.x0 ? 'east' : 'west'
+    const barrels = roleSet(out, `minecraft:barrel[facing=${facing}]`)
+    for (let y = interior.y0; y <= top; y++) barrels.add(key(x, y, z))
+  }
+  return out
+}
 
 /** Farmland stays wet with water this many blocks across from it, level with it or one higher. */
 const HYDRATION = 4

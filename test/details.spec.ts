@@ -83,8 +83,8 @@ describe('arena core and circulation ring', () => {
   })
 
   it('does not detail modules without a kit, or a subdivided arena', () => {
-    const storage = cellFromModule('storage')
-    expect(interiorDetailBlocks(bay('merged'), storage, cellInterior(arena, ref)).size).toBe(0)
+    const vault = cellFromModule('vault')
+    expect(interiorDetailBlocks(bay('merged'), vault, cellInterior(arena, ref)).size).toBe(0)
     expect(interiorDetailBlocks(bay('fine'), cellFromModule('arena'), cellInterior(arena, ref)).size).toBe(0)
   })
 })

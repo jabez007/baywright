@@ -11,7 +11,7 @@ export function sockets(overrides: Partial<Record<Face, Socket>> = {}): Record<F
 
 /** A built cell. Fixtures that need an unbuilt one pass `module: 'empty'`. */
 export function cell(overrides: Partial<Cell> = {}): Cell {
-  return { module: 'storage', heightCells: 1, ceiling: 'flat', sockets: sockets(), ...overrides }
+  return { module: 'junction', heightCells: 1, ceiling: 'flat', sockets: sockets(), ...overrides }
 }
 
 /** A bay filled with the right number of cells for its grain. */

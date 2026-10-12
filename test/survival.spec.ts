@@ -200,3 +200,65 @@ describe('farm kit', () => {
     expect(canSpawnOn('minecraft:water')).toBe(false)
   })
 })
+
+describe('storage kit', () => {
+  const storage = (grain: 'fine' | 'merged', overrides: Partial<Cell> = {}): Project =>
+    project([level('L1', 0, { A1: bay(grain, (index) => (index === (grain === 'fine' ? 4 : 0) ? { ...cellFromModule('storage'), ...overrides } : {})) })])
+
+  /** Interior columns along the walls of a room spanning `lo` to `hi` on both axes. */
+  const wallColumns = (lo: number, hi: number) => {
+    const columns: Array<[number, number]> = []
+    for (let x = lo; x <= hi; x++) for (let z = lo; z <= hi; z++) if (x === lo || x === hi || z === lo || z === hi) columns.push([x, z])
+    return columns
+  }
+
+  it('lines every wall of a merged storage room with barrels three high, clear of the door', () => {
+    const blocks = resolveBlocks(storage('merged'))
+    const barrels = positionsNamed(blocks, 'barrel')
+    // 40 wall columns, less the 11 along the open north side.
+    expect(barrels).toHaveLength(29 * 3)
+    for (const [x, z] of wallColumns(1, 11)) {
+      for (const y of [1, 2, 3]) {
+        const name = parseBlockId(blocks.get(blockKey(x, y, z)) ?? 'minecraft:air').name
+        expect(name, `${x},${y},${z}`).toBe(z === 1 ? 'air' : 'barrel')
+      }
+    }
+  })
+
+  it('opens each barrel toward the room', () => {
+    const blocks = resolveBlocks(storage('merged'))
+    expect(parseBlockId(blocks.get(blockKey(6, 1, 11))!).state.facing).toBe('north')
+    expect(parseBlockId(blocks.get(blockKey(1, 1, 6))!).state.facing).toBe('east')
+    expect(parseBlockId(blocks.get(blockKey(11, 1, 6))!).state.facing).toBe('west')
+  })
+
+  it('stops at three high in a taller room, within reach from the floor, and lights it', () => {
+    const p = storage('merged', { heightCells: 2 })
+    const barrels = positionsNamed(resolveBlocks(p), 'barrel')
+    expect(barrels).toHaveLength(29 * 3)
+    expect(Math.max(...barrels.map((barrel) => barrel.y))).toBe(3)
+    expect(validate(p).filter((issue) => issue.id === 'V9')).toEqual([])
+  })
+
+  it('fits a fine storage room around its doorway', () => {
+    // Cell 4 of a fine bay has its interior at x and z 5 to 7.
+    const blocks = resolveBlocks(storage('fine', { openingWidths: { n: 3 } }))
+    expect(positionsNamed(blocks, 'barrel')).toHaveLength(5 * 3)
+    for (const x of [5, 6, 7]) expect(blocks.get(blockKey(x, 1, 5)), `doorway at ${x}`).toBeUndefined()
+  })
+
+  it('leaves a merged hall bare rather than wall off its members from each other', () => {
+    const hall = project([
+      level('L1', 0, {
+        A1: bay('merged', () => ({ ...cellFromModule('storage'), mergeGroup: 'hall' })),
+        B1: bay('merged', () => ({ ...cellFromModule('storage'), mergeGroup: 'hall' })),
+      }),
+    ])
+    expect(positionsNamed(resolveBlocks(hall), 'barrel')).toEqual([])
+  })
+
+  it('keeps the walls clear where a stair arrives from below', () => {
+    const blocks = resolveBlocks(storage('merged', { sockets: { ...cellFromModule('storage').sockets, down: 'shaft' } }))
+    expect(positionsNamed(blocks, 'barrel')).toEqual([])
+  })
+})
