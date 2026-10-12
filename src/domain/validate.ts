@@ -1,5 +1,5 @@
 /**
- * PRD §8 — Validation rules V1 through V8.
+ * PRD §8 — Validation rules V1 through V11.
  *
  * Pure: no Vue, no store, no I/O.
  */
@@ -19,6 +19,7 @@ import {
   openingYSpan,
   paletteFor,
   parseBayKey,
+  resolveBlocks,
   resolveCell,
   resolveLight,
   socketVoids,
@@ -26,7 +27,7 @@ import {
   validMergeGroupIds,
   yIntervalsCollide,
 } from './geometry.js'
-import { lightEmission } from './lighting.js'
+import { CROP_LIGHT, lightEmission } from './lighting.js'
 import { portalConflicts, portalPairs, type PortalConflict } from './portals.js'
 import { stairWell } from './details.js'
 import { SPINE_MODULE_ID, isBuiltCell } from './modules.js'
@@ -48,7 +49,7 @@ import {
 
 export type Severity = 'error' | 'warning'
 
-export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9' | 'V10'
+export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9' | 'V10' | 'V11'
 
 export interface Issue {
   id: IssueId
@@ -72,6 +73,7 @@ export function validate(project: Project): Issue[] {
     ...checkWorldLimits(project),
     ...checkDarkFloors(project),
     ...checkPortalLinks(project),
+    ...checkCropLight(project),
   ]
 }
 
@@ -889,6 +891,52 @@ export function checkPortalLinks(project: Project): Issue[] {
     message: messages[kind](name(from.ref), name(to.ref)),
     refs: [from.ref, to.ref],
   }))
+}
+
+// --------------------------------------------------------------------------
+// V11 — Crop light (warning)
+// --------------------------------------------------------------------------
+
+/**
+ * Crops grow only in light 9 or more at the crop, and underground that is
+ * block light alone. Count the farmland in each level's cells whose crop
+ * would sit in less.
+ */
+export function checkCropLight(project: Project): Issue[] {
+  const blocks = resolveBlocks(project)
+  const light = resolveLight(project)
+  const issues: Issue[] = []
+  for (const level of sortedLevels(project)) {
+    const seen = new Set<string>()
+    const refs: CellRef[] = []
+    let dark = 0
+    for (const ref of builtCellRefs(project).filter((entry) => entry.levelId === level.id)) {
+      const box = cellAABB(project, ref)
+      let darkHere = 0
+      for (let y = box.y0; y < box.y1; y++) {
+        for (let z = box.z0; z <= box.z1; z++) {
+          for (let x = box.x0; x <= box.x1; x++) {
+            const at = blockKey(x, y, z)
+            if (seen.has(at) || blocks.get(at) !== 'minecraft:farmland') continue
+            seen.add(at)
+            if (light.lightAt(x, y + 1, z) < CROP_LIGHT) darkHere++
+          }
+        }
+      }
+      if (darkHere === 0) continue
+      dark += darkHere
+      refs.push(ref)
+    }
+    if (dark === 0) continue
+    issues.push({
+      id: 'V11',
+      severity: 'warning',
+      message: `Level '${level.name}' has ${dark} farmland block${dark === 1 ? '' : 's'} too dark for crops, which need light ${CROP_LIGHT} to grow`,
+      refs,
+      levelId: level.id,
+    })
+  }
+  return issues
 }
 
 // --------------------------------------------------------------------------

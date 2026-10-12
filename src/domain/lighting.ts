@@ -9,6 +9,9 @@ import { parseBlockKey } from './geometry.js'
 
 export const MAX_LIGHT = 15
 
+/** Crops grow only where the light at the crop is at least this. Underground, that is block light alone. */
+export const CROP_LIGHT = 9
+
 /** Light levels by block name, for blocks that always glow. */
 const ALWAYS_LIT: Readonly<Record<string, number>> = {
   beacon: 15,
@@ -102,11 +105,11 @@ function takesSpawns(blockId: string): boolean {
   const { name, state } = parseBlockId(blockId)
   if (name.endsWith('_slab')) return state.type === 'top' || state.type === 'double'
   if (name.endsWith('_stairs')) return state.half === 'top'
-  return name !== 'magma_block' && !LOW_TOPPED.test(name)
+  return name !== 'magma_block' && !SPAWNLESS.test(name)
 }
 
-/** Blocks short of a full block, so no mob spawns on top of them. */
-const LOW_TOPPED = /^(enchanting_table|anvil|chipped_anvil|damaged_anvil|grindstone|stonecutter|chest|trapped_chest|ender_chest|farmland|dirt_path)$/
+/** Blocks short of a full block, and water, so no mob spawns on top of them. */
+const SPAWNLESS = /^(enchanting_table|anvil|chipped_anvil|damaged_anvil|grindstone|stonecutter|chest|trapped_chest|ender_chest|farmland|dirt_path|water)$/
 
 /** Bit flags for what fills a position. Air is 0: empty, lets light through, takes no spawn. */
 const OCCUPIED = 1

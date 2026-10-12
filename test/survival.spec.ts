@@ -9,9 +9,11 @@
  * rounding each offset toward zero. Bedrock needs air at both heights.
  */
 import { describe, expect, it } from 'vitest'
-import { blockKey, parseBlockKey, resolveBlocks } from '../src/domain/geometry.js'
+import { computeBom } from '../src/domain/bom.js'
+import { blockKey, parseBlockKey, resolveBlocks, resolveLight } from '../src/domain/geometry.js'
 import { canSpawnOn, lightEmission, parseBlockId } from '../src/domain/lighting.js'
 import { cellFromModule } from '../src/domain/modules.js'
+import { PALETTES } from '../src/domain/palettes.js'
 import { validate } from '../src/domain/validate.js'
 import type { Cell, Project } from '../src/domain/types.js'
 import { bay, level, project, sockets } from './factory.js'
@@ -119,5 +121,82 @@ describe('workshop kit', () => {
       expect(positionsNamed(blocks, 'enchanting_table')).toEqual([])
       expect(positionsNamed(blocks, 'bookshelf')).toEqual([])
     })
+  })
+})
+
+const farm = (grain: 'coarse' | 'merged', overrides: Partial<Project> = {}): Project =>
+  project([level('L1', 0, { A1: bay(grain, (index) => (index === 0 ? cellFromModule('farm') : {})) }, { name: 'Fields' })], overrides)
+
+/** Farmland is wet when water sits within four blocks across, level with it or one higher. */
+function isHydrated(blocks: Blocks, land: Point): boolean {
+  for (let dy = 0; dy <= 1; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      for (let dz = -4; dz <= 4; dz++) {
+        if (blocks.get(blockKey(land.x + dx, land.y + dy, land.z + dz)) === 'minecraft:water') return true
+      }
+    }
+  }
+  return false
+}
+
+describe('farm kit', () => {
+  it('fills a merged farm with a 9×9 field that one water block keeps wet', () => {
+    const blocks = resolveBlocks(farm('merged'))
+    const land = positionsNamed(blocks, 'farmland')
+    expect(land).toHaveLength(80)
+    expect(positionsNamed(blocks, 'water')).toEqual([{ x: 6, y: 1, z: 6 }])
+    for (const block of land) expect(isHydrated(blocks, block), `farmland at ${block.x},${block.z}`).toBe(true)
+    // A walkway one block wide runs round the walls, so the door is clear and no one tramples the field.
+    for (let i = 1; i <= 11; i++) {
+      for (const [x, z] of [[i, 1], [i, 11], [1, i], [11, i]] as const) expect(blocks.get(blockKey(x, 1, z)), `walkway ${x},${z}`).toBeUndefined()
+    }
+  })
+
+  it('lights every crop enough to grow, with headroom over the walkway', () => {
+    const p = farm('merged')
+    const light = resolveLight(p)
+    for (const block of positionsNamed(resolveBlocks(p), 'farmland')) {
+      expect(light.lightAt(block.x, block.y + 1, block.z), `crop over ${block.x},${block.z}`).toBeGreaterThanOrEqual(9)
+    }
+    const issues = validate(p)
+    expect(issues.filter((issue) => issue.id === 'V9' || issue.id === 'V11')).toEqual([])
+  })
+
+  it('fits a 3×3 field in a coarse farm', () => {
+    const p = farm('coarse')
+    const blocks = resolveBlocks(p)
+    expect(positionsNamed(blocks, 'farmland')).toHaveLength(8)
+    expect(positionsNamed(blocks, 'water')).toEqual([{ x: 3, y: 1, z: 3 }])
+    // The field's corner lamps would hang in front of the north doorway, so only the back two do.
+    for (let x = 1; x <= 5; x++) {
+      for (const y of [1, 2, 3]) expect(blocks.get(blockKey(x, y, 1)), `doorway at ${x},${y}`).toBeUndefined()
+    }
+    expect(validate(p).filter((issue) => issue.id === 'V9' || issue.id === 'V11')).toEqual([])
+  })
+
+  it('warns when the palette light leaves the crops too dark to grow', () => {
+    const unlit = { ...PALETTES['stone-brick']!, blocks: { ...PALETTES['stone-brick']!.blocks, light: 'minecraft:copper_bulb' } }
+    const issues = validate(farm('merged', { palettes: { ...PALETTES, 'stone-brick': unlit } })).filter((issue) => issue.id === 'V11')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.severity).toBe('warning')
+    expect(issues[0]!.message).toBe("Level 'Fields' has 80 farmland blocks too dark for crops, which need light 9 to grow")
+    expect(issues[0]!.refs).toEqual([{ levelId: 'L1', bayKey: 'A1', cellIndex: 0 }])
+  })
+
+  it('counts a crop in light 8 as too dark, and one in light 9 as lit', () => {
+    // A soul lantern gives 10, so only the crop right under each of the four lamps gets 9.
+    const soul = { ...PALETTES['stone-brick']!, blocks: { ...PALETTES['stone-brick']!.blocks, light: 'minecraft:soul_lantern[hanging=true]' } }
+    const issues = validate(farm('merged', { palettes: { ...PALETTES, 'stone-brick': soul } })).filter((issue) => issue.id === 'V11')
+    expect(issues.map((issue) => issue.message)).toEqual(["Level 'Fields' has 76 farmland blocks too dark for crops, which need light 9 to grow"])
+  })
+
+  it('lists dirt and a water bucket for the field, not blocks no one can carry', () => {
+    const bom = computeBom(farm('merged'))
+    const raw = (blockId: string) => bom.rawInputs.find((entry) => entry.blockId === blockId)?.count
+    expect(raw('minecraft:dirt')).toBe(80)
+    expect(raw('minecraft:water_bucket')).toBe(1)
+    expect(raw('minecraft:farmland')).toBeUndefined()
+    expect(raw('minecraft:water')).toBeUndefined()
+    expect(canSpawnOn('minecraft:water')).toBe(false)
   })
 })

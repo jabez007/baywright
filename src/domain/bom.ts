@@ -20,7 +20,7 @@ export const DEFAULT_FURNACES = 1
 // Recipe chains
 // --------------------------------------------------------------------------
 
-export type CraftMethod = 'craft' | 'smelt' | 'stonecutter'
+export type CraftMethod = 'craft' | 'smelt' | 'stonecutter' | 'hoe' | 'bucket'
 
 export interface Recipe {
   /** What this block is made from. */
@@ -96,6 +96,10 @@ export const RECIPES: Readonly<Record<string, Recipe>> = {
   'minecraft:tuff_brick_slab': { input: 'minecraft:tuff_bricks', per: 0.5, method: 'stonecutter' },
   'minecraft:tuff_brick_wall': { input: 'minecraft:tuff_bricks', per: 1, method: 'stonecutter' },
   'minecraft:chiseled_tuff_bricks': { input: 'minecraft:tuff_bricks', per: 1, method: 'stonecutter' },
+
+  // Blocks no one can carry: a hoe tills dirt, and a bucket places water.
+  'minecraft:farmland': { input: 'minecraft:dirt', per: 1, method: 'hoe' },
+  'minecraft:water': { input: 'minecraft:water_bucket', per: 1, method: 'bucket' },
 
   // furnace ← 8 cobblestone
   'minecraft:furnace': { input: 'minecraft:cobblestone', per: 8, method: 'craft' },

@@ -119,6 +119,7 @@ describe('blockLook', () => {
     expect(blockLook('minecraft:glass').finish).toBe('glass')
     expect(blockLook('minecraft:light_blue_stained_glass_pane').finish).toBe('glass')
     expect(blockLook('minecraft:stone_bricks').finish).toBe('solid')
+    expect(blockLook('minecraft:water').finish).toBe('glass')
   })
 })
 

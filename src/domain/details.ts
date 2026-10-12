@@ -45,6 +45,7 @@ const KITS: Readonly<Record<string, Kit>> = {
   arena: arenaKit,
   library: libraryKit,
   workshop: workshopKit,
+  farm: farmKit,
   'rail-line': railLineKit,
   'ice-highway': iceHighwayKit,
   'nether-portal': netherPortalKit,
@@ -281,6 +282,50 @@ function libraryKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext
 }
 
 const FACING: Readonly<Record<WallFace, string>> = { n: 'north', e: 'east', s: 'south', w: 'west' }
+
+/** Farmland stays wet with water this many blocks across from it, level with it or one higher. */
+const HYDRATION = 4
+
+/** Where a farm's lamps hang, from the water: close enough that every crop gets the light it grows in. */
+const FIELD_LAMPS: ReadonlyArray<readonly [number, number]> = [
+  [-2, -2],
+  [2, -2],
+  [2, 2],
+  [-2, 2],
+]
+
+/**
+ * A field of farmland with one water block in the middle, inside a walkway
+ * one block wide along the walls. The walkway keeps every doorway clear,
+ * and walking round the field never tramples it. One water block keeps
+ * farmland wet four blocks out, which covers the 9x9 field of a merged room.
+ * Underground, crops grow only in block light 9 or more, and one lamp in the
+ * middle cannot give that at the corners, so four lamps hang two blocks
+ * diagonally from the water, three above the floor, where a player on the
+ * walkway passes under them. V11 checks the light the crops get.
+ */
+function farmKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+  const cx = midpoint(interior.x0, interior.x1)
+  const cz = midpoint(interior.z0, interior.z1)
+  const [x0, x1, z0, z1] = [interior.x0 + 1, interior.x1 - 1, interior.z0 + 1, interior.z1 - 1]
+  if (Math.max(cx - x0, x1 - cx, cz - z0, z1 - cz) > HYDRATION) return new Map()
+
+  const out: DetailBlocks = new Map()
+  const land = roleSet(out, 'minecraft:farmland')
+  for (let x = x0; x <= x1; x++) {
+    for (let z = z0; z <= z1; z++) if (x !== cx || z !== cz) land.add(key(x, interior.y0, z))
+  }
+  roleSet(out, 'minecraft:water').add(key(cx, interior.y0, cz))
+
+  const lampY = Math.min(interior.y0 + 2, interior.y1)
+  for (const [dx, dz] of FIELD_LAMPS) {
+    if (isOpening(context, `${cx + dx},${cz + dz}`)) continue
+    roleSet(out, 'light').add(key(cx + dx, lampY, cz + dz))
+    for (let y = lampY + 1; y <= interior.y1; y++) roleSet(out, 'minecraft:chain').add(key(cx + dx, y, cz + dz))
+  }
+  return out
+}
 
 /** An enchanting table counts at most 15 bookshelves, enough for level 30. */
 const FULL_POWER = 15

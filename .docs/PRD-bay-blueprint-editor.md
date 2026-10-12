@@ -108,7 +108,7 @@ A `Module` is a named preset that fills in default `heightCells`, `ceiling`, `so
 
 `spine`, `corridor`, `junction`, `rail-line`, `ice-highway`, `stair`, `vestibule`, `storage`, `vault`, `library`, `arena`, `workshop`, `nether-portal`, `trading-hall`, `prison-cell`, `farm`, `item-trunk`, `mine-access`, `super-smelter`, `auto-crafter`, `plenum-access`, `empty`
 
-Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5 and V8 through V10. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
+Every cell starts as `empty`. An empty cell is unbuilt. It places no blocks, adds nothing to the bill of materials, and is skipped by V1 through V5 and V8 through V11. Built neighbours still place their own walls, so a room next to an empty cell stays enclosed. An opening that faces an empty cell leads into whatever the world already holds there.
 
 Decoration hints record builder intent. Exact detail kits are optional, and only some modules have one. A kit derives its coordinates from `cellInterior`, uses a palette role where one fits, and uses a fixed block ID for a functional block such as a bookshelf. It leaves clear every interior column in front of a wall opening, including windows and bars.
 
@@ -116,6 +116,7 @@ Decoration hints record builder intent. Exact detail kits are optional, and only
 - **Library.** A coarse or merged Library exports bookshelves three high along every wall and a lectern at the centre, facing the first `corridor` or `arch` face. A fine cell is too small for the kit. A member of a merge group is skipped, because its room is larger than its interior. A Library cell with a `down` shaft is a well, so it gets no shelves. When the well belongs to a valid merge group, a one-high accent rail rings it on the gallery floor. The rail fills only blocks that are still air, so it never replaces a wall.
 - **Stair.** A Stair cell with an `up` shaft and no dropped ceiling gets a climb from its floor to the landing's floor plane. A room at least 11 wide, or at least 5 wide with no `down` shaft, gets a spiral of the palette's trim stairs around a 3x3 core of the wall block. The spiral runs clockwise on the ring two blocks out from the room's centre, one step up for each block, and each step faces the way the player walks. A step's place on the ring comes from its world y, so stairs stacked in one bay join into one spiral. The top step sits in the landing's floor plane, and the stairwell is that step and the three steps below it, which leaves 3 blocks of headroom over every step. A narrower room, or a 5-wide room whose floor is a shaft, gets a ladder instead, since a spiral there would leave the floor no way onto the steps. The ladder stands on the middle column of the first solid wall, trying the wall opposite the entrance first, and runs up through the landing's floor plane. Its stairwell is that one column.
 - **Workshop.** A coarse or merged Workshop gets an enchanting table at the centre of its interior, on the floor, and 15 bookshelves on the ring two blocks out, the most a table counts. The ring between them stays air level with the table and one block up. Java counts a shelf when the block halfway to it at the shelf's height, each offset rounded toward zero, is air, and Bedrock needs air at both heights, so the layout satisfies both. The shelf position toward the entrance stays open as the way in. Shelves fill the table's level first, in ring order, and then the level above, starting at the back of the room. None stands in front of an opening. A room with fewer than 15 free positions gets no table. When the interior row along the back wall is at least 4 blocks from the centre, it holds a crafting table, smithing table, anvil, floor grindstone, and stonecutter, centred, skipping any column in front of an opening. A member of a merge group and a cell with a `down` shaft get nothing. The enchanting table gives light 7, and no mob spawns on top of it, an anvil, a grindstone, or a stonecutter.
+- **Farm.** A coarse or merged Farm leaves a walkway one block wide along its walls, which keeps every doorway clear, and fills the rest of the interior's bottom layer with farmland around one water block at the centre. Farmland stays wet with water up to 4 blocks away horizontally, so the field may reach 4 blocks from the water, which the 9x9 field of a merged room does exactly. Four palette lights hang two blocks diagonally from the water, 3 blocks above the floor plane, on chain up to the ceiling. A light that would stand in front of an opening is left out. The field gets no light from the sky underground, and V11 checks that every crop gets the light it grows in. A member of a merge group and a cell with a `down` shaft get nothing. Farmland rolls back to dirt in the raw inputs, and water to one water bucket per block. No mob spawns on farmland or water.
 - **Rail Line.** The route runs along the axis open at both ends, or else the axis open at either end. Rails run down the centre of the interior, shaped to the axis. Halfway along, one support frame stands across the route: an accent post against each side wall, as tall as the interior less one, and a beam of the floor block along the top row. An upward shaft omits the beam.
 - **Ice Highway.** On the same axis, blue ice replaces the floor down the centre, with a one-high accent barrier on each side of it.
 
@@ -328,6 +329,12 @@ Messages:
 
 A portal reads `{bayKey} on level '{name}'`, with ` cell {n}` after the bay key in a fine or coarse bay.
 
+### V11: crop light (warning)
+
+In Java Edition, a crop grows only where the light at the crop is 9 or more. Underground, that is block light alone. For each farmland block in a level's built cells, read the block light from the resolved blocks, lamps included, one block above it. Report one warning per level with the count of farmland whose crop would sit in less, and the cells that hold it.
+
+Message: `"Level '{name}' has {n} farmland blocks too dark for crops, which need light 9 to grow"`
+
 ## 9. Bill of materials
 
 Computed from `resolveBlocks`. Output:
@@ -434,7 +441,7 @@ src/
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
-    validate.ts           # V1 through V10
+    validate.ts           # V1 through V11
     lighting.ts           # block light for lamps and V9
     portals.ts            # Nether portal pairs for V10
     bom.ts                # material and smelting calculations

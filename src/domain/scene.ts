@@ -101,6 +101,7 @@ const COLOURS: Readonly<Record<string, number>> = {
   dirt: 0x866043,
   coarse_dirt: 0x77553b,
   grass_block: 0x5f9f35,
+  farmland: 0x5b3a22,
   gravel: 0x847f7f,
   sand: 0xdbcfa3,
   red_sand: 0xbe6621,
@@ -372,7 +373,7 @@ function quarter(one: Facing, other: Facing): readonly [number, number, number, 
 
 function finishOf(blockId: string, name: string): BlockFinish {
   if (lightEmission(blockId) > 0) return 'glow'
-  return name.includes('glass') ? 'glass' : 'solid'
+  return name.includes('glass') || name === 'water' ? 'glass' : 'solid'
 }
 
 // --------------------------------------------------------------------------
