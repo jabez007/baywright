@@ -134,13 +134,24 @@ The inspector also exposes module, merge, height, ceiling, socket, and opening-w
 
 Vitest covers geometry, every validator, the BOM and recipes, modules, the project store, JSON, PNG, and Litematica exports, IndexedDB recovery, and autosave behavior. Playwright checks editing and reload, one-bay issue navigation, roving SVG focus, PNG state restoration, Litematica download, project Back/Forward routes, and narrow or short viewports.
 
-GitHub Actions runs on pushes and pull requests. It installs with `npm ci`, runs ESLint, the unit tests, and the production build, audits production dependencies, installs Chromium, and runs the Playwright suite.
+The Test workflow runs on a push to any branch except `main`. It installs with `npm ci`, runs ESLint, the unit tests, and the production build, audits the dependencies, installs Chromium, and runs the Playwright suite.
+
+## Branches and deployment
+
+The branches follow the same layout as Cryptotron.vue:
+
+- `vue` holds the source and is the default branch. Every push to it publishes the site.
+- `development` collects finished work. Merge it into `vue` with a pull request to release.
+- `main` holds only the built site. The Deploy workflow builds `vue` and commits `dist` to `main`, and GitHub Pages serves `main` at https://jabez007.github.io/baywright/. Don't commit to it by hand.
+
+The production build runs under `/baywright/`. Pages has no rewrites, so the build also writes a copy of `index.html` as `404.html`. Pages serves that file for a reloaded project URL, and the router opens the project from the path.
+
+Projects on the hosted site stay in that browser's IndexedDB, like a local copy. A phone and a computer each keep their own projects. Use JSON export and import to move a project, with its build progress, between them.
 
 ## Not implemented
 
 The [project direction](.docs/PROJECT-DIRECTION.md) explains which design candidates come next and why.
 
 - vanilla structure NBT export
-- 3D preview
 - additional style-specific module and palette content
 - project sharing or cloud sync

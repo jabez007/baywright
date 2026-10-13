@@ -484,7 +484,8 @@ e2e/
 test/
   *.spec.ts                # domain, store, export, and persistence tests
 .github/workflows/
-  ci.yml                   # lint, unit, build, audit, and Playwright checks
+  test.yaml                # lint, unit, build, audit, and Playwright checks on every branch but main
+  deploy.yaml              # builds vue and publishes dist to main for GitHub Pages
 playwright.config.ts
 ```
 
@@ -519,7 +520,7 @@ The v0 acceptance flow is covered by the current app and persistence tests.
 - JSON import and export, plus one PNG plan per level.
 - Vue Router routes for `/` and `/project/:id/level/:levelId`.
 - Playwright end-to-end coverage for editing, persistence, routing, keyboard input, and a narrow viewport.
-- GitHub Actions checks for unit tests, the production build, the production dependency audit, and Playwright.
+- GitHub Actions checks for unit tests, the production build, the dependency audit, and Playwright, and a deploy to GitHub Pages from the `vue` branch.
 
 The fixtures in §14 produce the expected geometry and validation results.
 
