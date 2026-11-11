@@ -911,3 +911,40 @@ test('names the block you click in the 3D view', async ({ page }) => {
   await expect(view).toHaveCount(0)
   await expect(page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Bays' })).toHaveAttribute('aria-pressed', 'true')
 })
+
+test('merges a square of bays into one room and splits it from a bay', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('library')
+  await page.getByRole('button', { name: 'Merged · 13×13 bay', exact: true }).click()
+  const bayAt = (key: string) => page.locator(`[data-plan-target="bay"][data-bay="${key}"]`)
+  for (const key of ['A1', 'B1', 'A2', 'B2']) await bayAt(key).click()
+
+  const from = (await bayAt('A1').boundingBox())!
+  const to = (await bayAt('B2').boundingBox())!
+  await page.keyboard.down('Shift')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+
+  // Four bays meet in a cross of walls: two strips each way cover it.
+  const seams = page.getByTestId('merged-seams').locator('rect')
+  await expect(seams).toHaveCount(4)
+  const inspector = page.getByRole('complementary', { name: 'Inspector' })
+  await expect(inspector.getByText('4 cells', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Issues' }).click()
+  await expect(page.getByText(/Merge group/)).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(seams).toHaveCount(0)
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  await expect(seams).toHaveCount(4)
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await bayAt('B1').click()
+  await inspector.getByRole('button', { name: 'Split merge group' }).click()
+  await expect(seams).toHaveCount(0)
+  await expect(inspector.getByRole('button', { name: 'Split merge group' })).toBeDisabled()
+})

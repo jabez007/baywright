@@ -13,7 +13,7 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey } from '../domain/geometry.js'
+import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey, validMergeGroupIds } from '../domain/geometry.js'
 import type { PatternRotation, QuarterTurns } from '../domain/patterns.js'
 import {
   BAY_PITCH,
@@ -66,6 +66,7 @@ type Stroke =
   | { kind: 'select'; targets: Set<Target> }
   | { kind: 'space'; targets: Set<string> }
   | { kind: 'merge'; grain: Grain; anchor: { u: number; v: number }; head: { u: number; v: number } }
+  | { kind: 'merge-bays'; grain: Grain; anchor: { i: number; j: number }; head: { i: number; j: number } }
   /** `add` is fixed by the first slot the drag touches, so a stroke never flip-flops. */
   | { kind: 'footprint'; add: boolean; targets: Set<string> }
 
@@ -285,7 +286,43 @@ const preview = computed(() => {
   if (!current) return []
   if (current.kind === 'footprint') return []
   if (current.kind === 'merge') return mergeTargets(current).map((ref) => cellInteriorRect(ref))
+  if (current.kind === 'merge-bays') return bayMergeKeys(current).map((bayKey) => targetRect(bayKey)).filter((rect) => rect !== null)
   return [...current.targets].map((target) => targetRect(target)).filter((rect) => rect !== null)
+})
+
+/**
+ * The walls a valid merge group carves away, drawn in the room's fill so the
+ * group reads as one room. Each member covers the strip beyond its interior
+ * on its east and south sides when the room goes on past them, and the east
+ * strip runs one further when the south one does too, which fills the
+ * corner where four members meet. Bay mode only: cell mode shows one bay.
+ */
+const mergedSeams = computed(() => {
+  const level = store.currentLevel
+  if (!level || tileMode.value !== 'bay') return []
+  const valid = validMergeGroupIds(store.project)
+  const groups = new Map<string, { rect: ReturnType<typeof cellInteriorRect>; module: string }[]>()
+  for (const [bayKey, bay] of Object.entries(level.bays)) {
+    bay.cells.forEach((cell, cellIndex) => {
+      if (!cell.mergeGroup || !valid.has(cell.mergeGroup)) return
+      const member = { rect: cellInteriorRect({ levelId: level.id, bayKey, cellIndex }), module: cell.module }
+      groups.set(cell.mergeGroup, [...(groups.get(cell.mergeGroup) ?? []), member])
+    })
+  }
+
+  const seams: { x: number; y: number; width: number; height: number; fill: string }[] = []
+  for (const members of groups.values()) {
+    const right = Math.max(...members.map(({ rect }) => rect.x + rect.width))
+    const bottom = Math.max(...members.map(({ rect }) => rect.y + rect.height))
+    for (const { rect, module } of members) {
+      const east = rect.x + rect.width < right
+      const south = rect.y + rect.height < bottom
+      const fill = moduleFill(module)
+      if (east) seams.push({ x: rect.x + rect.width, y: rect.y, width: 1, height: rect.height + (south ? 1 : 0), fill })
+      if (south) seams.push({ x: rect.x, y: rect.y + rect.height, width: rect.width, height: 1, fill })
+    }
+  }
+  return seams
 })
 
 function targetRect(target: Target) {
@@ -358,11 +395,15 @@ function onPointerDown(event: PointerEvent): void {
     return
   }
 
-  // §10 — shift-drag creates a merge group across a rectangle.
+  // §10 — shift-drag creates a merge group across a rectangle, of cells in
+  // cell mode and of whole bays in bay mode.
   if (props.tool === 'paint' && event.shiftKey && index !== null) {
     const grain = grainOf(bayKey)
     const anchor = lattice(bayKey, grain, index)
     stroke.value = { kind: 'merge', grain, anchor, head: anchor }
+  } else if (props.tool === 'paint' && event.shiftKey) {
+    const anchor = parseBayKey(bayKey)
+    stroke.value = { kind: 'merge-bays', grain: grainOf(bayKey), anchor, head: anchor }
   } else {
     stroke.value = { kind: 'paint', targets: new Set([target]) }
   }
@@ -418,6 +459,8 @@ function onPointerMove(event: PointerEvent): void {
   if (current.kind === 'merge') {
     if (index === null || grainOf(bayKey) !== current.grain) return
     current.head = lattice(bayKey, current.grain, index)
+  } else if (current.kind === 'merge-bays') {
+    current.head = parseBayKey(bayKey)
   } else {
     current.targets.add(target)
   }
@@ -453,6 +496,17 @@ function onPointerUp(): void {
   if (current.kind === 'merge') {
     const refs = mergeTargets(current)
     if (refs.length === 0) return
+    store.batch(() => store.mergeCells(refs))
+    store.selectCells(refs)
+    return
+  }
+
+  if (current.kind === 'merge-bays') {
+    const refs = bayMergeKeys(current).flatMap((bayKey) =>
+      store.currentLevel!.bays[bayKey]!.cells.map((_, cellIndex) => ({ levelId, bayKey, cellIndex })),
+    )
+    // One merged-grain bay is a single cell, and a group of one is no room.
+    if (refs.length < 2) return
     store.batch(() => store.mergeCells(refs))
     store.selectCells(refs)
     return
@@ -717,6 +771,24 @@ function mergeTargets(current: Extract<Stroke, { kind: 'merge' }>): CellRef[] {
   return refs
 }
 
+/**
+ * Every bay of the drag's grain inside the shift-drag rectangle. V7 rejects a
+ * group that mixes grains, so a bay of another grain stays out, as a cell of
+ * another grain does in {@link mergeTargets}.
+ */
+function bayMergeKeys(current: Extract<Stroke, { kind: 'merge-bays' }>): string[] {
+  const level = store.currentLevel
+  if (!level) return []
+  const [i0, i1] = [Math.min(current.anchor.i, current.head.i), Math.max(current.anchor.i, current.head.i)]
+  const [j0, j1] = [Math.min(current.anchor.j, current.head.j), Math.max(current.anchor.j, current.head.j)]
+  return Object.entries(level.bays)
+    .filter(([bayKey, bay]) => {
+      const { i, j } = parseBayKey(bayKey)
+      return bay.grain === current.grain && i >= i0 && i <= i1 && j >= j0 && j <= j1
+    })
+    .map(([bayKey]) => bayKey)
+}
+
 /** Which face of the cell the click landed nearest, for alt-click socket cycling. */
 function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
   const element = svg.value
@@ -790,6 +862,10 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
       :interactive="mode !== 'footprint' && mode !== 'space'"
       :active-target="activePlanTarget"
     />
+
+    <g class="merged-seams" data-testid="merged-seams">
+      <rect v-for="(seam, index) in mergedSeams" :key="index" v-bind="seam" />
+    </g>
 
     <g class="negative-space-names">
       <g v-for="slot in slots.filter((entry) => entry.negativeSpace)" :key="`space-${slot.bayKey}`">
@@ -874,6 +950,10 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
 
 .preview rect {
   opacity: 0.6;
+  pointer-events: none;
+}
+
+.merged-seams rect {
   pointer-events: none;
 }
 

@@ -9,6 +9,7 @@ import {
   GRAIN_LABELS,
   type AABB,
   type Ceiling,
+  type Cell,
   type Face,
   type Grain,
   type MaterialRole,
@@ -78,6 +79,7 @@ const ceilingValue = computed(() => common(cells.value.map((cell) => cell.ceilin
 const paletteValue = computed(() => common(cells.value.map((cell) => cell.paletteOverride ?? '__inherit__')) ?? '__mixed__')
 const canDropCeiling = computed(() => cells.value.every((cell) => cell.heightCells === 2))
 const hasMergeGroup = computed(() => cells.value.some((cell) => cell.mergeGroup !== undefined))
+const bayHasMergeGroup = computed(() => selectedBay.value?.cells.some((cell) => cell.mergeGroup !== undefined) ?? false)
 
 /**
  * The portal frame in the one selected cell, with where its Nether side goes.
@@ -269,8 +271,9 @@ function setNote(event: Event): void {
   if (ref) run(() => store.setNote(ref, valueOf(event).trim()))
 }
 
-function splitMergeGroups(): void {
-  const groups = new Set(cells.value.map((cell) => cell.mergeGroup).filter((group): group is string => Boolean(group)))
+/** Splits every merge group the given cells belong to, all of each group's members included. */
+function splitMergeGroups(of: readonly Cell[] = cells.value): void {
+  const groups = new Set(of.map((cell) => cell.mergeGroup).filter((group): group is string => Boolean(group)))
   if (groups.size === 0) return
   const groupRefs = allCellRefs(store.project).filter((ref) => {
     const group = resolveCell(store.project, ref).cell.mergeGroup
@@ -410,6 +413,10 @@ function mergeSelected(): void {
           </select>
         </label>
         <p class="field-help">Changing grain re-cuts this bay and may replace mixed cell modules.</p>
+        <p class="field-help">Shift-drag across bays while painting to merge them into one room.</p>
+        <div class="merge-actions">
+          <button type="button" :disabled="!bayHasMergeGroup" @click="splitMergeGroups(selectedBay.cells)">Split merge group</button>
+        </div>
       </form>
 
       <form v-else-if="inspectorKind === 'cells' && cells.length > 0" class="form" @submit.prevent>
@@ -550,7 +557,7 @@ function mergeSelected(): void {
           >
             Merge selected
           </button>
-          <button type="button" :disabled="!hasMergeGroup" @click="splitMergeGroups">Split merge group</button>
+          <button type="button" :disabled="!hasMergeGroup" @click="splitMergeGroups()">Split merge group</button>
         </div>
       </form>
     </div>
