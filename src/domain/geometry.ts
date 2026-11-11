@@ -535,11 +535,9 @@ function placeInteriorDetails(project: Project, blocks: Map<string, string>): Re
   }
 
   for (const room of mergedRooms(project)) {
-    const palette = paletteFor(project, room.level, room.cell)
     const context: DetailContext = { openings: room.openings, merged: false }
     for (const [material, coords] of interiorDetailBlocks(room.bay, room.cell, room.interior, context)) {
-      const blockId = detailBlockId(material, palette)
-      for (const key of coords) blocks.set(key, blockId)
+      for (const key of coords) blocks.set(key, detailBlockId(material, paletteAt(room, key)))
     }
   }
 
@@ -731,6 +729,19 @@ interface MergedRoom {
   cell: Cell
   interior: AABB
   openings: DetailContext['openings']
+  /** Each member's footprint, walls included, with the palette it resolves to. */
+  members: Array<{ box: AABB; palette: Palette }>
+}
+
+/**
+ * The palette of the member whose footprint holds `key`, so a member's
+ * palette override still decides its part of the room. A carved seam lies
+ * in two footprints and takes the first one's palette.
+ */
+function paletteAt(room: MergedRoom, key: string): Palette {
+  const { x, z } = parseBlockKey(key)
+  const member = room.members.find(({ box }) => x >= box.x0 && x <= box.x1 && z >= box.z0 && z <= box.z1)
+  return (member ?? room.members[0]!).palette
 }
 
 /** Whether the member's interior reaches the room's wall on `face`. */
@@ -777,7 +788,8 @@ function mergedRooms(project: Project): MergedRoom[] {
         }
       })
     }
-    rooms.push({ level: first.level, bay: first.bay, cell: { ...first.cell, sockets }, interior, openings })
+    const footprints = members.map((member) => ({ box: cellAABB(project, member.ref), palette: paletteFor(project, member.level, member.cell) }))
+    rooms.push({ level: first.level, bay: first.bay, cell: { ...first.cell, sockets }, interior, openings, members: footprints })
   }
   return rooms
 }

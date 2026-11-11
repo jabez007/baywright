@@ -413,6 +413,37 @@ describe('a library balcony', () => {
     expect(darkFloors(tall(['A1', 'B1', 'A2', 'B2']))).toEqual([])
   })
 
+  /** One 11×11×7 library bay at A1 with these wall sockets, every opening full width. */
+  const walled = (open: Parameters<typeof sockets>[0]) =>
+    project([level('L1', 0, { A1: bay('merged', () => ({ module: 'library', heightCells: 2, sockets: sockets(open) })) })])
+
+  it('moves the ladder to a side wall when the back wall is all doorway', () => {
+    const blocks = resolveBlocks(walled({ n: 'corridor', s: 'corridor' }))
+    const ladders = positionsNamed(blocks, 'ladder')
+    expect(ladders).toHaveLength(4)
+    expect(new Set(ladders.map(({ x, z }) => `${x},${z}`))).toEqual(new Set(['11,6']))
+    expect(blocks.get(blockKey(11, 1, 6))).toBe('minecraft:ladder[facing=west]')
+  })
+
+  it('builds no balcony it cannot climb to', () => {
+    const blocks = resolveBlocks(walled({ n: 'arch', e: 'arch', s: 'arch', w: 'arch' }))
+    expect(positionsNamed(blocks, 'ladder')).toEqual([])
+    for (const [x, z] of [[2, 2], [10, 10]] as const) expect(nameAt(blocks, x, 4, z), `${x},${z}`).toBe('air')
+    expect(positionsNamed(blocks, 'lectern')).toHaveLength(1)
+  })
+
+  it("builds each member's part of a merged balcony from that member's palette", () => {
+    const room = tall(['A1', 'B1', 'A2', 'B2'])
+    const b2 = room.levels[0]!.bays['B2']!
+    b2.cells = b2.cells.map((cell) => ({ ...cell, paletteOverride: 'dark-oak' }))
+    const blocks = resolveBlocks(room)
+    const [stone, oak] = [PALETTES['stone-brick']!.blocks, PALETTES['dark-oak']!.blocks]
+    expect(blocks.get(blockKey(3, 4, 3))).toBe(stone.floor)
+    expect(blocks.get(blockKey(21, 4, 21))).toBe(oak.floor)
+    expect(blocks.get(blockKey(19, 5, 19))).toBe(oak.accent)
+    expect(blocks.get(blockKey(5, 5, 5))).toBe(stone.accent)
+  })
+
   it('keeps a tall room narrower than 11 to one floor', () => {
     const blocks = resolveBlocks(tall(['A1'], 'coarse'))
     expect(positionsNamed(blocks, 'ladder')).toEqual([])

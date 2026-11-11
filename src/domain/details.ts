@@ -290,13 +290,14 @@ function libraryKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContex
 
   const out: DetailBlocks = new Map()
   const width = balconyWidth(interior)
-  if (width === 0) {
+  const ladder = width > 0 ? balconyLadder(cell, interior, context) : undefined
+  if (!ladder) {
     addShelves(out, interior, context, [interior.y0])
     addLectern(out, cell, interior)
     return out
   }
-  const ladder = addBalcony(out, cell, interior, context, width)
-  addShelves(out, interior, context, [interior.y0, interior.y0 + BALCONY_RISE + 1], ladder)
+  addBalcony(out, interior, context, width, ladder)
+  addShelves(out, interior, context, [interior.y0, interior.y0 + BALCONY_RISE + 1], ladder.column)
   if (!addEnchanting(out, cell, interior, context)) addLectern(out, cell, interior)
   return out
 }
@@ -340,16 +341,35 @@ function balconyWidth(interior: AABB): number {
   return width >= NARROWEST_BALCONY ? width : 0
 }
 
+/** Where the ladder up to a balcony stands: its column, as `"x,z"`, and the way it faces. */
+interface Ladder {
+  column: string
+  facing: WallFace
+}
+
+/**
+ * The ladder goes on the back wall, opposite the entrance, or on a side
+ * wall or the entrance wall when doorways fill the back one. A room with
+ * doorways all the way round has nowhere for it, so it gets no balcony.
+ */
+function balconyLadder(cell: Cell, interior: AABB, context: DetailContext): Ladder | undefined {
+  const door = entrance(cell) ?? 'n'
+  const back = OPPOSITE[door]
+  const walls = [back, ...WALL_FACES.filter((face) => face !== back && face !== door), door]
+  for (const wall of walls) {
+    const column = ladderColumn(interior, wall, context)
+    if (column) return { column, facing: OPPOSITE[wall] }
+  }
+  return undefined
+}
+
 /**
  * Lays the balcony floor `width` wide round the walls, a one-high accent
- * rail on its inner edge, and a ladder up the middle of the back wall
- * through the floor. Returns the ladder's column, as `"x,z"`, which the
- * shelves leave clear so a player can climb off at the top. The floor
- * leaves out every column in front of an opening, as every kit does.
+ * rail on its inner edge, and the `ladder` up through the floor. The shelves
+ * leave the ladder's column clear so a player can climb off at the top. The
+ * floor leaves out every column in front of an opening, as every kit does.
  */
-function addBalcony(out: DetailBlocks, cell: Cell, interior: AABB, context: DetailContext, width: number): string | undefined {
-  const door = entrance(cell) ?? 'n'
-  const ladder = ladderColumn(interior, OPPOSITE[door], context)
+function addBalcony(out: DetailBlocks, interior: AABB, context: DetailContext, width: number, ladder: Ladder): void {
   const floorY = interior.y0 + BALCONY_RISE
   const inset = (x: number, z: number) => Math.min(x - interior.x0, interior.x1 - x, z - interior.z0, interior.z1 - z)
   const floor = roleSet(out, 'floor')
@@ -357,27 +377,25 @@ function addBalcony(out: DetailBlocks, cell: Cell, interior: AABB, context: Deta
   for (let x = interior.x0; x <= interior.x1; x++) {
     for (let z = interior.z0; z <= interior.z1; z++) {
       const column = `${x},${z}`
-      if (inset(x, z) >= width || column === ladder || isOpening(context, column)) continue
+      if (inset(x, z) >= width || column === ladder.column || isOpening(context, column)) continue
       floor.add(key(x, floorY, z))
       if (inset(x, z) === width - 1) rail.add(key(x, floorY + 1, z))
     }
   }
 
-  if (ladder === undefined) return undefined
-  const [lx, lz] = ladder.split(',').map(Number) as [number, number]
-  const climb = roleSet(out, `minecraft:ladder[facing=${FACING[door]}]`)
+  const [lx, lz] = ladder.column.split(',').map(Number) as [number, number]
+  const climb = roleSet(out, `minecraft:ladder[facing=${FACING[ladder.facing]}]`)
   for (let y = interior.y0; y <= floorY; y++) climb.add(key(lx, y, lz))
-  return ladder
 }
 
 /**
- * The column on the `back` wall nearest its middle that is not in front of
- * an opening, leaving out the corners, where a ladder has two walls. A back
- * wall that is all openings has no ladder.
+ * The column on the `wall` nearest its middle that is not in front of an
+ * opening, leaving out the corners, where a ladder has two walls. A wall
+ * that is all openings has no place for a ladder.
  */
-function ladderColumn(interior: AABB, back: WallFace, context: DetailContext): string | undefined {
-  const alongX = back === 'n' || back === 's'
-  const row = back === 'n' ? interior.z0 : back === 's' ? interior.z1 : back === 'w' ? interior.x0 : interior.x1
+function ladderColumn(interior: AABB, wall: WallFace, context: DetailContext): string | undefined {
+  const alongX = wall === 'n' || wall === 's'
+  const row = wall === 'n' ? interior.z0 : wall === 's' ? interior.z1 : wall === 'w' ? interior.x0 : interior.x1
   const [lo, hi] = alongX ? [interior.x0 + 1, interior.x1 - 1] : [interior.z0 + 1, interior.z1 - 1]
   const middle = midpoint(lo, hi)
   const along = Array.from({ length: hi - lo + 1 }, (_, index) => lo + index).sort((l, r) => Math.abs(l - middle) - Math.abs(r - middle))

@@ -944,7 +944,7 @@ test('merges a square of bays into one room and splits it from a bay', async ({ 
 
   await page.getByRole('button', { name: 'Select', exact: true }).click()
   await bayAt('B1').click()
-  await inspector.getByRole('button', { name: 'Split merge group' }).click()
+  await inspector.getByRole('button', { name: 'Split merge groups' }).click()
   await expect(seams).toHaveCount(0)
-  await expect(inspector.getByRole('button', { name: 'Split merge group' })).toBeDisabled()
+  await expect(inspector.getByRole('button', { name: 'Split merge groups' })).toBeDisabled()
 })

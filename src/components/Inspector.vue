@@ -415,7 +415,8 @@ function mergeSelected(): void {
         <p class="field-help">Changing grain re-cuts this bay and may replace mixed cell modules.</p>
         <p class="field-help">Shift-drag across bays while painting to merge them into one room.</p>
         <div class="merge-actions">
-          <button type="button" :disabled="!bayHasMergeGroup" @click="splitMergeGroups(selectedBay.cells)">Split merge group</button>
+          <button type="button" :disabled="!bayHasMergeGroup" @click="splitMergeGroups(selectedBay.cells)">Split merge groups</button>
+          <p class="field-help">Splits every merge group with a cell in this bay, including its cells in other bays. To split one group, select one of its cells in the Cells view.</p>
         </div>
       </form>
 
