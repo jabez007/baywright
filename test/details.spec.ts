@@ -96,8 +96,10 @@ function positionsOf(blocks: Map<string, string>, blockId: string): string[] {
 
 describe('library kit', () => {
   // A merged bay at A1 has an 11×11 interior at x and z 1 to 11, floor at y 0.
+  // One cell high, the interior is 3 blocks tall, too low for the balcony
+  // that survival.spec.ts covers.
   const library = (overrides: Partial<Cell> = {}) =>
-    project([level('L1', 0, { A1: bay('merged', () => ({ ...cellFromModule('library'), ...overrides })) })])
+    project([level('L1', 0, { A1: bay('merged', () => ({ ...cellFromModule('library'), heightCells: 1, ...overrides })) })])
 
   it('lines the walls with bookshelves three high and leaves the doorway clear', () => {
     const blocks = resolveBlocks(library({ openingWidths: { n: 3 } }))
@@ -107,7 +109,7 @@ describe('library kit', () => {
     expect(shelves).toHaveLength(37 * 3)
     expect(blocks.get(blockKey(1, 1, 1))).toBe('minecraft:bookshelf')
     expect(blocks.get(blockKey(11, 3, 11))).toBe('minecraft:bookshelf')
-    expect(blocks.has(blockKey(11, 4, 11))).toBe(false)
+    expect(blocks.get(blockKey(11, 4, 11))).not.toBe('minecraft:bookshelf')
     expect(blocks.has(blockKey(6, 1, 1))).toBe(false)
     expect(blocks.get(blockKey(4, 1, 1))).toBe('minecraft:bookshelf')
   })

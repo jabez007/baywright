@@ -329,3 +329,93 @@ describe('a merged room', () => {
     expect(positionsNamed(blocks, 'barrel')).toEqual([])
   })
 })
+
+describe('a library balcony', () => {
+  /** A 7-high library on merged bays at `keys`, entered by a three-wide doorway in the middle of A1's north wall, at x 5 to 7. */
+  const tall = (keys: readonly string[], grain: 'merged' | 'coarse' = 'merged'): Project =>
+    project([
+      level(
+        'L1',
+        0,
+        Object.fromEntries(
+          keys.map((key) => [
+            key,
+            bay(grain, (index) => ({
+              module: 'library',
+              heightCells: 2,
+              ...(keys.length > 1 ? { mergeGroup: 'hall' } : {}),
+              ...(key === 'A1' && index === 0 ? { sockets: sockets({ n: 'corridor' }), openingWidths: { n: 3 } } : {}),
+            })),
+          ]),
+        ),
+      ),
+    ])
+  const nameAt = (blocks: Blocks, x: number, y: number, z: number) => parseBlockId(blocks.get(blockKey(x, y, z)) ?? 'minecraft:air').name
+  const darkFloors = (subject: Project) => validate(subject).filter((issue) => issue.id === 'V9')
+
+  it('runs a walkway four wide round an 11×11 room, halfway up', () => {
+    // The interior spans x and z 1 to 11 and y 1 to 7. The balcony floor is at y 4.
+    const blocks = resolveBlocks(tall(['A1']))
+    for (const x of [1, 4, 8, 11]) expect(nameAt(blocks, x, 4, 6), `floor at x ${x}`).not.toBe('air')
+    // The room's lamp hangs down to y 4 at the middle, x 6, lighting both floors.
+    for (const x of [5, 7]) expect(nameAt(blocks, x, 4, 6), `open at x ${x}`).toBe('air')
+    expect(nameAt(blocks, 6, 4, 4)).not.toBe('air')
+    expect(nameAt(blocks, 6, 4, 5)).toBe('air')
+    // A one-high rail on the walkway's inner edge, and nothing else on it.
+    expect(nameAt(blocks, 4, 5, 6)).not.toBe('air')
+    expect(nameAt(blocks, 4, 6, 6)).toBe('air')
+    expect(nameAt(blocks, 3, 5, 6)).toBe('air')
+    expect(nameAt(blocks, 6, 5, 5)).toBe('air')
+  })
+
+  it('shelves the walls three high on both floors and leaves the doorway clear', () => {
+    const blocks = resolveBlocks(tall(['A1']))
+    for (const y of [1, 2, 3, 5, 6, 7]) expect(nameAt(blocks, 1, y, 6), `y ${y}`).toBe('bookshelf')
+    expect(nameAt(blocks, 1, 4, 6)).not.toBe('bookshelf')
+    for (const x of [5, 6, 7]) {
+      for (let y = 1; y <= 7; y++) expect(nameAt(blocks, x, y, 1), `doorway at ${x},${y}`).toBe('air')
+    }
+  })
+
+  it('climbs to the balcony by a ladder on the back wall', () => {
+    const blocks = resolveBlocks(tall(['A1']))
+    for (let y = 1; y <= 4; y++) expect(blocks.get(blockKey(6, y, 11)), `y ${y}`).toBe('minecraft:ladder[facing=north]')
+    for (const y of [5, 6]) expect(nameAt(blocks, 6, y, 11), `headroom at y ${y}`).toBe('air')
+    expect(nameAt(blocks, 6, 1, 10)).toBe('air')
+  })
+
+  it('stands an enchanting table under the open middle in place of the lectern', () => {
+    const blocks = resolveBlocks(tall(['A1']))
+    const table = theTable(blocks)
+    expect(table).toEqual({ x: 6, y: 1, z: 6 })
+    expect(shelvesCounted(blocks, table)).toBeGreaterThanOrEqual(15)
+    expect(positionsNamed(blocks, 'lectern')).toEqual([])
+  })
+
+  it('widens the walkway to five round a 23×23 room', () => {
+    const blocks = resolveBlocks(tall(['A1', 'B1', 'A2', 'B2']))
+    for (const x of [5, 19]) expect(nameAt(blocks, x, 4, 12), `floor at x ${x}`).not.toBe('air')
+    for (const x of [6, 18]) expect(nameAt(blocks, x, 4, 12), `open at x ${x}`).toBe('air')
+    expect(nameAt(blocks, 5, 5, 12)).not.toBe('air')
+    for (let y = 1; y <= 4; y++) expect(nameAt(blocks, 12, y, 23), `ladder at y ${y}`).toBe('ladder')
+    expect(theTable(blocks)).toEqual({ x: 12, y: 1, z: 12 })
+  })
+
+  it('asks for the ladder and the enchanting table in the bill of materials', () => {
+    const counts = new Map(computeBom(tall(['A1'])).blocks.map((entry) => [entry.blockId, entry.count]))
+    expect(counts.get('minecraft:ladder')).toBe(4)
+    expect(counts.get('minecraft:enchanting_table')).toBe(1)
+    expect(counts.get('minecraft:lectern')).toBeUndefined()
+  })
+
+  it('leaves no floor dark enough for mobs, above or below', () => {
+    expect(darkFloors(tall(['A1']))).toEqual([])
+    expect(darkFloors(tall(['A1', 'B1', 'A2', 'B2']))).toEqual([])
+  })
+
+  it('keeps a tall room narrower than 11 to one floor', () => {
+    const blocks = resolveBlocks(tall(['A1'], 'coarse'))
+    expect(positionsNamed(blocks, 'ladder')).toEqual([])
+    expect(positionsNamed(blocks, 'lectern')).toHaveLength(4)
+  })
+})

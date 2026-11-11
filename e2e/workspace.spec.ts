@@ -780,16 +780,16 @@ test('lists the materials for one level at a time', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Materials', exact: true }).click()
   const bom = page.getByRole('region', { name: 'Bill of materials' })
-  await expect(bom.getByText('11,072 blocks')).toBeVisible()
+  await expect(bom.getByText('12,800 blocks')).toBeVisible()
 
   await bom.getByLabel('Materials for').selectOption({ label: 'Stronghold core' })
-  await expect(bom.getByText('3,983 blocks')).toBeVisible()
+  await expect(bom.getByText('4,847 blocks')).toBeVisible()
   await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('stone bricks')
-  await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('39 stacks + 47')
-  await expect(bom.getByText('7h 3m 50s')).toBeVisible()
+  await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('45 stacks + 63')
+  await expect(bom.getByText('8h 21m 10s')).toBeVisible()
 
   await bom.getByLabel('Materials for').selectOption({ label: 'Whole base' })
-  await expect(bom.getByText('11,072 blocks')).toBeVisible()
+  await expect(bom.getByText('12,800 blocks')).toBeVisible()
 })
 
 async function openLayeredExample(page: Page): Promise<void> {
@@ -809,15 +809,15 @@ test('steps through the layers of the base in 3D', async ({ page }) => {
   await expect(view.locator('canvas')).toBeVisible()
   const layer = view.getByRole('region', { name: 'Layer guide' })
   await expect(layer).toContainText('All layers')
-  await expect(layer).toContainText('11,072 blocks')
+  await expect(layer).toContainText('12,800 blocks')
   await expect(layer).toContainText('y -4 to 28')
 
   await view.getByRole('slider', { name: 'Layer' }).fill('13')
   await expect(layer).toContainText('Layer y 13')
   await expect(layer).toContainText('Stronghold core')
-  await expect(layer).toContainText('401 blocks')
+  await expect(layer).toContainText('461 blocks')
   await expect(layer).toContainText('x 0 to 60, z 0 to 60')
-  await expect(layer.getByRole('listitem').filter({ hasText: 'bookshelf' })).toContainText('1 stack + 52')
+  await expect(layer.getByRole('listitem').filter({ hasText: 'bookshelf' })).toContainText('2 stacks + 44')
 
   await view.getByRole('button', { name: 'Down a layer' }).click()
   await expect(layer).toContainText('Layer y 12')
@@ -864,9 +864,9 @@ test('ticks off built layers, keeps them after a reload, and counts what is left
   const bom = page.getByRole('region', { name: 'Bill of materials' })
   const leaveOut = bom.getByLabel('Leave out the 2 built layers')
   await expect(leaveOut).toBeChecked()
-  await expect(bom.getByText('10,377 blocks left')).toBeVisible()
+  await expect(bom.getByText('12,105 blocks left')).toBeVisible()
   await leaveOut.uncheck()
-  await expect(bom.getByText('11,072 blocks', { exact: true })).toBeVisible()
+  await expect(bom.getByText('12,800 blocks', { exact: true })).toBeVisible()
 })
 
 test('marks every layer up to the one in view as built', async ({ page }) => {
