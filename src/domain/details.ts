@@ -373,21 +373,17 @@ const FULL_POWER = 15
 const STATIONS = ['crafting_table', 'smithing_table', 'anvil', 'grindstone', 'stonecutter'] as const
 
 /**
- * An enchanting table stands in the middle of the room with 15 bookshelves on
- * the ring two blocks out. Java counts a shelf when the block halfway to it,
- * at the shelf's height, is air. Bedrock needs air at both heights, so the
- * ring between table and shelves stays empty. The shelf spot facing the
- * entrance is the way in. Shelves go level with the table first and then
- * one higher, back of the room first, never in front of an opening. A room
- * without places for all 15 gets no table, since a weaker one would look
- * finished in the plan and not be. A room with a free row between the
- * shelves and the back wall also lines that wall with crafting stations.
+ * Adds an enchanting table in the middle of the room with 15 bookshelves on
+ * the ring two blocks out, and reports whether it did. Java counts a shelf
+ * when the block halfway to it, at the shelf's height, is air. Bedrock needs
+ * air at both heights, so the ring between table and shelves stays empty.
+ * The shelf spot facing the entrance is the way in. Shelves go level with
+ * the table first and then one higher, back of the room first, never in
+ * front of an opening. A room without places for all 15 gets no table,
+ * since a weaker one would look finished in the plan and not be.
  */
-function workshopKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
-
-  const door = entrance(cell) ?? 'n'
-  const [toDoorX, toDoorZ] = STEP[door]
+function addEnchanting(out: DetailBlocks, cell: Cell, interior: AABB, context: DetailContext): boolean {
+  const [toDoorX, toDoorZ] = STEP[entrance(cell) ?? 'n']
   const cx = midpoint(interior.x0, interior.x1)
   const cz = midpoint(interior.z0, interior.z1)
   const depth = ([dx, dz]: readonly [number, number]) => -(dx * toDoorX + dz * toDoorZ)
@@ -397,13 +393,27 @@ function workshopKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailConte
     ...free.map(([dx, dz]) => key(cx + dx, interior.y0, cz + dz)),
     ...backFirst.map(([dx, dz]) => key(cx + dx, interior.y0 + 1, cz + dz)),
   ].slice(0, FULL_POWER)
+  if (shelves.length < FULL_POWER) return false
+
+  roleSet(out, 'minecraft:enchanting_table').add(key(cx, interior.y0, cz))
+  for (const shelf of shelves) roleSet(out, 'minecraft:bookshelf').add(shelf)
+  return true
+}
+
+/**
+ * The enchanting table from {@link addEnchanting}. A room with a free row
+ * between the shelves and the back wall also lines that wall with crafting
+ * stations.
+ */
+function workshopKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
 
   const out: DetailBlocks = new Map()
-  if (shelves.length === FULL_POWER) {
-    roleSet(out, 'minecraft:enchanting_table').add(key(cx, interior.y0, cz))
-    for (const shelf of shelves) roleSet(out, 'minecraft:bookshelf').add(shelf)
-  }
+  addEnchanting(out, cell, interior, context)
 
+  const door = entrance(cell) ?? 'n'
+  const cx = midpoint(interior.x0, interior.x1)
+  const cz = midpoint(interior.z0, interior.z1)
   const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
   const fromFar = door === 'n' || door === 'w'
   const back = fromFar ? frame.along[1] : frame.along[0]
