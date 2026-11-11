@@ -780,16 +780,16 @@ test('lists the materials for one level at a time', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Materials', exact: true }).click()
   const bom = page.getByRole('region', { name: 'Bill of materials' })
-  await expect(bom.getByText('11,072 blocks')).toBeVisible()
+  await expect(bom.getByText('12,800 blocks')).toBeVisible()
 
   await bom.getByLabel('Materials for').selectOption({ label: 'Stronghold core' })
-  await expect(bom.getByText('3,983 blocks')).toBeVisible()
+  await expect(bom.getByText('4,847 blocks')).toBeVisible()
   await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('stone bricks')
-  await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('39 stacks + 47')
-  await expect(bom.getByText('7h 3m 50s')).toBeVisible()
+  await expect(bom.locator('.materials').first().getByRole('listitem').first()).toContainText('45 stacks + 63')
+  await expect(bom.getByText('8h 21m 10s')).toBeVisible()
 
   await bom.getByLabel('Materials for').selectOption({ label: 'Whole base' })
-  await expect(bom.getByText('11,072 blocks')).toBeVisible()
+  await expect(bom.getByText('12,800 blocks')).toBeVisible()
 })
 
 async function openLayeredExample(page: Page): Promise<void> {
@@ -809,15 +809,15 @@ test('steps through the layers of the base in 3D', async ({ page }) => {
   await expect(view.locator('canvas')).toBeVisible()
   const layer = view.getByRole('region', { name: 'Layer guide' })
   await expect(layer).toContainText('All layers')
-  await expect(layer).toContainText('11,072 blocks')
+  await expect(layer).toContainText('12,800 blocks')
   await expect(layer).toContainText('y -4 to 28')
 
   await view.getByRole('slider', { name: 'Layer' }).fill('13')
   await expect(layer).toContainText('Layer y 13')
   await expect(layer).toContainText('Stronghold core')
-  await expect(layer).toContainText('401 blocks')
+  await expect(layer).toContainText('461 blocks')
   await expect(layer).toContainText('x 0 to 60, z 0 to 60')
-  await expect(layer.getByRole('listitem').filter({ hasText: 'bookshelf' })).toContainText('1 stack + 52')
+  await expect(layer.getByRole('listitem').filter({ hasText: 'bookshelf' })).toContainText('2 stacks + 44')
 
   await view.getByRole('button', { name: 'Down a layer' }).click()
   await expect(layer).toContainText('Layer y 12')
@@ -864,9 +864,9 @@ test('ticks off built layers, keeps them after a reload, and counts what is left
   const bom = page.getByRole('region', { name: 'Bill of materials' })
   const leaveOut = bom.getByLabel('Leave out the 2 built layers')
   await expect(leaveOut).toBeChecked()
-  await expect(bom.getByText('10,377 blocks left')).toBeVisible()
+  await expect(bom.getByText('12,105 blocks left')).toBeVisible()
   await leaveOut.uncheck()
-  await expect(bom.getByText('11,072 blocks', { exact: true })).toBeVisible()
+  await expect(bom.getByText('12,800 blocks', { exact: true })).toBeVisible()
 })
 
 test('marks every layer up to the one in view as built', async ({ page }) => {
@@ -910,4 +910,41 @@ test('names the block you click in the 3D view', async ({ page }) => {
   await page.getByRole('group', { name: 'Tool' }).getByRole('button', { name: 'Paint', exact: true }).click()
   await expect(view).toHaveCount(0)
   await expect(page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Bays' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('merges a square of bays into one room and splits it from a bay', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('library')
+  await page.getByRole('button', { name: 'Merged · 13×13 bay', exact: true }).click()
+  const bayAt = (key: string) => page.locator(`[data-plan-target="bay"][data-bay="${key}"]`)
+  for (const key of ['A1', 'B1', 'A2', 'B2']) await bayAt(key).click()
+
+  const from = (await bayAt('A1').boundingBox())!
+  const to = (await bayAt('B2').boundingBox())!
+  await page.keyboard.down('Shift')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+
+  // Four bays meet in a cross of walls: two strips each way cover it.
+  const seams = page.getByTestId('merged-seams').locator('rect')
+  await expect(seams).toHaveCount(4)
+  const inspector = page.getByRole('complementary', { name: 'Inspector' })
+  await expect(inspector.getByText('4 cells', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Issues' }).click()
+  await expect(page.getByText(/Merge group/)).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(seams).toHaveCount(0)
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  await expect(seams).toHaveCount(4)
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await bayAt('B1').click()
+  await inspector.getByRole('button', { name: 'Split merge groups' }).click()
+  await expect(seams).toHaveCount(0)
+  await expect(inspector.getByRole('button', { name: 'Split merge groups' })).toBeDisabled()
 })

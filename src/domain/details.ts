@@ -23,7 +23,11 @@ export type WallFace = 'n' | 'e' | 's' | 'w'
 export interface DetailContext {
   /** Interior columns, as `"x,z"`, in front of each open wall face. */
   openings: Partial<Record<WallFace, ReadonlySet<string>>>
-  /** The cell shares a valid merge group, so its room is larger than its interior. */
+  /**
+   * The cell shares a valid merge group, so its room is larger than its
+   * interior. A kit in {@link ROOM_KITS} details the whole room once instead,
+   * and sees `merged: false` there.
+   */
   merged: boolean
   /** The service void above a dropped ceiling. */
   plenum?: AABB | null
@@ -53,6 +57,21 @@ const KITS: Readonly<Record<string, Kit>> = {
   'super-smelter': superSmelterKit,
   'trading-hall': tradingHallKit,
   'item-trunk': itemTrunkKit,
+}
+
+/**
+ * The kits that fill a valid merge group as one room, when every member has
+ * the module and none is a well. Each skips the members one by one, since a
+ * member's interior is only part of the room. Other kits keep detailing each
+ * member, as a run of merged smelter bays needs.
+ */
+export const ROOM_KITS: ReadonlySet<string> = new Set(['library', 'workshop', 'farm', 'storage'])
+
+/** A room narrower than this on either side, such as one fine cell, is too small to furnish. */
+const SMALLEST_ROOM = 5
+
+function isTooSmall(interior: AABB): boolean {
+  return interior.x1 - interior.x0 + 1 < SMALLEST_ROOM || interior.z1 - interior.z0 + 1 < SMALLEST_ROOM
 }
 
 export function interiorDetailBlocks(
@@ -260,26 +279,127 @@ function arenaKit(bay: Bay, _cell: Cell, interior: AABB): DetailBlocks {
 }
 
 /**
- * Bookshelves line every wall three blocks high, and a lectern stands at the
- * centre facing the first opening. A fine cell is too small to read in, and a
- * merged room is larger than this cell, so neither gets shelves. A cell whose
- * floor is a shaft is a well, not a room.
+ * Bookshelves three high along every wall, and a lectern in the middle
+ * facing the entrance. A room at least 11 wide and 7 high gets a balcony
+ * instead, from {@link balconyWidth}, with shelves on both floors and an
+ * enchanting table under the open middle. A cell whose floor is a shaft is
+ * a well, not a room.
  */
-function libraryKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+function libraryKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
 
   const out: DetailBlocks = new Map()
-  const shelves = roleSet(out, 'minecraft:bookshelf')
-  const top = Math.min(interior.y0 + 2, interior.y1)
-  for (const [x, z] of wallColumns(interior)) {
-    if (isOpening(context, `${x},${z}`)) continue
-    for (let y = interior.y0; y <= top; y++) shelves.add(key(x, y, z))
+  const width = balconyWidth(interior)
+  const ladder = width > 0 ? balconyLadder(cell, interior, context) : undefined
+  if (!ladder) {
+    addShelves(out, interior, context, [interior.y0])
+    addLectern(out, cell, interior)
+    return out
   }
+  addBalcony(out, interior, context, width, ladder)
+  addShelves(out, interior, context, [interior.y0, interior.y0 + BALCONY_RISE + 1], ladder.column)
+  if (!addEnchanting(out, cell, interior, context)) addLectern(out, cell, interior)
+  return out
+}
 
+/** Bookshelves three high from each of `floors` in every wall column but openings and the `ladder`. */
+function addShelves(out: DetailBlocks, interior: AABB, context: DetailContext, floors: readonly number[], ladder?: string): void {
+  const shelves = roleSet(out, 'minecraft:bookshelf')
+  for (const [x, z] of wallColumns(interior)) {
+    if (isOpening(context, `${x},${z}`) || `${x},${z}` === ladder) continue
+    for (const floor of floors) {
+      for (let y = floor; y <= Math.min(floor + 2, interior.y1); y++) shelves.add(key(x, y, z))
+    }
+  }
+}
+
+function addLectern(out: DetailBlocks, cell: Cell, interior: AABB): void {
   const facing = FACING[entrance(cell) ?? 'n']
   const centre = key(midpoint(interior.x0, interior.x1), interior.y0, midpoint(interior.z0, interior.z1))
   roleSet(out, `minecraft:lectern[facing=${facing}]`).add(centre)
-  return out
+}
+
+/** The balcony floor stands this many blocks above the room's floor, leaving 3 of headroom under it. */
+const BALCONY_RISE = 3
+/** 3 of headroom below the balcony, its floor, and 3 above. */
+const BALCONY_ROOM_HEIGHT = 2 * BALCONY_RISE + 1
+const WIDEST_BALCONY = 5
+/** Narrower than this, the open middle has no room for an enchanting table's ring of shelves. */
+const NARROWEST_BALCONY = 4
+/** Across the open middle, at least, so the enchanting table under it is in sight from above. */
+const BALCONY_GAP = 3
+
+/**
+ * How wide a walkway runs round the walls halfway up a library, or 0 for
+ * none: as wide as leaves a gap of 3 across the middle, up to 5. An 11-wide
+ * room gets 4, and the 23-wide room of four merged bays gets 5.
+ */
+function balconyWidth(interior: AABB): number {
+  if (interior.y1 - interior.y0 + 1 < BALCONY_ROOM_HEIGHT) return 0
+  const narrowest = Math.min(interior.x1 - interior.x0, interior.z1 - interior.z0) + 1
+  const width = Math.min(WIDEST_BALCONY, Math.floor((narrowest - BALCONY_GAP) / 2))
+  return width >= NARROWEST_BALCONY ? width : 0
+}
+
+/** Where the ladder up to a balcony stands: its column, as `"x,z"`, and the way it faces. */
+interface Ladder {
+  column: string
+  facing: WallFace
+}
+
+/**
+ * The ladder goes on the back wall, opposite the entrance, or on a side
+ * wall or the entrance wall when doorways fill the back one. A room with
+ * doorways all the way round has nowhere for it, so it gets no balcony.
+ */
+function balconyLadder(cell: Cell, interior: AABB, context: DetailContext): Ladder | undefined {
+  const door = entrance(cell) ?? 'n'
+  const back = OPPOSITE[door]
+  const walls = [back, ...WALL_FACES.filter((face) => face !== back && face !== door), door]
+  for (const wall of walls) {
+    const column = ladderColumn(interior, wall, context)
+    if (column) return { column, facing: OPPOSITE[wall] }
+  }
+  return undefined
+}
+
+/**
+ * Lays the balcony floor `width` wide round the walls, a one-high accent
+ * rail on its inner edge, and the `ladder` up through the floor. The shelves
+ * leave the ladder's column clear so a player can climb off at the top. The
+ * floor leaves out every column in front of an opening, as every kit does.
+ */
+function addBalcony(out: DetailBlocks, interior: AABB, context: DetailContext, width: number, ladder: Ladder): void {
+  const floorY = interior.y0 + BALCONY_RISE
+  const inset = (x: number, z: number) => Math.min(x - interior.x0, interior.x1 - x, z - interior.z0, interior.z1 - z)
+  const floor = roleSet(out, 'floor')
+  const rail = roleSet(out, 'accent')
+  for (let x = interior.x0; x <= interior.x1; x++) {
+    for (let z = interior.z0; z <= interior.z1; z++) {
+      const column = `${x},${z}`
+      if (inset(x, z) >= width || column === ladder.column || isOpening(context, column)) continue
+      floor.add(key(x, floorY, z))
+      if (inset(x, z) === width - 1) rail.add(key(x, floorY + 1, z))
+    }
+  }
+
+  const [lx, lz] = ladder.column.split(',').map(Number) as [number, number]
+  const climb = roleSet(out, `minecraft:ladder[facing=${FACING[ladder.facing]}]`)
+  for (let y = interior.y0; y <= floorY; y++) climb.add(key(lx, y, lz))
+}
+
+/**
+ * The column on the `wall` nearest its middle that is not in front of an
+ * opening, leaving out the corners, where a ladder has two walls. A wall
+ * that is all openings has no place for a ladder.
+ */
+function ladderColumn(interior: AABB, wall: WallFace, context: DetailContext): string | undefined {
+  const alongX = wall === 'n' || wall === 's'
+  const row = wall === 'n' ? interior.z0 : wall === 's' ? interior.z1 : wall === 'w' ? interior.x0 : interior.x1
+  const [lo, hi] = alongX ? [interior.x0 + 1, interior.x1 - 1] : [interior.z0 + 1, interior.z1 - 1]
+  const middle = midpoint(lo, hi)
+  const along = Array.from({ length: hi - lo + 1 }, (_, index) => lo + index).sort((l, r) => Math.abs(l - middle) - Math.abs(r - middle))
+  return along.map((c) => (alongX ? `${c},${row}` : `${row},${c}`)).find((column) => !isOpening(context, column))
 }
 
 const FACING: Readonly<Record<WallFace, string>> = { n: 'north', e: 'east', s: 'south', w: 'west' }
@@ -318,14 +438,15 @@ const FIELD_LAMPS: ReadonlyArray<readonly [number, number]> = [
  * A field of farmland with one water block in the middle, inside a walkway
  * one block wide along the walls. The walkway keeps every doorway clear,
  * and walking round the field never tramples it. One water block keeps
- * farmland wet four blocks out, which covers the 9x9 field of a merged room.
+ * farmland wet four blocks out, which covers the 9x9 field of a merged bay.
+ * A larger room would leave farmland dry, so it gets no field.
  * Underground, crops grow only in block light 9 or more, and one lamp in the
  * middle cannot give that at the corners, so four lamps hang two blocks
  * diagonally from the water, three above the floor, where a player on the
  * walkway passes under them. V11 checks the light the crops get.
  */
-function farmKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+function farmKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
   const cx = midpoint(interior.x0, interior.x1)
   const cz = midpoint(interior.z0, interior.z1)
   const [x0, x1, z0, z1] = [interior.x0 + 1, interior.x1 - 1, interior.z0 + 1, interior.z1 - 1]
@@ -354,21 +475,17 @@ const FULL_POWER = 15
 const STATIONS = ['crafting_table', 'smithing_table', 'anvil', 'grindstone', 'stonecutter'] as const
 
 /**
- * An enchanting table stands in the middle of the room with 15 bookshelves on
- * the ring two blocks out. Java counts a shelf when the block halfway to it,
- * at the shelf's height, is air. Bedrock needs air at both heights, so the
- * ring between table and shelves stays empty. The shelf spot facing the
- * entrance is the way in. Shelves go level with the table first and then
- * one higher, back of the room first, never in front of an opening. A room
- * without places for all 15 gets no table, since a weaker one would look
- * finished in the plan and not be. A room with a free row between the
- * shelves and the back wall also lines that wall with crafting stations.
+ * Adds an enchanting table in the middle of the room with 15 bookshelves on
+ * the ring two blocks out, and reports whether it did. Java counts a shelf
+ * when the block halfway to it, at the shelf's height, is air. Bedrock needs
+ * air at both heights, so the ring between table and shelves stays empty.
+ * The shelf spot facing the entrance is the way in. Shelves go level with
+ * the table first and then one higher, back of the room first, never in
+ * front of an opening. A room without places for all 15 gets no table,
+ * since a weaker one would look finished in the plan and not be.
  */
-function workshopKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
-
-  const door = entrance(cell) ?? 'n'
-  const [toDoorX, toDoorZ] = STEP[door]
+function addEnchanting(out: DetailBlocks, cell: Cell, interior: AABB, context: DetailContext): boolean {
+  const [toDoorX, toDoorZ] = STEP[entrance(cell) ?? 'n']
   const cx = midpoint(interior.x0, interior.x1)
   const cz = midpoint(interior.z0, interior.z1)
   const depth = ([dx, dz]: readonly [number, number]) => -(dx * toDoorX + dz * toDoorZ)
@@ -378,13 +495,27 @@ function workshopKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContex
     ...free.map(([dx, dz]) => key(cx + dx, interior.y0, cz + dz)),
     ...backFirst.map(([dx, dz]) => key(cx + dx, interior.y0 + 1, cz + dz)),
   ].slice(0, FULL_POWER)
+  if (shelves.length < FULL_POWER) return false
+
+  roleSet(out, 'minecraft:enchanting_table').add(key(cx, interior.y0, cz))
+  for (const shelf of shelves) roleSet(out, 'minecraft:bookshelf').add(shelf)
+  return true
+}
+
+/**
+ * The enchanting table from {@link addEnchanting}. A room with a free row
+ * between the shelves and the back wall also lines that wall with crafting
+ * stations.
+ */
+function workshopKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
 
   const out: DetailBlocks = new Map()
-  if (shelves.length === FULL_POWER) {
-    roleSet(out, 'minecraft:enchanting_table').add(key(cx, interior.y0, cz))
-    for (const shelf of shelves) roleSet(out, 'minecraft:bookshelf').add(shelf)
-  }
+  addEnchanting(out, cell, interior, context)
 
+  const door = entrance(cell) ?? 'n'
+  const cx = midpoint(interior.x0, interior.x1)
+  const cz = midpoint(interior.z0, interior.z1)
   const frame = routeFrame(door === 'n' || door === 's' ? 'ns' : 'ew', interior)
   const fromFar = door === 'n' || door === 'w'
   const back = fromFar ? frame.along[1] : frame.along[0]

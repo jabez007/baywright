@@ -355,7 +355,7 @@ function chooseNegativeSpace(event: Event): void {
           <span>Drag to select or paint several targets.</span>
           <span>Double-click a bay to open its cells.</span>
           <span>Use Empty to clear cells or bays. Clearing a bay keeps its bay detail.</span>
-          <span>Shift-drag while painting to merge cells.</span>
+          <span>Shift-drag while painting to merge cells, or whole bays in the Bays view.</span>
           <span>Alt-click a cell edge to change its socket.</span>
           <span>Use arrow keys inside the plan. Enter or Space applies the active tool.</span>
         </div>

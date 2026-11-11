@@ -13,6 +13,7 @@ import {
   netherPortalOpening,
   OPPOSITE,
   stairWell,
+  ROOM_KITS,
   type DetailContext,
   type DetailMaterial,
   type PortalOpening,
@@ -533,6 +534,13 @@ function placeInteriorDetails(project: Project, blocks: Map<string, string>): Re
     }
   }
 
+  for (const room of mergedRooms(project)) {
+    const context: DetailContext = { openings: room.openings, merged: false }
+    for (const [material, coords] of interiorDetailBlocks(room.bay, room.cell, room.interior, context)) {
+      for (const key of coords) blocks.set(key, detailBlockId(material, paletteAt(room, key)))
+    }
+  }
+
   // Every edge checks the same finished map, so the order cells come in
   // cannot decide whether a neighbour's edge detail counts as a wall.
   const landing = edges.filter((edge) => !blocks.has(edge.whereAir))
@@ -712,6 +720,78 @@ export function validMergeGroupIds(project: Project): Set<string> {
     if (isOneRoom(members)) valid.add(groupId)
   }
   return valid
+}
+
+interface MergedRoom {
+  level: Level
+  bay: Bay
+  /** The first member, with a doorway on each side of the room that has one. */
+  cell: Cell
+  interior: AABB
+  openings: DetailContext['openings']
+  /** Each member's footprint, walls included, with the palette it resolves to. */
+  members: Array<{ box: AABB; palette: Palette }>
+}
+
+/**
+ * The palette of the member whose footprint holds `key`, so a member's
+ * palette override still decides its part of the room. A carved seam lies
+ * in two footprints and takes the first one's palette.
+ */
+function paletteAt(room: MergedRoom, key: string): Palette {
+  const { x, z } = parseBlockKey(key)
+  const member = room.members.find(({ box }) => x >= box.x0 && x <= box.x1 && z >= box.z0 && z <= box.z1)
+  return (member ?? room.members[0]!).palette
+}
+
+/** Whether the member's interior reaches the room's wall on `face`. */
+function onRoomWall(member: AABB, room: AABB, face: (typeof HORIZONTAL_FACES)[number]): boolean {
+  if (face === 'n') return member.z0 === room.z0
+  if (face === 's') return member.z1 === room.z1
+  if (face === 'w') return member.x0 === room.x0
+  return member.x1 === room.x1
+}
+
+/**
+ * The valid merge groups a room kit fills as one room: every member has the
+ * same module from {@link ROOM_KITS}, and none is a well. The room's
+ * openings are the members' openings on the room's outer walls. The walls
+ * between members are carved away, so what they carry does not count.
+ */
+function mergedRooms(project: Project): MergedRoom[] {
+  const rooms: MergedRoom[] = []
+  for (const members of mergeGroupMembers(project).values()) {
+    if (!isOneRoom(members)) continue
+    const first = members[0]!
+    if (!ROOM_KITS.has(first.cell.module)) continue
+    if (members.some(({ cell }) => cell.module !== first.cell.module || cell.sockets.down === 'shaft')) continue
+
+    const interiors = members.map((member) => cellInterior(project, member.ref))
+    const interior: AABB = {
+      x0: Math.min(...interiors.map((box) => box.x0)),
+      x1: Math.max(...interiors.map((box) => box.x1)),
+      y0: interiors[0]!.y0,
+      y1: interiors[0]!.y1,
+      z0: Math.min(...interiors.map((box) => box.z0)),
+      z1: Math.max(...interiors.map((box) => box.z1)),
+    }
+
+    const openings: Partial<Record<(typeof HORIZONTAL_FACES)[number], Set<string>>> = {}
+    const sockets = { ...first.cell.sockets }
+    for (const face of HORIZONTAL_FACES) {
+      const onWall = members.filter((_, index) => onRoomWall(interiors[index]!, interior, face))
+      sockets[face] = onWall.map(({ cell }) => cell.sockets[face]).find((socket) => socket === 'corridor' || socket === 'arch') ?? 'solid'
+      members.forEach((member, index) => {
+        if (!onRoomWall(interiors[index]!, interior, face)) return
+        for (const column of openingColumns(member.cell, interiors[index]!)[face] ?? []) {
+          ;(openings[face] ??= new Set()).add(column)
+        }
+      })
+    }
+    const footprints = members.map((member) => ({ box: cellAABB(project, member.ref), palette: paletteFor(project, member.level, member.cell) }))
+    rooms.push({ level: first.level, bay: first.bay, cell: { ...first.cell, sockets }, interior, openings, members: footprints })
+  }
+  return rooms
 }
 
 /** Remove only vertical shell blocks strictly inside a valid merged rectangle. */
