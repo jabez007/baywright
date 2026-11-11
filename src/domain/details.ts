@@ -23,7 +23,11 @@ export type WallFace = 'n' | 'e' | 's' | 'w'
 export interface DetailContext {
   /** Interior columns, as `"x,z"`, in front of each open wall face. */
   openings: Partial<Record<WallFace, ReadonlySet<string>>>
-  /** The cell shares a valid merge group, so its room is larger than its interior. */
+  /**
+   * The cell shares a valid merge group, so its room is larger than its
+   * interior. A kit in {@link ROOM_KITS} details the whole room once instead,
+   * and sees `merged: false` there.
+   */
   merged: boolean
   /** The service void above a dropped ceiling. */
   plenum?: AABB | null
@@ -53,6 +57,21 @@ const KITS: Readonly<Record<string, Kit>> = {
   'super-smelter': superSmelterKit,
   'trading-hall': tradingHallKit,
   'item-trunk': itemTrunkKit,
+}
+
+/**
+ * The kits that fill a valid merge group as one room, when every member has
+ * the module and none is a well. Each skips the members one by one, since a
+ * member's interior is only part of the room. Other kits keep detailing each
+ * member, as a run of merged smelter bays needs.
+ */
+export const ROOM_KITS: ReadonlySet<string> = new Set(['library', 'workshop', 'farm', 'storage'])
+
+/** A room narrower than this on either side, such as one fine cell, is too small to furnish. */
+const SMALLEST_ROOM = 5
+
+function isTooSmall(interior: AABB): boolean {
+  return interior.x1 - interior.x0 + 1 < SMALLEST_ROOM || interior.z1 - interior.z0 + 1 < SMALLEST_ROOM
 }
 
 export function interiorDetailBlocks(
@@ -261,12 +280,11 @@ function arenaKit(bay: Bay, _cell: Cell, interior: AABB): DetailBlocks {
 
 /**
  * Bookshelves line every wall three blocks high, and a lectern stands at the
- * centre facing the first opening. A fine cell is too small to read in, and a
- * merged room is larger than this cell, so neither gets shelves. A cell whose
- * floor is a shaft is a well, not a room.
+ * centre facing the first opening. A fine cell is too small to read in. A
+ * cell whose floor is a shaft is a well, not a room.
  */
-function libraryKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+function libraryKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
 
   const out: DetailBlocks = new Map()
   const shelves = roleSet(out, 'minecraft:bookshelf')
@@ -318,14 +336,15 @@ const FIELD_LAMPS: ReadonlyArray<readonly [number, number]> = [
  * A field of farmland with one water block in the middle, inside a walkway
  * one block wide along the walls. The walkway keeps every doorway clear,
  * and walking round the field never tramples it. One water block keeps
- * farmland wet four blocks out, which covers the 9x9 field of a merged room.
+ * farmland wet four blocks out, which covers the 9x9 field of a merged bay.
+ * A larger room would leave farmland dry, so it gets no field.
  * Underground, crops grow only in block light 9 or more, and one lamp in the
  * middle cannot give that at the corners, so four lamps hang two blocks
  * diagonally from the water, three above the floor, where a player on the
  * walkway passes under them. V11 checks the light the crops get.
  */
-function farmKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+function farmKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
   const cx = midpoint(interior.x0, interior.x1)
   const cz = midpoint(interior.z0, interior.z1)
   const [x0, x1, z0, z1] = [interior.x0 + 1, interior.x1 - 1, interior.z0 + 1, interior.z1 - 1]
@@ -364,8 +383,8 @@ const STATIONS = ['crafting_table', 'smithing_table', 'anvil', 'grindstone', 'st
  * finished in the plan and not be. A room with a free row between the
  * shelves and the back wall also lines that wall with crafting stations.
  */
-function workshopKit(bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
-  if (bay.grain === 'fine' || context.merged || cell.sockets.down === 'shaft') return new Map()
+function workshopKit(_bay: Bay, cell: Cell, interior: AABB, context: DetailContext): DetailBlocks {
+  if (isTooSmall(interior) || context.merged || cell.sockets.down === 'shaft') return new Map()
 
   const door = entrance(cell) ?? 'n'
   const [toDoorX, toDoorZ] = STEP[door]

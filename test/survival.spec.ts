@@ -247,18 +247,85 @@ describe('storage kit', () => {
     for (const x of [5, 6, 7]) expect(blocks.get(blockKey(x, 1, 5)), `doorway at ${x}`).toBeUndefined()
   })
 
-  it('leaves a merged hall bare rather than wall off its members from each other', () => {
-    const hall = project([
-      level('L1', 0, {
-        A1: bay('merged', () => ({ ...cellFromModule('storage'), mergeGroup: 'hall' })),
-        B1: bay('merged', () => ({ ...cellFromModule('storage'), mergeGroup: 'hall' })),
-      }),
-    ])
-    expect(positionsNamed(resolveBlocks(hall), 'barrel')).toEqual([])
-  })
-
   it('keeps the walls clear where a stair arrives from below', () => {
     const blocks = resolveBlocks(storage('merged', { sockets: { ...cellFromModule('storage').sockets, down: 'shaft' } }))
+    expect(positionsNamed(blocks, 'barrel')).toEqual([])
+  })
+})
+
+describe('a merged room', () => {
+  /** Merged bays at `keys`, every cell one `module` in the group 'hall'. Bay A1 spans x and z 0 to 12. */
+  const hall = (module: string, keys: readonly string[], make: (key: string) => Partial<Cell> = () => ({})): Project =>
+    project([
+      level('L1', 0, Object.fromEntries(keys.map((key) => [key, bay('merged', () => ({ module, mergeGroup: 'hall', ...make(key) }))]))),
+    ])
+  const SQUARE = ['A1', 'B1', 'A2', 'B2'] as const
+  // A three-wide doorway in the middle of A1's north wall, at x 5 to 7.
+  const door = (key: string): Partial<Cell> => (key === 'A1' ? { sockets: sockets({ n: 'corridor' }), openingWidths: { n: 3 } } : {})
+  const nameAt = (blocks: Blocks, x: number, y: number, z: number) => parseBlockId(blocks.get(blockKey(x, y, z)) ?? 'minecraft:air').name
+
+  it('lines the walls of a 2×2 library and leaves the carved walls bare', () => {
+    const blocks = resolveBlocks(hall('library', SQUARE, door))
+    // The 23×23 room has 88 wall columns, less the 3 in the doorway.
+    expect(positionsNamed(blocks, 'bookshelf')).toHaveLength(85 * 3)
+    expect(nameAt(blocks, 1, 1, 12)).toBe('bookshelf')
+    expect(nameAt(blocks, 12, 1, 23)).toBe('bookshelf')
+    for (const [x, z] of [[12, 6], [6, 12], [11, 11], [13, 13]] as const) expect(nameAt(blocks, x, 1, z), `${x},${z}`).toBe('air')
+    for (const x of [5, 6, 7]) expect(nameAt(blocks, x, 1, 1), `doorway at ${x}`).toBe('air')
+    expect(blocks.get(blockKey(12, 1, 12))).toBe('minecraft:lectern[facing=north]')
+  })
+
+  it('stands one enchanting table in the middle of a 2×2 workshop, with stations along the back', () => {
+    const blocks = resolveBlocks(hall('workshop', SQUARE, door))
+    const table = theTable(blocks)
+    expect(table).toEqual({ x: 12, y: 1, z: 12 })
+    expect(shelvesCounted(blocks, table)).toBeGreaterThanOrEqual(15)
+    const crafting = positionsNamed(blocks, 'crafting_table')
+    expect(crafting).toHaveLength(1)
+    expect(crafting[0]!.z).toBe(23)
+  })
+
+  it('lines a two-bay storage hall with barrels, across the wall the merge removed', () => {
+    const blocks = resolveBlocks(hall('storage', ['A1', 'B1']))
+    // A 23×11 room: 64 wall columns, all solid.
+    expect(positionsNamed(blocks, 'barrel')).toHaveLength(64 * 3)
+    expect(nameAt(blocks, 12, 1, 1)).toBe('barrel')
+    expect(nameAt(blocks, 12, 1, 6)).toBe('air')
+  })
+
+  it('waters a field that two coarse cells make, from its one centre', () => {
+    // Cells 0 and 1 of a coarse bay: interiors x 1 to 5 and 7 to 11, z 1 to 5.
+    const p = project([
+      level('L1', 0, { A1: bay('coarse', (index) => (index < 2 ? { module: 'farm', mergeGroup: 'field' } : {})) }),
+    ])
+    const blocks = resolveBlocks(p)
+    expect(positionsNamed(blocks, 'water')).toEqual([{ x: 6, y: 1, z: 3 }])
+    expect(positionsNamed(blocks, 'farmland')).toHaveLength(9 * 3 - 1)
+  })
+
+  it('leaves a field too wide for one water block bare', () => {
+    expect(positionsNamed(resolveBlocks(hall('farm', SQUARE)), 'farmland')).toEqual([])
+  })
+
+  it('fits a library into a room of four fine cells, though one fine cell is too small', () => {
+    // Fine cells 0, 1, 3 and 4 make a 7×7 room at x and z 1 to 7.
+    const p = project([
+      level('L1', 0, { A1: bay('fine', (index) => ([0, 1, 3, 4].includes(index) ? { module: 'library', mergeGroup: 'nook' } : {})) }),
+    ])
+    const blocks = resolveBlocks(p)
+    expect(positionsNamed(blocks, 'bookshelf')).toHaveLength(24 * 3)
+    expect(blocks.get(blockKey(4, 1, 4))).toBe('minecraft:lectern[facing=north]')
+  })
+
+  it('details nothing when the members disagree on what the room is', () => {
+    const p = project([
+      level('L1', 0, {
+        A1: bay('merged', () => ({ module: 'library', mergeGroup: 'hall' })),
+        B1: bay('merged', () => ({ module: 'storage', mergeGroup: 'hall' })),
+      }),
+    ])
+    const blocks = resolveBlocks(p)
+    expect(positionsNamed(blocks, 'bookshelf')).toEqual([])
     expect(positionsNamed(blocks, 'barrel')).toEqual([])
   })
 })

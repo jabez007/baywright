@@ -126,7 +126,7 @@ describe('library kit', () => {
     expect(counts.get('minecraft:lectern')).toBe(1)
   })
 
-  it('fits a coarse room, and skips fine cells, merged rooms, and wells', () => {
+  it('fits a coarse room, and skips fine cells and wells', () => {
     const shelvesIn = (grain: 'fine' | 'coarse' | 'merged', overrides: Partial<Cell> = {}) =>
       positionsOf(
         resolveBlocks(project([level('L1', 0, { A1: bay(grain, () => ({ ...cellFromModule('library'), ...overrides })) })])),
@@ -137,14 +137,6 @@ describe('library kit', () => {
     expect(shelvesIn('coarse')).toBe(4 * 11 * 3)
     expect(shelvesIn('fine')).toBe(0)
     expect(shelvesIn('merged', { sockets: { ...cellFromModule('library').sockets, down: 'shaft' } })).toBe(0)
-
-    const hall = project(
-      [level('L1', 0, {
-        A1: bay('merged', () => ({ ...cellFromModule('library'), mergeGroup: 'hall' })),
-        B1: bay('merged', () => ({ ...cellFromModule('library'), mergeGroup: 'hall' })),
-      })],
-    )
-    expect(positionsOf(resolveBlocks(hall), 'minecraft:bookshelf')).toEqual([])
   })
 
   describe('over a gallery well', () => {
