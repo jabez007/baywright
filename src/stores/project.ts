@@ -13,7 +13,18 @@ import { defineStore } from 'pinia'
 import { computed, ref, toRaw } from 'vue'
 
 import { assembleProposal, type AssemblyProposal, type AssemblyRequest } from '../domain/assembly.js'
-import { bayKeyOf, cellAABB, footprintsOverlap, parseBayKey, resolveCell, sortedLevels } from '../domain/geometry.js'
+import {
+  bayFootprint,
+  bayKeyOf,
+  baysOver,
+  cellAABB,
+  footprintsOverlap,
+  offsetOutsideField,
+  offsetSlot,
+  parseBayKey,
+  resolveCell,
+  sortedLevels,
+} from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
 import { getLayoutPattern, layoutLevelOffsets, rotatedLayout } from '../domain/layouts.js'
 import { DEFAULT_MODULE_ID, cellFromModule, getModule, isBuiltCell, type CellOverrides } from '../domain/modules.js'
@@ -30,6 +41,7 @@ import {
   cellCount,
   isSocketValidForFace,
   type Bay,
+  type BayOffset,
   type Ceiling,
   type Cell,
   type CellRef,
@@ -128,6 +140,19 @@ interface FieldSize {
 
 export function createBay(grain: Grain, moduleId: string = DEFAULT_MODULE_ID): Bay {
   return { grain, cells: Array.from({ length: cellCount(grain) }, () => cellFromModule(moduleId)) }
+}
+
+/** A fresh, empty bay standing where `source` stands: same grain, same offset. */
+function blankBayLike(source: Bay): Bay {
+  const bay = createBay(source.grain)
+  if (source.offset) bay.offset = source.offset
+  return bay
+}
+
+/** Gives `target` the offset of `source`, or none when `source` has none. */
+function copyOffset(source: Bay, target: Bay): void {
+  if (source.offset) target.offset = source.offset
+  else delete target.offset
 }
 
 export function createLevel(options: { y: number; name: string; bayCols: number; bayRows: number; grain?: Grain }): Level {
@@ -448,7 +473,7 @@ export const useProjectStore = defineStore('project', () => {
     const source = footprintBelow(y)
     if (source) {
       level.bays = {}
-      for (const [bayKey, bay] of Object.entries(source.bays)) level.bays[bayKey] = createBay(bay.grain)
+      for (const [bayKey, bay] of Object.entries(source.bays)) level.bays[bayKey] = blankBayLike(bay)
     }
     project.value.levels.push(level)
     sortLevels()
@@ -591,14 +616,19 @@ export const useProjectStore = defineStore('project', () => {
     })
   }
 
-  /** Drops the bays and negative spaces of one level that lie outside a cols×rows field. */
+  /**
+   * Drops the bays and negative spaces of one level that lie outside a
+   * cols×rows field. An offset bay whose own slot stays but whose offset would
+   * cross the new edge moves back into its slot instead, keeping its rooms.
+   */
   function trimLevelToField(level: Level, cols: number, rows: number): void {
     const outside = (bayKey: string) => {
       const { i, j } = parseBayKey(bayKey)
       return i >= cols || j >= rows
     }
-    for (const bayKey of Object.keys(level.bays)) {
+    for (const [bayKey, bay] of Object.entries(level.bays)) {
       if (outside(bayKey)) delete level.bays[bayKey]
+      else if (bay.offset && offsetOutsideField({ bayCols: cols, bayRows: rows }, bayKey, bay.offset)) delete bay.offset
     }
     for (const bayKey of Object.keys(level.negativeSpaces ?? {})) {
       if (outside(bayKey)) delete level.negativeSpaces![bayKey]
@@ -621,13 +651,51 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  /** The offset bay that stands over part of a slot, if any. */
+  function coveringBay(level: Level, slotKey: string): string | undefined {
+    const slot = bayFootprint(project.value, slotKey, {})
+    return baysOver(project.value, level, slot).find(([key]) => key !== slotKey)?.[0]
+  }
+
+  /**
+   * Moves a bay half a bay south or east of its slot, or back with `null`. The
+   * bay then covers half the next slot along, which must lie inside the field.
+   * A bay it would cover with nothing built in it goes, since that is only the
+   * footprint's default tile. A bay with rooms in it refuses the move, so
+   * painted work is never thrown away.
+   */
+  function setBayOffset(levelId: string, bayKey: string, offset: BayOffset | null): void {
+    mutate(() => {
+      const level = requireLevel(levelId)
+      const bay = requireBay(levelId, bayKey)
+      if (offset === null) {
+        delete bay.offset
+        return
+      }
+      const outside = offsetOutsideField(project.value, bayKey, offset)
+      if (outside) throw new RangeError(outside)
+
+      bay.offset = offset
+      const covered = baysOver(project.value, level, bayFootprint(project.value, bayKey, bay)).filter(([key]) => key !== bayKey)
+      const built = covered.find(([, other]) => other.cells.some(isBuiltCell))
+      if (built) {
+        throw new RangeError(`moving ${bayKey} ${offset} would cover ${built[0]}, which has rooms in it. Remove or clear ${built[0]} first`)
+      }
+      for (const [key] of covered) delete level.bays[key]
+      clearNegativeSpace(level, offsetSlot(bayKey, offset))
+      // The selection may have been pointing into a bay that went.
+      reconcile()
+    })
+  }
+
   function addBay(levelId: string, bayKey: string, grain: Grain = 'fine'): void {
     mutate(() => {
       const level = requireLevel(levelId)
       assertInField(bayKey)
       // Idempotent on purpose: a drag across the footprint re-enters bays it has
       // already added, and re-cutting them would wipe whatever is painted there.
-      if (level.bays[bayKey]) return
+      // A slot an offset bay covers counts as built over for the same reason.
+      if (level.bays[bayKey] || coveringBay(level, bayKey)) return
       level.bays[bayKey] = createBay(grain)
       clearNegativeSpace(level, bayKey)
     })
@@ -648,8 +716,9 @@ export const useProjectStore = defineStore('project', () => {
 
   /**
    * Stamps one level's footprint onto every other level. Bays common to both
-   * are left exactly as they are — this squares up the outline of the stack,
-   * it does not repaint it — so only the bays being added are new and empty.
+   * keep their rooms — this squares up the outline of the stack, it does not
+   * repaint it — so only the bays being added are new and empty. A common bay
+   * does take the source's offset, since where a bay stands is outline.
    *
    * Returns how many levels changed, so a caller can tell a no-op from work.
    */
@@ -668,8 +737,14 @@ export const useProjectStore = defineStore('project', () => {
           touched = true
         }
         for (const [bayKey, bay] of Object.entries(source.bays)) {
-          if (level.bays[bayKey]) continue
-          level.bays[bayKey] = createBay(bay.grain)
+          const existing = level.bays[bayKey]
+          if (existing) {
+            if (existing.offset === bay.offset) continue
+            copyOffset(bay, existing)
+            touched = true
+            continue
+          }
+          level.bays[bayKey] = blankBayLike(bay)
           clearNegativeSpace(level, bayKey)
           touched = true
         }
@@ -719,7 +794,10 @@ export const useProjectStore = defineStore('project', () => {
       const quarterTurns = rotation === 'auto'
         ? bestPatternFit(project.value, levelId, bayKey, patternId).quarterTurns
         : rotation
+      const offset = level.bays[bayKey].offset
       level.bays[bayKey] = bayFromPattern(patternId, quarterTurns)
+      // A stamp repaints the bay; it does not move it.
+      if (offset) level.bays[bayKey].offset = offset
     })
   }
 
@@ -737,6 +815,8 @@ export const useProjectStore = defineStore('project', () => {
         clearNegativeSpace(level, bayKey)
         return
       }
+      const cover = coveringBay(level, bayKey)
+      if (cover) throw new Error(`slot '${bayKey}' is under ${cover}, which is offset into it`)
       level.negativeSpaces ??= {}
       level.negativeSpaces[bayKey] = { kind, ...(note ? { note } : {}) }
     })
@@ -1145,6 +1225,7 @@ export const useProjectStore = defineStore('project', () => {
     toggleBay,
     applyFootprintToAllLevels,
     setBayGrain,
+    setBayOffset,
     paintBay,
     stampBayPattern,
     stampLayoutPattern,

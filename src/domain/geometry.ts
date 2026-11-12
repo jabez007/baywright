@@ -29,6 +29,7 @@ import {
   LEVEL_PITCH,
   type AABB,
   type Bay,
+  type BayOffset,
   type Cell,
   type CellRef,
   type Face,
@@ -101,6 +102,26 @@ export function bayOrigin(project: Project, bayKey: string, bay?: Pick<Bay, 'off
 
 /** How far an offset moves a bay from its slot: half the bay pitch. */
 export const HALF_BAY = BAY_PITCH / 2
+
+/** The slot an offset bay moves half into: the next one south or east. */
+export function offsetSlot(bayKey: string, offset: BayOffset): string {
+  const { i, j } = parseBayKey(bayKey)
+  return offset === 'south' ? bayKeyOf(i, j + 1) : bayKeyOf(i + 1, j)
+}
+
+/**
+ * Why `offset` cannot stand in a field of this size, or null when it can. An
+ * offset bay covers half the next slot along, which must be part of the field.
+ */
+export function offsetOutsideField(
+  field: Pick<Project, 'bayCols' | 'bayRows'>,
+  bayKey: string,
+  offset: BayOffset,
+): string | null {
+  const { i, j } = parseBayKey(offsetSlot(bayKey, offset))
+  if (i < field.bayCols && j < field.bayRows) return null
+  return `an offset ${offset} moves bay '${bayKey}' past the edge of the ${field.bayCols}×${field.bayRows} field`
+}
 
 /** The x/z extent of a box, walls included, ignoring its height. */
 export type Footprint = Pick<AABB, 'x0' | 'z0' | 'x1' | 'z1'>

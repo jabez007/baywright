@@ -139,6 +139,14 @@ describe('defensive import', () => {
     )
   })
 
+  it('rejects an offset that moves a bay past the edge of the field', () => {
+    const edge = (doc: typeof good) => {
+      doc.levels[0]!.bays['A3'] = { ...bay('fine'), offset: 'south' }
+    }
+    expect(mangle(edge)).toThrow(/^\$\.levels\[0\]\.bays\.A3\.offset: an offset south moves bay 'A3' past the edge of the 3×3 field/)
+    expect(mangle((doc) => (doc.levels[0]!.bays['A1']!.offset = 'east'))).not.toThrow()
+  })
+
   it('rejects an unknown socket', () => {
     expect(mangle((doc) => ((doc.levels[0]!.bays['A1']!.cells[0]!.sockets.n as string) = 'gate'))).toThrow(
       /unknown socket 'gate'/,

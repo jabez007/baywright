@@ -10,7 +10,7 @@
  *
  * Pure apart from {@link downloadProject}, which is the only browser-aware part.
  */
-import { parseBayKey } from '../domain/geometry.js'
+import { offsetOutsideField, parseBayKey } from '../domain/geometry.js'
 import { PALETTES } from '../domain/palettes.js'
 import {
   MAX_BAY_FIELD,
@@ -147,6 +147,7 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
       )
     }
     level.bays[bayKey] = parseBay(bay, `${path}.bays.${bayKey}`)
+    assertOffsetInField(level.bays[bayKey], bayKey, { bayCols, bayRows }, `${path}.bays.${bayKey}.offset`)
   }
   if (doc['negativeSpaces'] !== undefined) {
     const spaces = object(doc['negativeSpaces'], `${path}.negativeSpaces`)
@@ -199,6 +200,15 @@ function parseBay(raw: unknown, path: string): Bay {
     bay.offset = offset as BayOffset
   }
   return bay
+}
+
+/**
+ * Like an out-of-field key, an offset past the field's edge points at a slot
+ * the canvas cannot show, so it is refused on import rather than reported.
+ */
+function assertOffsetInField(bay: Bay, bayKey: string, field: Pick<Project, 'bayCols' | 'bayRows'>, path: string): void {
+  const reason = bay.offset && offsetOutsideField(field, bayKey, bay.offset)
+  if (reason) throw new ProjectParseError(reason, path)
 }
 
 function parseCell(raw: unknown, path: string, grain: Bay['grain']): Cell {

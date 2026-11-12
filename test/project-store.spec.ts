@@ -1346,3 +1346,83 @@ describe('procedural assembly', () => {
     expect(s.undoDepth).toBe(0)
   })
 })
+
+describe('offset bays', () => {
+  const bays = () => store().currentLevel!.bays
+
+  it('moves a bay half a bay south, takes the empty bay it covers, and undoes as one step', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    expect(bays()['C1']!.offset).toBe('south')
+    expect(bays()['C2']).toBeUndefined()
+    expect(s.issues.filter((issue) => issue.id === 'V12')).toEqual([])
+    s.undo()
+    expect(bays()['C1']).not.toHaveProperty('offset')
+    expect(bays()['C2']).toBeDefined()
+  })
+
+  it('moves a bay east into the next column', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'B3', 'east')
+    expect(bays()['B3']!.offset).toBe('east')
+    expect(bays()['C3']).toBeUndefined()
+  })
+
+  it('puts a bay back in its slot', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    s.setBayOffset(s.currentLevelId, 'C1', null)
+    expect(bays()['C1']).not.toHaveProperty('offset')
+  })
+
+  it('refuses to cover a bay with rooms in it', () => {
+    const s = store()
+    s.paintBay(s.currentLevelId, 'C2', 'storage', 'coarse')
+    expect(() => s.setBayOffset(s.currentLevelId, 'C1', 'south')).toThrow(/C2/)
+    expect(bays()['C1']).not.toHaveProperty('offset')
+    expect(bays()['C2']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('refuses to move a bay past the edge of the field', () => {
+    const s = store()
+    expect(() => s.setBayOffset(s.currentLevelId, 'A3', 'south')).toThrow(/edge of the 3×3 field/)
+    expect(() => s.setBayOffset(s.currentLevelId, 'C1', 'east')).toThrow(/edge of the 3×3 field/)
+  })
+
+  it('leaves a slot under an offset bay alone when the footprint adds bays', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    s.addBay(s.currentLevelId, 'C2')
+    expect(bays()['C2']).toBeUndefined()
+    expect(() => s.setNegativeSpace(s.currentLevelId, 'C2', 'courtyard')).toThrow(/under C1/)
+  })
+
+  it('puts a bay back in its slot when the field shrinks past it', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C2', 'south')
+    s.setFieldExtent(3, 2)
+    expect(bays()['C2']).not.toHaveProperty('offset')
+  })
+
+  it('copies offsets to a new level and across levels with the footprint', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    s.setBayOffset(ground, 'C1', 'south')
+    const upper = s.addLevel(8, 'Upper')
+    const upperBays = () => s.project.levels.find((level) => level.id === upper)!.bays
+    expect(upperBays()['C1']!.offset).toBe('south')
+    expect(upperBays()['C2']).toBeUndefined()
+
+    s.setBayOffset(ground, 'A1', 'east')
+    expect(s.applyFootprintToAllLevels(ground)).toBe(1)
+    expect(upperBays()['A1']!.offset).toBe('east')
+    expect(upperBays()['B1']).toBeUndefined()
+  })
+
+  it('keeps the offset when a pattern is stamped on the bay', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    s.stampBayPattern(s.currentLevelId, 'C1', 'straight-passage', 1)
+    expect(bays()['C1']!.offset).toBe('south')
+  })
+})
