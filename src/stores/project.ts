@@ -25,6 +25,7 @@ import {
   parseBayKey,
   resolveCell,
   sortedLevels,
+  type Footprint,
 } from '../domain/geometry.js'
 import { bestPatternFit } from '../domain/connections.js'
 import { getLayoutPattern, layoutLevelOffsets, rotatedLayout } from '../domain/layouts.js'
@@ -1036,21 +1037,27 @@ export const useProjectStore = defineStore('project', () => {
 
       above.bays[ref.bayKey] ??= createBay(stairBay.grain)
       clearNegativeSpace(above, ref.bayKey)
-      const shaft = cellAABB(project.value, ref)
-      const cells = above.bays[ref.bayKey]!.cells
-      for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
-        const box = cellAABB(project.value, { levelId: above.id, bayKey: ref.bayKey, cellIndex })
-        if (!footprintsOverlap(shaft, box)) continue
-        if (box.x0 < shaft.x0 || box.x1 > shaft.x1 || box.z0 < shaft.z0 || box.z1 > shaft.z1) {
-          throw new Error(
-            `The landing in '${above.name}' at ${ref.bayKey} is wider than the stair. Match the bay grain above first.`,
-          )
-        }
-        const landing = cells[cellIndex]!
-        if (!isBuiltCell(landing)) cells[cellIndex] = cellFromModule('junction', carryOver(landing))
-        cells[cellIndex]!.sockets.down = 'shaft'
-      }
+      openLanding(above, ref.bayKey, cellAABB(project.value, ref))
     })
+  }
+
+  /**
+   * Opens a shaft down in every cell of `above`'s bay `bayKey` inside the
+   * stair's footprint. An unbuilt landing becomes a Junction. A landing cell
+   * that reaches past the stair would lose floor beyond it, so it is refused.
+   */
+  function openLanding(above: Level, bayKey: string, shaft: Footprint): void {
+    const cells = above.bays[bayKey]!.cells
+    for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+      const box = cellAABB(project.value, { levelId: above.id, bayKey, cellIndex })
+      if (!footprintsOverlap(shaft, box)) continue
+      if (box.x0 < shaft.x0 || box.x1 > shaft.x1 || box.z0 < shaft.z0 || box.z1 > shaft.z1) {
+        throw new Error(`The landing in '${above.name}' at ${bayKey} is wider than the stair. Match the bay grain above first.`)
+      }
+      const landing = cells[cellIndex]!
+      if (!isBuiltCell(landing)) cells[cellIndex] = cellFromModule('junction', carryOver(landing))
+      cells[cellIndex]!.sockets.down = 'shaft'
+    }
   }
 
   function setNote(ref: CellRef, note: string): void {
