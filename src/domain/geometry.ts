@@ -142,6 +142,20 @@ export function bayFootprint(project: Project, bayKey: string, bay: Pick<Bay, 'o
   return { x0: x, z0: z, x1: x + BAY_PITCH, z1: z + BAY_PITCH }
 }
 
+/** A one-block strip just beyond one side of a footprint, as long as that side. */
+export function faceStrip(box: Footprint, face: 'n' | 'e' | 's' | 'w'): Footprint {
+  switch (face) {
+    case 'e':
+      return { x0: box.x1, x1: box.x1 + 1, z0: box.z0, z1: box.z1 }
+    case 'w':
+      return { x0: box.x0 - 1, x1: box.x0, z0: box.z0, z1: box.z1 }
+    case 's':
+      return { x0: box.x0, x1: box.x1, z0: box.z1, z1: box.z1 + 1 }
+    case 'n':
+      return { x0: box.x0, x1: box.x1, z0: box.z0 - 1, z1: box.z0 }
+  }
+}
+
 /** The offset bay that stands over part of a slot it does not own, if any. */
 export function coveringBay(project: Project, level: Level, slotKey: string): string | undefined {
   const slot = bayFootprint(project, slotKey, {})

@@ -1,6 +1,6 @@
 # Baywright
 
-Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and eleven domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
+Baywright is a browser-based floor-plan editor for modular Minecraft bases. Its shared-wall grid combines 13×13 structural bays, 7×7 rooms, and 5×5 utility units. The current code includes the v1 multi-level editor and twelve domain validators. See [the product requirements](.docs/PRD-bay-blueprint-editor.md) for the geometry and validation rules. See [the project direction](.docs/PROJECT-DIRECTION.md) for the adopted structure grammar and the ordered roadmap.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ The domain layer in `src/domain/` has no Vue, Pinia, or browser dependencies. It
 
 - the project, level, bay, cell, palette, module, and socket model;
 - coordinate and block geometry for fine, coarse, and merged bays;
-- vertical collisions, grain seams, room connectivity, stair continuity, plenum reachability, level alignment, merge-group validation, overworld build limits, dark floors where mobs can spawn, Nether portal links, and farmland too dark for crops;
+- vertical collisions, grain seams, room connectivity, stair continuity, plenum reachability, level alignment, merge-group validation, overworld build limits, dark floors where mobs can spawn, Nether portal links, farmland too dark for crops, and bays that overlap;
 - block deduplication, material totals, raw-input rollups, and smelting estimates; and
 - the shipped module presets and palettes.
 
@@ -114,6 +114,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Some layouts build on more than one level, and the picker shows how many. A stair stack, compact stair, library gallery, atrium, or machinery hall uses a level that already sits at the right height, or adds one. If any part would hit a room on another level, nothing is stamped.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain. Empty cells are unbuilt: they place no blocks, cost nothing in the materials list, and take no part in the checks.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
+- Select a bay and set **Offset** in the inspector to move it half a bay south or east. It then stands against two bays of the next row or column, such as one bay at the end of two rows that sits half in each. The bay takes the slot it moves into: an empty bay there goes, and a bay with rooms in it stops the move. The slot must be inside the field. Merged rooms need every bay at the same offset, and a fine cell may open onto an offset seam only where a single cell on the other side lines up with it.
 - Choose **Space** to name absent bays as courtyards, gardens, caves, stair shafts, or reserved expansion. Building a bay in that slot clears the name.
 - Choose **Assemble a base** from the **Project** menu to generate a plan inside a footprint. Set the footprint, up to four levels, the rooms you want, and a seed. The dialog draws every level and reports what the validators find before anything changes. **Apply** writes that plan as one undo step, and the same seed on the same project always gives the same plan. Levels sit 8 blocks apart, joined by compact stairs. An atrium takes three bays in a row and the level above them, so it needs at least two levels. Upper levels build only over bays the level below builds. The bays the routes skip become named courtyards, or reserved expansion over a built bay, and any negative space you already named inside the footprint stays.
 - Edit the level's palette in the inspector's **Palette blocks** fields. Edits apply everywhere that palette is used, so choose **Copy palette for this level** first to change only one level. Block IDs use `/setblock` syntax, such as `deepslate_bricks` or `minecraft:lantern[hanging=true]`.

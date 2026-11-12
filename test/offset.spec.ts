@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { blockKey, cellAABB, cellInterior, resolveBlocks, validMergeGroupIds } from '../src/domain/geometry.js'
+import { bestPatternFit, patternFitAt } from '../src/domain/connections.js'
 import { validate } from '../src/domain/validate.js'
 import type { Bay, Project } from '../src/domain/types.js'
 import { bay, level, project, sockets } from './factory.js'
@@ -149,5 +150,26 @@ describe('validating offset bays', () => {
       "Merge group 'g' mixes offsets none and south: merged cells must share an offset",
     ])
     expect(validMergeGroupIds(subject).has('g')).toBe(false)
+  })
+})
+
+describe('fitting a pattern to an offset bay', () => {
+  it('meets both bays across the offset seam', () => {
+    // A workshop bay opens both west cells, which C1 places at z 7 to 11 and
+    // 13 to 17, against B1's doorway and B2's.
+    expect(patternFitAt(staggered(), 'L1', 'C1', 'workshop-bay', 0)).toMatchObject({
+      compatible: true,
+      checkedNeighbours: 2,
+      matchedOpenings: 4,
+      conflicts: 0,
+    })
+    expect(bestPatternFit(staggered(), 'L1', 'C1', 'workshop-bay').quarterTurns).toBe(0)
+  })
+
+  it('ignores openings of a neighbour that face past the offset bay', () => {
+    // B1's cell 1 opens east at z 1 to 5, where C1 does not reach.
+    const subject = staggered()
+    subject.levels[0]!.bays['B1']!.cells[1]!.sockets.e = 'corridor'
+    expect(patternFitAt(subject, 'L1', 'C1', 'workshop-bay', 0).conflicts).toBe(0)
   })
 })

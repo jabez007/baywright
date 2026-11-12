@@ -15,8 +15,8 @@ import {
   cellInterior,
   cellPlenum,
   droppedCeilingY,
+  faceStrip,
   footprintsOverlap,
-  type Footprint,
   horizontalOpeningSpan,
   openingYSpan,
   paletteFor,
@@ -238,20 +238,6 @@ function seamPartners(project: Project, level: Level, ref: CellRef, face: SideFa
     }
   }
   return partners
-}
-
-/** A one-block strip just beyond a face, as long as the face. */
-function faceStrip(box: AABB, face: SideFace): Footprint {
-  switch (face) {
-    case 'e':
-      return { x0: box.x1, x1: box.x1 + 1, z0: box.z0, z1: box.z1 }
-    case 'w':
-      return { x0: box.x0 - 1, x1: box.x0, z0: box.z0, z1: box.z1 }
-    case 's':
-      return { x0: box.x0, x1: box.x1, z0: box.z1, z1: box.z1 + 1 }
-    case 'n':
-      return { x0: box.x0, x1: box.x1, z0: box.z0 - 1, z1: box.z0 }
-  }
 }
 
 /** A box's extent along a face, the axis a seam runs along. */
