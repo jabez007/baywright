@@ -20,6 +20,7 @@ import {
   cellCount,
   isSocketValidForFace,
   type Bay,
+  type BayOffset,
   type Cell,
   type Face,
   type Level,
@@ -34,6 +35,7 @@ export const SCHEMA_VERSION = 1
 const FACES: readonly Face[] = ['n', 'e', 's', 'w', 'up', 'down']
 const SOCKETS: ReadonlySet<string> = new Set<Socket>(['solid', 'corridor', 'arch', 'window', 'bars', 'shaft'])
 const GRAINS: ReadonlySet<string> = new Set(['fine', 'coarse', 'merged'])
+const OFFSETS: ReadonlySet<string> = new Set<BayOffset>(['south', 'east'])
 const CEILINGS: ReadonlySet<string> = new Set(['dropped', 'flat', 'vaulted'])
 const NEGATIVE_SPACE_KINDS: ReadonlySet<string> = new Set<NegativeSpaceKind>([
   'courtyard', 'garden', 'cave', 'stair-shaft', 'reserved',
@@ -187,10 +189,16 @@ function parseBay(raw: unknown, path: string): Bay {
   if (cells.length !== expected) {
     throw new ProjectParseError(`a ${grain} bay holds ${expected} cells, got ${cells.length}`, `${path}.cells`)
   }
-  return {
+  const bay: Bay = {
     grain: grain as Bay['grain'],
     cells: cells.map((cell, index) => parseCell(cell, `${path}.cells[${index}]`, grain as Bay['grain'])),
   }
+  if (doc['offset'] !== undefined) {
+    const offset = string(doc['offset'], `${path}.offset`)
+    if (!OFFSETS.has(offset)) throw new ProjectParseError(`unknown offset '${offset}'`, `${path}.offset`)
+    bay.offset = offset as BayOffset
+  }
+  return bay
 }
 
 function parseCell(raw: unknown, path: string, grain: Bay['grain']): Cell {

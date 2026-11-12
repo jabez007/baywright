@@ -91,13 +91,16 @@ export function parseBayKey(key: string): { i: number; j: number } {
 }
 
 /** World coordinate of the bay's `(0, 0)` local corner. */
-export function bayOrigin(project: Project, bayKey: string): { x: number; z: number } {
+export function bayOrigin(project: Project, bayKey: string, bay?: Pick<Bay, 'offset'>): { x: number; z: number } {
   const { i, j } = parseBayKey(bayKey)
   return {
-    x: project.origin.x + BAY_PITCH * i,
-    z: project.origin.z + BAY_PITCH * j,
+    x: project.origin.x + BAY_PITCH * i + (bay?.offset === 'east' ? HALF_BAY : 0),
+    z: project.origin.z + BAY_PITCH * j + (bay?.offset === 'south' ? HALF_BAY : 0),
   }
 }
+
+/** How far an offset moves a bay from its slot: half the bay pitch. */
+export const HALF_BAY = BAY_PITCH / 2
 
 // --------------------------------------------------------------------------
 // Cell addressing within a bay (§5.2)
@@ -213,7 +216,7 @@ export function droppedCeilingY(level: Level, cell: Cell): number | null {
 /** Outer bounds of a cell, inclusive, in world coordinates. */
 export function cellAABB(project: Project, ref: CellRef): AABB {
   const { level, bay, cell, a, b } = resolveCell(project, ref)
-  const origin = bayOrigin(project, ref.bayKey)
+  const origin = bayOrigin(project, ref.bayKey, bay)
   const [lx0, lx1] = outerSpan(bay.grain, a)
   const [lz0, lz1] = outerSpan(bay.grain, b)
   return {
@@ -229,7 +232,7 @@ export function cellAABB(project: Project, ref: CellRef): AABB {
 /** Interior (air) bounds of a cell, excluding the dropped ceiling if present. */
 export function cellInterior(project: Project, ref: CellRef): AABB {
   const { level, bay, cell, a, b } = resolveCell(project, ref)
-  const origin = bayOrigin(project, ref.bayKey)
+  const origin = bayOrigin(project, ref.bayKey, bay)
   const [lx0, lx1] = interiorSpan(bay.grain, a)
   const [lz0, lz1] = interiorSpan(bay.grain, b)
   const roomTop = hasDroppedCeiling(cell)

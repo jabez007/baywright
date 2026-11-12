@@ -55,6 +55,13 @@ describe('round trip', () => {
     expect(round.levels[0]?.bays['A1']?.cells[0]).toEqual(original.levels[0]?.bays['A1']?.cells[0])
   })
 
+  it('preserves a bay offset', () => {
+    const original = project([level('ground', 0, { A1: { ...bay('fine'), offset: 'south' }, B1: bay('fine') })])
+    const round = parseProject(serializeProject(original))
+    expect(round.levels[0]?.bays['A1']?.offset).toBe('south')
+    expect(round.levels[0]?.bays['B1']).not.toHaveProperty('offset')
+  })
+
   it('preserves named negative space on absent bays', () => {
     const original = project([
       level('ground', 0, { A1: bay('fine') }, {
@@ -124,6 +131,12 @@ describe('defensive import', () => {
 
   it('rejects an unknown grain', () => {
     expect(mangle((doc) => ((doc.levels[0]!.bays['A1']!.grain as string) = 'chunky'))).toThrow(/unknown grain/)
+  })
+
+  it('rejects an unknown bay offset', () => {
+    expect(mangle((doc) => ((doc.levels[0]!.bays['A1'] as { offset?: string }).offset = 'north'))).toThrow(
+      /^\$\.levels\[0\]\.bays\.A1\.offset: unknown offset 'north'/,
+    )
   })
 
   it('rejects an unknown socket', () => {

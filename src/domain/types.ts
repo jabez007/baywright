@@ -49,10 +49,19 @@ export interface Cell {
   note?: string
 }
 
+/**
+ * Moves a bay half a bay from the slot its key names: `south` by 6 blocks
+ * along z, `east` by 6 along x. The bay then stands against two bays of the
+ * next row or column at once, and the slot it moves into must stay empty.
+ */
+export type BayOffset = 'south' | 'east'
+
 export interface Bay {
   grain: Grain
   /** 9 (fine) | 4 (coarse) | 1 (merged), row-major: `cells[b * n + a]`. */
   cells: Cell[]
+  /** Absent for a bay in its own slot. */
+  offset?: BayOffset
 }
 
 export type NegativeSpaceKind = 'courtyard' | 'garden' | 'cave' | 'stair-shaft' | 'reserved'
