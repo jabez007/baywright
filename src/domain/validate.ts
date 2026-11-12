@@ -721,6 +721,38 @@ interface GroupMember {
 }
 
 /**
+ * What every member of a merge group must share, and how to report a mix.
+ * `placesLattice` marks the values that decide where a member sits on the
+ * cell lattice, without which the rectangle test means nothing.
+ */
+const SHARED_BY_A_ROOM: ReadonlyArray<{
+  value: (member: GroupMember) => string
+  message: (groupId: string, found: string[]) => string
+  placesLattice: boolean
+}> = [
+  {
+    value: (member) => member.level.id,
+    message: (groupId, found) => `Merge group '${groupId}' spans levels ${found.join(', ')} — a merge group is one room on one level`,
+    placesLattice: true,
+  },
+  {
+    value: (member) => member.grain,
+    message: (groupId, found) => `Merge group '${groupId}' mixes ${found.join(' and ')} grain — merged cells must share a grain`,
+    placesLattice: true,
+  },
+  {
+    value: (member) => String(member.cell.heightCells),
+    message: (groupId, found) => `Merge group '${groupId}' mixes heightCells ${found.join(' and ')} — merged cells must share a height`,
+    placesLattice: false,
+  },
+  {
+    value: (member) => member.cell.ceiling,
+    message: (groupId, found) => `Merge group '${groupId}' mixes ${found.join(' and ')} ceilings — merged cells must share a ceiling`,
+    placesLattice: false,
+  },
+]
+
+/**
  * Cells that render and export as one room must actually be one room: same
  * level, same grain, same height, same ceiling, and a filled rectangle.
  */
@@ -739,20 +771,17 @@ export function checkMergeGroups(project: Project): Issue[] {
     const refs = members.map((member) => member.ref)
     const report = (message: string) => issues.push({ id: 'V7', severity: 'error', message, refs })
 
-    const levelIds = distinct(members.map((member) => member.level.id))
-    const grains = distinct(members.map((member) => member.grain))
-    const heights = distinct(members.map((member) => String(member.cell.heightCells)))
-    const ceilings = distinct(members.map((member) => member.cell.ceiling))
-
-    if (levelIds.length > 1) report(`Merge group '${groupId}' spans levels ${levelIds.join(', ')} — a merge group is one room on one level`)
-    if (grains.length > 1) report(`Merge group '${groupId}' mixes ${grains.join(' and ')} grain — merged cells must share a grain`)
-    if (heights.length > 1) report(`Merge group '${groupId}' mixes heightCells ${heights.join(' and ')} — merged cells must share a height`)
-    if (ceilings.length > 1) report(`Merge group '${groupId}' mixes ${ceilings.join(' and ')} ceilings — merged cells must share a ceiling`)
+    let uniformLattice = true
+    for (const rule of SHARED_BY_A_ROOM) {
+      const found = distinct(members.map(rule.value))
+      if (found.length < 2) continue
+      report(rule.message(groupId, found))
+      if (rule.placesLattice) uniformLattice = false
+    }
 
     // A rectangle is only meaningful once the group sits on one level at one
     // grain, since that is what makes the cell lattice uniform.
-    if (levelIds.length > 1 || grains.length > 1) continue
-    if (!isFilledRectangle(members)) {
+    if (uniformLattice && !isFilledRectangle(members)) {
       report(`Merge group '${groupId}' is not a contiguous rectangle`)
     }
   }
