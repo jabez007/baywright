@@ -8,6 +8,7 @@ import {
   GRAIN_CELL_PITCH,
   GRAIN_LABELS,
   type AABB,
+  type BayOffset,
   type Ceiling,
   type Cell,
   type Face,
@@ -52,6 +53,11 @@ const OPENING_WIDTHS: readonly OpeningWidth[] = ['full', 3, 5]
 const VERTICAL_SOCKETS: readonly Socket[] = ['solid', 'shaft']
 const CEILINGS: readonly Ceiling[] = ['flat', 'dropped', 'vaulted']
 const GRAINS: readonly Grain[] = ['fine', 'coarse', 'merged']
+const OFFSETS: readonly { value: BayOffset | ''; label: string }[] = [
+  { value: '', label: 'None' },
+  { value: 'south', label: 'Half a bay south' },
+  { value: 'east', label: 'Half a bay east' },
+]
 
 const level = computed(() => store.currentLevel)
 const selectedBay = computed(() => {
@@ -204,6 +210,17 @@ function setBayGrain(event: Event): void {
   const selection = store.selection
   if (selection.kind !== 'bay') return
   run(() => store.setBayGrain(selection.levelId, selection.bayKey, valueOf(event) as Grain))
+}
+
+function setBayOffset(event: Event): void {
+  const selection = store.selection
+  if (selection.kind !== 'bay') return
+  const select = event.target as HTMLSelectElement
+  const offset = (select.value || null) as BayOffset | null
+  run(() => store.setBayOffset(selection.levelId, selection.bayKey, offset))
+  // A refused move leaves the bound value as it was, so Vue never patches the
+  // control and it would keep showing an offset the bay does not have.
+  select.value = selectedBay.value?.offset ?? ''
 }
 
 function setModule(event: Event): void {
@@ -413,6 +430,13 @@ function mergeSelected(): void {
           </select>
         </label>
         <p class="field-help">Changing grain re-cuts this bay and may replace mixed cell modules.</p>
+        <label>
+          <span>Offset</span>
+          <select :value="selectedBay.offset ?? ''" @change="setBayOffset">
+            <option v-for="option in OFFSETS" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
+        </label>
+        <p class="field-help">An offset moves the bay half a bay so it stands against two bays of the next row or column. It takes the slot it moves into, which must hold no rooms.</p>
         <p class="field-help">Shift-drag across bays while painting to merge them into one room.</p>
         <div class="merge-actions">
           <button type="button" :disabled="!bayHasMergeGroup" @click="splitMergeGroups(selectedBay.cells)">Split merge groups</button>

@@ -91,13 +91,23 @@ export function parseBayKey(key: string): { i: number; j: number } {
   return { i: i - 1, j: j - 1 }
 }
 
-/** World coordinate of the bay's `(0, 0)` local corner. */
-export function bayOrigin(project: Project, bayKey: string, bay?: Pick<Bay, 'offset'>): { x: number; z: number } {
+/**
+ * The bay's `(0, 0)` local corner relative to the project origin, as the plan
+ * draws it. Without `bay`, or without an offset, this is the corner of the
+ * slot its key names.
+ */
+export function bayCorner(bayKey: string, bay?: Pick<Bay, 'offset'>): { x: number; z: number } {
   const { i, j } = parseBayKey(bayKey)
   return {
-    x: project.origin.x + BAY_PITCH * i + (bay?.offset === 'east' ? HALF_BAY : 0),
-    z: project.origin.z + BAY_PITCH * j + (bay?.offset === 'south' ? HALF_BAY : 0),
+    x: BAY_PITCH * i + (bay?.offset === 'east' ? HALF_BAY : 0),
+    z: BAY_PITCH * j + (bay?.offset === 'south' ? HALF_BAY : 0),
   }
+}
+
+/** World coordinate of the bay's `(0, 0)` local corner. */
+export function bayOrigin(project: Project, bayKey: string, bay?: Pick<Bay, 'offset'>): { x: number; z: number } {
+  const corner = bayCorner(bayKey, bay)
+  return { x: project.origin.x + corner.x, z: project.origin.z + corner.z }
 }
 
 /** How far an offset moves a bay from its slot: half the bay pitch. */
@@ -130,6 +140,12 @@ export type Footprint = Pick<AABB, 'x0' | 'z0' | 'x1' | 'z1'>
 export function bayFootprint(project: Project, bayKey: string, bay: Pick<Bay, 'offset'>): Footprint {
   const { x, z } = bayOrigin(project, bayKey, bay)
   return { x0: x, z0: z, x1: x + BAY_PITCH, z1: z + BAY_PITCH }
+}
+
+/** The offset bay that stands over part of a slot it does not own, if any. */
+export function coveringBay(project: Project, level: Level, slotKey: string): string | undefined {
+  const slot = bayFootprint(project, slotKey, {})
+  return baysOver(project, level, slot).find(([key]) => key !== slotKey)?.[0]
 }
 
 /** The bays of a level that overlap `footprint`, beyond a shared wall, by key. */

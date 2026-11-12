@@ -18,6 +18,7 @@ import {
   bayKeyOf,
   baysOver,
   cellAABB,
+  coveringBay,
   footprintsOverlap,
   offsetOutsideField,
   offsetSlot,
@@ -651,12 +652,6 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  /** The offset bay that stands over part of a slot, if any. */
-  function coveringBay(level: Level, slotKey: string): string | undefined {
-    const slot = bayFootprint(project.value, slotKey, {})
-    return baysOver(project.value, level, slot).find(([key]) => key !== slotKey)?.[0]
-  }
-
   /**
    * Moves a bay half a bay south or east of its slot, or back with `null`. The
    * bay then covers half the next slot along, which must lie inside the field.
@@ -695,7 +690,7 @@ export const useProjectStore = defineStore('project', () => {
       // Idempotent on purpose: a drag across the footprint re-enters bays it has
       // already added, and re-cutting them would wipe whatever is painted there.
       // A slot an offset bay covers counts as built over for the same reason.
-      if (level.bays[bayKey] || coveringBay(level, bayKey)) return
+      if (level.bays[bayKey] || coveringBay(project.value, level, bayKey)) return
       level.bays[bayKey] = createBay(grain)
       clearNegativeSpace(level, bayKey)
     })
@@ -815,7 +810,7 @@ export const useProjectStore = defineStore('project', () => {
         clearNegativeSpace(level, bayKey)
         return
       }
-      const cover = coveringBay(level, bayKey)
+      const cover = coveringBay(project.value, level, bayKey)
       if (cover) throw new Error(`slot '${bayKey}' is under ${cover}, which is offset into it`)
       level.negativeSpaces ??= {}
       level.negativeSpaces[bayKey] = { kind, ...(note ? { note } : {}) }

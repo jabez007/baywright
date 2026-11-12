@@ -13,7 +13,7 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-import { bayKeyOf, cellAxisIndices, interiorSpan, parseBayKey, validMergeGroupIds } from '../domain/geometry.js'
+import { bayCorner, bayKeyOf, cellAxisIndices, coveringBay, interiorSpan, parseBayKey, validMergeGroupIds } from '../domain/geometry.js'
 import type { PatternRotation, QuarterTurns } from '../domain/patterns.js'
 import {
   BAY_PITCH,
@@ -80,8 +80,8 @@ const PAD = 3
 
 const viewBox = computed(() => {
   if (props.mode === 'cell' && store.focusedBayKey) {
-    const { i, j } = parseBayKey(store.focusedBayKey)
-    return `${BAY_PITCH * i - PAD} ${BAY_PITCH * j - PAD} ${BAY_PITCH + 1 + PAD * 2} ${BAY_PITCH + 1 + PAD * 2}`
+    const { x, z } = slotCorner(store.focusedBayKey)
+    return `${x - PAD} ${z - PAD} ${BAY_PITCH + 1 + PAD * 2} ${BAY_PITCH + 1 + PAD * 2}`
   }
   const width = BAY_PITCH * store.project.bayCols + 1
   const height = BAY_PITCH * store.project.bayRows + 1
@@ -127,12 +127,18 @@ const bays = computed(() => {
  * would draw a bay that is not there.
  */
 function shapedRects(inset: number) {
-  return bays.value.map(({ i, j }) => ({
-    x: BAY_PITCH * i - inset,
-    y: BAY_PITCH * j - inset,
-    width: BAY_PITCH + 1 + inset * 2,
-    height: BAY_PITCH + 1 + inset * 2,
-  }))
+  return bays.value.map(({ bayKey, bay }) => {
+    const { x, z } = bayCorner(bayKey, bay)
+    return { x: x - inset, y: z - inset, width: BAY_PITCH + 1 + inset * 2, height: BAY_PITCH + 1 + inset * 2 }
+  })
+}
+
+/**
+ * Where a slot's target is drawn: a present bay where it stands, after any
+ * offset, and an empty slot where its key puts it.
+ */
+function slotCorner(bayKey: string): { x: number; z: number } {
+  return bayCorner(bayKey, store.currentLevel?.bays[bayKey])
 }
 
 const groundRects = computed(() => shapedRects(PAD))
@@ -141,7 +147,8 @@ const fieldRects = computed(() => shapedRects(0))
 /**
  * Every position in the field, present or not. Footprint mode hit-tests
  * against these rather than the tiles, so an absent bay is as clickable as a
- * present one.
+ * present one. An offset bay's slot follows the bay, and an empty slot it
+ * covers is left out, since nothing can be built there.
  */
 const slots = computed(() => {
   const level = store.currentLevel
@@ -155,12 +162,15 @@ const slots = computed(() => {
   for (let j = 0; j < store.project.bayRows; j++) {
     for (let i = 0; i < store.project.bayCols; i++) {
       const bayKey = bayKeyOf(i, j)
+      const present = level?.bays[bayKey] !== undefined
+      if (level && !present && coveringBay(store.project, level, bayKey)) continue
+      const { x, z } = slotCorner(bayKey)
       out.push({
         bayKey,
-        present: level?.bays[bayKey] !== undefined,
+        present,
         ...(level?.negativeSpaces?.[bayKey] ? { negativeSpace: level.negativeSpaces[bayKey] } : {}),
-        x: BAY_PITCH * i + 0.5,
-        y: BAY_PITCH * j + 0.5,
+        x: x + 0.5,
+        y: z + 0.5,
       })
     }
   }
@@ -218,8 +228,8 @@ const footprintPreview = computed(() => {
   return {
     add: current.add,
     rects: [...current.targets].map((bayKey) => {
-      const { i, j } = parseBayKey(bayKey)
-      return { x: BAY_PITCH * i + 0.5, y: BAY_PITCH * j + 0.5, width: BAY_PITCH, height: BAY_PITCH }
+      const { x, z } = slotCorner(bayKey)
+      return { x: x + 0.5, y: z + 0.5, width: BAY_PITCH, height: BAY_PITCH }
     }),
   }
 })
@@ -328,21 +338,21 @@ const mergedSeams = computed(() => {
 function targetRect(target: Target) {
   const [bayKey, index] = splitTarget(target)
   if (index === null) {
-    const { i, j } = parseBayKey(bayKey)
-    return { x: BAY_PITCH * i + 1, y: BAY_PITCH * j + 1, width: BAY_PITCH - 1, height: BAY_PITCH - 1 }
+    const { x, z } = slotCorner(bayKey)
+    return { x: x + 1, y: z + 1, width: BAY_PITCH - 1, height: BAY_PITCH - 1 }
   }
   return cellInteriorRect({ levelId: store.currentLevelId, bayKey, cellIndex: index })
 }
 
 function cellInteriorRect(ref: CellRef) {
   const grain = grainOf(ref.bayKey)
-  const { i, j } = parseBayKey(ref.bayKey)
+  const corner = slotCorner(ref.bayKey)
   const { a, b } = cellAxisIndices(grain, ref.cellIndex)
   const [x0, x1] = interiorSpan(grain, a)
   const [z0, z1] = interiorSpan(grain, b)
   return {
-    x: BAY_PITCH * i + x0,
-    y: BAY_PITCH * j + z0,
+    x: corner.x + x0,
+    y: corner.z + z0,
     width: x1 - x0 + 1,
     height: z1 - z0 + 1,
   }
@@ -853,8 +863,6 @@ function nearestFace(event: PointerEvent, ref: CellRef): Face | null {
       :key="entry.bayKey"
       :bay-key="entry.bayKey"
       :bay="entry.bay"
-      :i="entry.i"
-      :j="entry.j"
       :mode="tileMode"
       :selected-cells="selectedCells(entry.bayKey)"
       :error-cells="errorCells(entry.bayKey)"
