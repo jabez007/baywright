@@ -5,7 +5,7 @@ import { bayOpenFaces } from '../src/domain/connections.js'
 import { bayKeyOf, parseBayKey } from '../src/domain/geometry.js'
 import type { Level } from '../src/domain/types.js'
 import { validate } from '../src/domain/validate.js'
-import { level, project } from './factory.js'
+import { bay, level, project } from './factory.js'
 
 function field(cols = 4, rows = 4) {
   return project([level('ground', 0, {})], { bayCols: cols, bayRows: rows })
@@ -175,6 +175,28 @@ describe('procedural assembly', () => {
     })
     expect(Math.max(...loops)).toBeGreaterThan(0)
     expect(Math.min(...loops)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('leaves alone the slots that offset bays from outside the footprint move into', () => {
+    // The footprint is columns B to D. A1 moves east into B1 on the ground, and
+    // A2 into B2 on the level above.
+    // Their cells are unbuilt, so only the overlap V12 checks can fail.
+    const unbuilt = () => ({ ...bay('fine', () => ({ module: 'empty' })), offset: 'east' as const })
+    const source = project([level('ground', 0, { A1: unbuilt() }), level('upper', 8, { A2: unbuilt() })], { bayCols: 4, bayRows: 4 })
+    const rooms = ASSEMBLY_ROOMS.map((room) => room.id)
+    for (let levelCount = 1; levelCount <= 3; levelCount++) {
+      for (let seed = 1; seed <= 12; seed++) {
+        const label = `${levelCount} levels, seed ${seed}`
+        const proposal = assembleProposal(source, request({ anchorBayKey: 'B1', width: 3, height: 4, levelCount, rooms, seed }))
+        const [ground, upper] = proposal.project.levels as [Level, Level]
+        expect(proposal.issues.map((issue) => issue.message), label).toEqual([])
+        expect(ground.bays.A1, label).toEqual(source.levels[0]!.bays.A1)
+        for (const [subject, key] of [[ground, 'B1'], [upper, 'B2']] as const) {
+          expect(subject.bays[key], `${label} ${key}`).toBeUndefined()
+          expect(subject.negativeSpaces?.[key], `${label} ${key}`).toBeUndefined()
+        }
+      }
+    }
   })
 
   it('changes nothing outside the footprint', () => {
