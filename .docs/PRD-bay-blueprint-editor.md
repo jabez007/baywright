@@ -278,7 +278,7 @@ To clear the error without closing the face, change either bay to `merged` grain
 
 Fine-to-fine and coarse-to-coarse seams always align. No check needed.
 
-An offset moves a bay's cells by 6 blocks. Coarse cells still line up across the seam, but no fine cell lines up with an offset fine neighbour, and an unshifted fine bay meets an offset coarse or merged one with a cell that straddles the joint. The general rule, which gives the table above for unshifted bays: a fine cell on a bay's edge may carry a non-`solid` socket only when its interior span along the seam lies inside the interior span of one cell of a neighbouring bay. Neighbours are found by position, not by bay key. A fine cell that faces no bay is not checked.
+An offset moves a bay's cells by 6 blocks. Coarse cells still line up across the seam, but no fine cell lines up with an offset fine neighbour, and an unshifted fine bay meets an offset coarse or merged one with a cell that straddles the joint. The general rule, which gives the table above for unshifted bays: a fine cell on a bay's edge may carry a non-`solid` socket only when its interior span along the seam lies inside the interior span of one built cell of a neighbouring bay. Neighbours are found by position, not by bay key. An unbuilt cell places no wall, so it does not count, and a fine cell that faces no built cell is not checked. A middle fine cell may therefore open onto a coarse bay whose two edge cells are both unbuilt.
 
 ### V3: connectivity (warning)
 

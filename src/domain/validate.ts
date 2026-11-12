@@ -227,13 +227,17 @@ function seamIssue(project: Project, ref: CellRef, face: SideFace): Issue | null
   }
 }
 
-/** The cells of other bays on the level that stand against one face of a cell. */
+/**
+ * The built cells of other bays on the level that stand against one face of a
+ * cell. An unbuilt cell places no wall, so an opening onto it meets nothing.
+ */
 function seamPartners(project: Project, level: Level, ref: CellRef, face: SideFace): CellRef[] {
   const strip = faceStrip(cellAABB(project, ref), face)
   const partners: CellRef[] = []
   for (const [bayKey, bay] of baysOver(project, level, strip)) {
     if (bayKey === ref.bayKey) continue
     for (const partner of bayCellRefs(level, bayKey, bay)) {
+      if (!isBuiltCell(bay.cells[partner.cellIndex]!)) continue
       if (footprintsOverlap(strip, cellAABB(project, partner))) partners.push(partner)
     }
   }
