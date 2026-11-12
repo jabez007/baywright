@@ -147,6 +147,14 @@ describe('defensive import', () => {
     expect(mangle((doc) => (doc.levels[0]!.bays['A1']!.offset = 'east'))).not.toThrow()
   })
 
+  it('rejects negative space in a slot an offset bay moves into', () => {
+    const covered = (doc: typeof good) => {
+      doc.levels[0]!.bays['A1']!.offset = 'east'
+      doc.levels[0]!.negativeSpaces = { B1: { kind: 'courtyard' } }
+    }
+    expect(mangle(covered)).toThrow(/^\$\.levels\[0\]\.negativeSpaces\.B1: slot 'B1' is under A1, which is offset into it/)
+  })
+
   it('rejects an unknown socket', () => {
     expect(mangle((doc) => ((doc.levels[0]!.bays['A1']!.cells[0]!.sockets.n as string) = 'gate'))).toThrow(
       /unknown socket 'gate'/,

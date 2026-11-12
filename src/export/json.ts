@@ -10,7 +10,7 @@
  *
  * Pure apart from {@link downloadProject}, which is the only browser-aware part.
  */
-import { offsetOutsideField, parseBayKey } from '../domain/geometry.js'
+import { offsetOutsideField, offsetSlot, parseBayKey } from '../domain/geometry.js'
 import { PALETTES } from '../domain/palettes.js'
 import {
   MAX_BAY_FIELD,
@@ -163,9 +163,7 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
           `${path}.negativeSpaces.${bayKey}`,
         )
       }
-      if (level.bays[bayKey]) {
-        throw new ProjectParseError('negative space must refer to an absent bay', `${path}.negativeSpaces.${bayKey}`)
-      }
+      assertSlotFree(level, bayKey, `${path}.negativeSpaces.${bayKey}`)
       const space = object(rawSpace, `${path}.negativeSpaces.${bayKey}`)
       const kind = string(space['kind'], `${path}.negativeSpaces.${bayKey}.kind`)
       if (!NEGATIVE_SPACE_KINDS.has(kind)) {
@@ -179,6 +177,16 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
     if (Object.keys(parsed).length > 0) level.negativeSpaces = parsed
   }
   return level
+}
+
+/**
+ * Negative space names an empty slot, so neither a bay of its own nor an
+ * offset bay that moves into it may stand there. The store refuses both.
+ */
+function assertSlotFree(level: Level, slotKey: string, path: string): void {
+  if (level.bays[slotKey]) throw new ProjectParseError('negative space must refer to an absent bay', path)
+  const cover = Object.entries(level.bays).find(([key, bay]) => bay.offset && offsetSlot(key, bay.offset) === slotKey)
+  if (cover) throw new ProjectParseError(`slot '${slotKey}' is under ${cover[0]}, which is offset into it`, path)
 }
 
 function parseBay(raw: unknown, path: string): Bay {
