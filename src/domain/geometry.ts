@@ -934,7 +934,8 @@ function shaftWells(project: Project, ref: CellRef): ShaftWells {
 
   const outer = cellAABB(project, ref)
   const below = builtCellRefs(project).filter((other) => {
-    if (other.bayKey !== ref.bayKey || other.levelId === ref.levelId) return false
+    // By position, not key: a stair in an offset bay can climb into a bay with another key.
+    if (other.levelId === ref.levelId) return false
     const box = cellAABB(project, other)
     return box.y1 === outer.y0 && footprintsOverlap(box, outer) && resolveCell(project, other).cell.sockets.up === 'shaft'
   })

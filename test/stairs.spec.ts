@@ -152,6 +152,24 @@ describe('stair kit', () => {
     expect(plane(blocks, 4, 1, 5, 1, 5).filter((blockId) => blockId === undefined)).toHaveLength(3)
   })
 
+  it('opens only the stairwell in a landing whose bay has another key, which keeps its own palette', () => {
+    // C1 is offset south, so its cell 2 spans x 24 to 30 and z 12 to 18,
+    // under C2's cell 0 on the level above. Both interiors are x 25 to 29,
+    // z 13 to 17.
+    const room = project([
+      level('low', 0, {
+        C1: { ...bay('coarse', (index) => (index === 2 ? { ...cellFromModule('stair'), heightCells: 1 } : {})), offset: 'south' },
+      }),
+      level('high', 4, { C2: bay('coarse', (index) => (index === 0 ? landing() : {})) }, { paletteId: 'dark-oak' }),
+    ])
+    const blocks = resolveBlocks(room)
+    expectClimb(blocks, stairsWithin(blocks, 25, 29, 13, 17), 0, 4)
+    const floor = plane(blocks, 4, 25, 29, 13, 17)
+    expect(floor.filter((blockId) => blockId === undefined)).toHaveLength(3)
+    // The rest is the landing's floor but for the top step.
+    expect(floor.filter((blockId) => blockId === PALETTES['dark-oak']!.blocks.floor)).toHaveLength(25 - 4)
+  })
+
   it('hangs a ladder in a three-wide room, on the wall facing its door', () => {
     // Cell 4 is the middle of a fine bay, with its interior at x 5 to 7.
     const compact = project([
