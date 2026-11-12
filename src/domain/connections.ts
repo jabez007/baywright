@@ -17,6 +17,8 @@ type ConnectionKind = 'room' | 'window' | 'bars'
 interface FaceOpening {
   kind: ConnectionKind
   span: [number, number]
+  /** The interior span of the cell the opening is in, along the same axis. */
+  cell: [number, number]
 }
 
 interface NeighbourDirection {
@@ -118,7 +120,7 @@ function faceOpenings(bay: Bay, face: HorizontalFace): FaceOpening[] {
     const cross = face === 'e' || face === 'w' ? interiorSpan(bay.grain, b) : interiorSpan(bay.grain, a)
     const span = horizontalOpeningSpan(socket, cross, cell.openingWidths?.[face])
     const kind = connectionKind(socket)
-    if (span && kind) openings.push({ kind, span })
+    if (span && kind) openings.push({ kind, span, cell: cross })
   }
   return openings
 }
@@ -135,7 +137,11 @@ function openingsAlong(bay: Bay, face: HorizontalFace, own: Footprint, other: Fo
   const lo = Math.max(start, alongZ ? other.z0 : other.x0)
   const hi = Math.min(alongZ ? own.z1 : own.x1, alongZ ? other.z1 : other.x1)
   return faceOpenings(bay, face)
-    .map((opening): FaceOpening => ({ kind: opening.kind, span: [opening.span[0] + start, opening.span[1] + start] }))
+    .map((opening): FaceOpening => ({
+      kind: opening.kind,
+      span: [opening.span[0] + start, opening.span[1] + start],
+      cell: [opening.cell[0] + start, opening.cell[1] + start],
+    }))
     .filter((opening) => opening.span[1] > lo && opening.span[0] < hi)
 }
 
@@ -155,6 +161,20 @@ function compareOpenings(left: FaceOpening[], right: FaceOpening[]): { matches: 
   }
 }
 
+/**
+ * Two openings meet when they overlap and their cells line up, as V2 asks: one
+ * cell's interior span lies inside the other's. Openings in cells that straddle
+ * a joint share a block or two but would meet a wall end.
+ */
 function openingsMatch(left: FaceOpening, right: FaceOpening): boolean {
-  return left.kind === right.kind && left.span[0] <= right.span[1] && right.span[0] <= left.span[1]
+  return (
+    left.kind === right.kind
+    && left.span[0] <= right.span[1]
+    && right.span[0] <= left.span[1]
+    && (spanWithin(left.cell, right.cell) || spanWithin(right.cell, left.cell))
+  )
+}
+
+function spanWithin(inner: [number, number], outer: [number, number]): boolean {
+  return outer[0] <= inner[0] && inner[1] <= outer[1]
 }

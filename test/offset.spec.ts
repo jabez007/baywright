@@ -166,6 +166,20 @@ describe('fitting a pattern to an offset bay', () => {
     expect(bestPatternFit(staggered(), 'L1', 'C1', 'workshop-bay').quarterTurns).toBe(0)
   })
 
+  it('refuses a fine doorway that only touches the doorways across an offset seam', () => {
+    // C1's middle west cell spans z 11 to 13 inside. B1 cell 8 spans 9 to 11
+    // and B2 cell 2 spans 13 to 15, so V2 would reject the stamp. The
+    // passage's doorway goes unmatched against each bay, and each bay's too.
+    const subject = project([
+      level('L1', 0, {
+        B1: bay('fine', (index) => (index === 8 ? { sockets: sockets({ e: 'corridor' }) } : {})),
+        B2: bay('fine', (index) => (index === 2 ? { sockets: sockets({ e: 'corridor' }) } : {})),
+        C1: { ...bay('fine'), offset: 'south' },
+      }),
+    ])
+    expect(patternFitAt(subject, 'L1', 'C1', 'straight-passage', 0)).toMatchObject({ compatible: false, matchedOpenings: 0, conflicts: 4 })
+  })
+
   it('ignores openings of a neighbour that face past the offset bay', () => {
     // B1's cell 1 opens east at z 1 to 5, where C1 does not reach.
     const subject = staggered()
