@@ -1119,6 +1119,55 @@ describe('a matched stair up', () => {
     expect(cellAt(landing).sockets.down).toBe('shaft')
   })
 
+  describe('from an offset bay', () => {
+    /**
+     * Ground C1 is coarse and offset south, to z 6 to 18. Its cell 2 spans
+     * x 24 to 30 and z 12 to 18, under Upper C2's cell 0 rather than Upper C1.
+     */
+    function offsetStair() {
+      const levels = twoLevels(8)
+      const { s, ground, upper } = levels
+      for (const id of [ground, upper]) s.setBayGrain(id, 'C1', 'coarse')
+      s.setBayGrain(upper, 'C2', 'coarse')
+      s.setBayOffset(ground, 'C1', 'south')
+      const upperBays = () => s.project.levels.find((l) => l.id === upper)!.bays
+      return { ...levels, stair: { levelId: ground, bayKey: 'C1', cellIndex: 2 }, upperBays }
+    }
+
+    it('lands in whichever bay above stands over the shaft', () => {
+      const { s, stair, upperBays } = offsetStair()
+      s.addStairUp(stair)
+      expect(upperBays()['C2']!.cells[0]!.sockets.down).toBe('shaft')
+      expect(upperBays()['C1']!.cells.every((cell) => cell.sockets.down === 'solid')).toBe(true)
+      expect(s.issues.filter((issue) => issue.id === 'V4')).toEqual([])
+    })
+
+    it('adds a landing bay at the same offset when nothing above stands there', () => {
+      const { s, upper, stair, upperBays } = offsetStair()
+      for (const key of ['C1', 'C2']) s.removeBay(upper, key)
+      s.addStairUp(stair)
+      expect(upperBays()['C1']).toMatchObject({ grain: 'coarse', offset: 'south' })
+      expect(upperBays()['C1']!.cells[2]!.sockets.down).toBe('shaft')
+      expect(s.issues.filter((issue) => issue.id === 'V4' || issue.id === 'V12')).toEqual([])
+    })
+
+    it('refuses when no bay above covers the shaft and there is no room to add one', () => {
+      const { s, upper, stair, cellAt } = offsetStair()
+      s.removeBay(upper, 'C2')
+      expect(() => s.addStairUp(stair)).toThrow(
+        "No bay in 'Upper' stands over the stair, and C1 cannot be added there at its offset. Add a bay above the stair first.",
+      )
+      expect(cellAt(stair).module).toBe('empty')
+    })
+
+    it('refuses landing cells that straddle the shaft', () => {
+      const { s, upper, stair, cellAt } = offsetStair()
+      s.setBayGrain(upper, 'C2', 'fine')
+      expect(() => s.addStairUp(stair)).toThrow("The landing in 'Upper' at C2 is wider than the stair or not in line with it.")
+      expect(cellAt(stair).module).toBe('empty')
+    })
+  })
+
   it('lands on the next level up, past levels at other heights', () => {
     const { s, stair, landing, cellAt } = twoLevels(8)
     s.addLevel(20, 'Roof')
@@ -1149,7 +1198,7 @@ describe('a matched stair up', () => {
     const wide = twoLevels(8)
     wide.s.setBayGrain(wide.upper, 'A1', 'merged')
     expect(() => wide.s.addStairUp(wide.stair)).toThrow(
-      "The landing in 'Upper' at A1 is wider than the stair. Match the bay grain above first.",
+      "The landing in 'Upper' at A1 is wider than the stair or not in line with it. Match the bay grain and offset above first.",
     )
     expect(wide.cellAt(wide.stair).module).toBe('empty')
   })

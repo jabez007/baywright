@@ -1012,9 +1012,11 @@ export const useProjectStore = defineStore('project', () => {
   /**
    * Make a matched stair from `ref` to the next level up: the stair is as tall
    * as the rise, its ceiling cannot seal the shaft, and every landing cell
-   * inside its footprint opens a shaft down. A landing cell wider than the
-   * stair would lose floor beyond it, so that is refused. An unbuilt stair
-   * becomes a Stair, and an unbuilt landing becomes a Junction.
+   * inside its footprint opens a shaft down. The landing is in whichever bays
+   * above stand over the shaft, found by position because an offset moves a
+   * bay off its key's slot. A landing cell wider than the stair would lose
+   * floor beyond it, so that is refused. An unbuilt stair becomes a Stair, and
+   * an unbuilt landing becomes a Junction.
    */
   function addStairUp(ref: CellRef): void {
     mutate(() => {
@@ -1035,10 +1037,29 @@ export const useProjectStore = defineStore('project', () => {
       stair.ceiling = 'flat'
       stair.sockets.up = 'shaft'
 
-      above.bays[ref.bayKey] ??= createBay(stairBay.grain)
-      clearNegativeSpace(above, ref.bayKey)
-      openLanding(above, ref.bayKey, cellAABB(project.value, ref))
+      const shaft = cellAABB(project.value, ref)
+      for (const bayKey of landingBays(above, ref.bayKey, stairBay, shaft)) openLanding(above, bayKey, shaft)
     })
+  }
+
+  /**
+   * The keys of the bays in `above` over the shaft. With none there, it adds a
+   * blank bay placed like the stair's own, so long as no bay above stands in
+   * its way. A bay with the stair's key always does, whatever its offset.
+   */
+  function landingBays(above: Level, stairKey: string, stairBay: Bay, shaft: Footprint): string[] {
+    const over = baysOver(project.value, above, shaft).map(([key]) => key)
+    if (over.length > 0) return over
+    if (baysOver(project.value, above, bayFootprint(project.value, stairKey, stairBay)).length > 0) {
+      throw new Error(
+        `No bay in '${above.name}' stands over the stair, and ${stairKey} cannot be added there at its offset. ` +
+          'Add a bay above the stair first.',
+      )
+    }
+    above.bays[stairKey] = blankBayLike(stairBay)
+    clearNegativeSpace(above, stairKey)
+    if (stairBay.offset) clearNegativeSpace(above, offsetSlot(stairKey, stairBay.offset))
+    return [stairKey]
   }
 
   /**
@@ -1052,7 +1073,10 @@ export const useProjectStore = defineStore('project', () => {
       const box = cellAABB(project.value, { levelId: above.id, bayKey, cellIndex })
       if (!footprintsOverlap(shaft, box)) continue
       if (box.x0 < shaft.x0 || box.x1 > shaft.x1 || box.z0 < shaft.z0 || box.z1 > shaft.z1) {
-        throw new Error(`The landing in '${above.name}' at ${bayKey} is wider than the stair. Match the bay grain above first.`)
+        throw new Error(
+          `The landing in '${above.name}' at ${bayKey} is wider than the stair or not in line with it. ` +
+            'Match the bay grain and offset above first.',
+        )
       }
       const landing = cells[cellIndex]!
       if (!isBuiltCell(landing)) cells[cellIndex] = cellFromModule('junction', carryOver(landing))
