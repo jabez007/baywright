@@ -174,12 +174,13 @@ const SEAM_DIRECTIONS: readonly SeamDirection[] = [
  * cell (5..7) overlaps each coarse partner by a single block. It must stay
  * solid because there is no unambiguous coarse cell for an opening.
  *
- * Fine-to-fine and coarse-to-coarse always align, and `merged` spans 1..11,
- * which contains every fine and coarse span — the universal adapter.
+ * Fine-to-fine and coarse-to-coarse align between bays at the same offset,
+ * and `merged` spans 1..11, which contains every fine and coarse span — the
+ * universal adapter.
  *
- * An offset bay moves its cells by half a bay. Coarse cells still line up
- * across the seam, but no fine cell lines up with an offset fine neighbour,
- * so partners are found by position rather than by bay key. Coarse and
+ * An offset bay moves its cells by half a bay. Across bays shifted relative
+ * to each other, coarse cells still line up but fine cells do not line up
+ * with fine cells, so partners are found by position rather than by bay key. Coarse and
  * merged cells that open onto a wall end lose their link in V3 instead.
  */
 export function checkGrainSeams(project: Project): Issue[] {

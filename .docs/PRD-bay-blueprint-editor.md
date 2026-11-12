@@ -276,9 +276,9 @@ At a shared face between a `fine` bay and a `coarse` bay, the interior spans do 
 
 To clear the error without closing the face, change either bay to `merged` grain in the inspector. A merged interior spans `1..11`, so it contains every fine and coarse interior span.
 
-Fine-to-fine and coarse-to-coarse seams always align. No check needed.
+Fine-to-fine and coarse-to-coarse seams align when both bays have the same offset or neither has one.
 
-An offset moves a bay's cells by 6 blocks. Coarse cells still line up across the seam, but no fine cell lines up with an offset fine neighbour, and an unshifted fine bay meets an offset coarse or merged one with a cell that straddles the joint. The general rule, which gives the table above for unshifted bays: a fine cell on a bay's edge may carry a non-`solid` socket only when its interior span along the seam lies inside the interior span of one built cell of a neighbouring bay. Neighbours are found by position, not by bay key. An unbuilt cell places no wall, so it does not count, and a fine cell that faces no built cell is not checked. A middle fine cell may therefore open onto a coarse bay whose two edge cells are both unbuilt.
+An offset moves a bay's cells by 6 blocks. Two bays with the same offset line up as unshifted ones do. Across bays shifted relative to each other, coarse cells still line up, but fine cells do not line up with fine cells, and a fine bay meets a coarse or merged one with a cell that straddles the joint. The general rule, which gives the table above for unshifted bays: a fine cell on a bay's edge may carry a non-`solid` socket only when its interior span along the seam lies inside the interior span of one built cell of a neighbouring bay. Neighbours are found by position, not by bay key. An unbuilt cell places no wall, so it does not count, and a fine cell that faces no built cell is not checked. A middle fine cell may therefore open onto a coarse bay whose two edge cells are both unbuilt.
 
 ### V3: connectivity (warning)
 
