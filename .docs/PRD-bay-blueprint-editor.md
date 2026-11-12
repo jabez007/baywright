@@ -45,6 +45,7 @@ Every coordinate in the app derives from the rules in this section.
 - Bay `(i, j)` has its corner at world coordinate `(project.origin.x + 12 * i, project.origin.z + 12 * j)`.
 - A bay occupies **local coordinates 0..12 inclusive** in x and z. This gives it a 13x13 outer footprint. Adjacent bays share the wall plane. Bay A's local 12 is bay B's local 0.
 - Bays are addressed in the UI as a letter for i (A, B, C, ...) and a number for j (1, 2, 3, ...). Bay key format: `"A1"`, `"C3"`.
+- A bay may carry an **offset** that moves it half a bay, 6 blocks, from the slot its key names: `south` adds 6 to z and `east` adds 6 to x. An offset bay stands against two bays of the next column or row at once, for example one bay at the end of two rows that sits half in each. The slot it moves into must stay empty (V12), and it must stay inside the field.
 
 ### 5.2 Grain
 
@@ -177,6 +178,7 @@ interface Cell {
 interface Bay {
   grain: Grain
   cells: Cell[]               // 9 | 4 | 1, row-major
+  offset?: 'south' | 'east'   // half a bay from its slot, see §5.1
 }
 
 type NegativeSpaceKind = 'courtyard' | 'garden' | 'cave' | 'stair-shaft' | 'reserved'
@@ -257,7 +259,7 @@ Collision iff `aTop > bBottom && bTop > aBottom`. The comparison is strict becau
 
 Message format: `"{bayKey} vault at y {aBottom} reaches y {aTop} — collides with level '{name}' at y {bBottom}"`
 
-Naive implementation is O(n²) across cells. That is acceptable up to a few thousand cells. If it becomes slow, bucket cells by bay key first, since only cells in overlapping bays can collide.
+Only cells of bays whose footprints overlap can collide, so each bay is compared only with the bays above it that stand over it. An offset bay can stand over bays with other keys.
 
 ### V2: grain seam (error)
 
@@ -276,6 +278,8 @@ To clear the error without closing the face, change either bay to `merged` grain
 
 Fine-to-fine and coarse-to-coarse seams always align. No check needed.
 
+An offset moves a bay's cells by 6 blocks. Coarse cells still line up across the seam, but no fine cell lines up with an offset fine neighbour, and an unshifted fine bay meets an offset coarse or merged one with a cell that straddles the joint. The general rule, which gives the table above for unshifted bays: a fine cell on a bay's edge may carry a non-`solid` socket only when its interior span along the seam lies inside the interior span of one cell of a neighbouring bay. Neighbours are found by position, not by bay key. A fine cell that faces no bay is not checked.
+
 ### V3: connectivity (warning)
 
 Build an undirected graph over all cells using the room-connectivity rules from §5.4. Flood-fill from every cell whose module is `spine`. Report every cell that the fill does not reach. If the project has no spine, report every cell as unreachable.
@@ -286,7 +290,7 @@ Warning rather than error, because intentionally sealed secret rooms are a legit
 
 ### V4: stair continuity (error)
 
-A cell with `sockets.up === 'shaft'` lands on the first level above it that has a cell in the same bay with an overlapping footprint. Levels are sparse, so a level in between that builds nothing over the shaft does not interrupt the stair. At least one landing cell must have `sockets.down === 'shaft'`. The y-delta between the two levels must equal `4 * heightCells` of the lower cell.
+A cell with `sockets.up === 'shaft'` lands on the first level above it that has a cell, in any bay, with an overlapping footprint. Levels are sparse, so a level in between that builds nothing over the shaft does not interrupt the stair. At least one landing cell must have `sockets.down === 'shaft'`. The y-delta between the two levels must equal `4 * heightCells` of the lower cell.
 
 A dropped ceiling puts a solid plane at `y + 4`, between the room and its upward shaft. An upward shaft on a dropped-ceiling cell is therefore an error, and V3 does not treat that shaft as a path.
 
@@ -308,7 +312,7 @@ Flood-fill from plenums in spine cells and plenums that connect to an adjacent s
 
 ### V7: merge group integrity (error)
 
-All cells sharing a `mergeGroup` must have the same grain, the same `heightCells`, the same `ceiling`, and form a contiguous rectangle. Report otherwise.
+All cells sharing a `mergeGroup` must have the same grain, the same bay offset, the same `heightCells`, the same `ceiling`, and form a contiguous rectangle. Report otherwise.
 
 ### V8: world build limits (error)
 
@@ -338,6 +342,12 @@ A portal reads `{bayKey} on level '{name}'`, with ` cell {n}` after the bay key 
 In Java Edition, a crop grows only where the light at the crop is 9 or more. Underground, that is block light alone. For each farmland block in a level's built cells, read the block light from the resolved blocks, lamps included, one block above it. Report one warning per level with the count of farmland whose crop would sit in less, and the cells that hold it.
 
 Message: `"Level '{name}' has {n} farmland blocks too dark for crops, which need light 9 to grow"`
+
+### V12: bay overlap (error)
+
+Two bays on one level may share a wall plane but no more. Report each pair whose footprints, after their offsets, overlap beyond a shared plane, with every cell of both bays. Only an offset can cause this, so the usual fix is to remove the bay in the slot the offset bay moves into.
+
+Message: `"{bayKey} and {bayKey} overlap on level '{name}'. An offset bay needs the slot it moves into left empty, so remove one of them or change its offset"`
 
 ## 9. Bill of materials
 
@@ -449,7 +459,7 @@ src/
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
-    validate.ts           # V1 through V11
+    validate.ts           # V1 through V12
     lighting.ts           # block light for lamps and V9
     portals.ts            # Nether portal pairs for V10
     bom.ts                # material and smelting calculations

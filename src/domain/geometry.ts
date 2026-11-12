@@ -102,6 +102,23 @@ export function bayOrigin(project: Project, bayKey: string, bay?: Pick<Bay, 'off
 /** How far an offset moves a bay from its slot: half the bay pitch. */
 export const HALF_BAY = BAY_PITCH / 2
 
+/** The x/z extent of a box, walls included, ignoring its height. */
+export type Footprint = Pick<AABB, 'x0' | 'z0' | 'x1' | 'z1'>
+
+/** Where a bay stands, walls included, after its offset. */
+export function bayFootprint(project: Project, bayKey: string, bay: Pick<Bay, 'offset'>): Footprint {
+  const { x, z } = bayOrigin(project, bayKey, bay)
+  return { x0: x, z0: z, x1: x + BAY_PITCH, z1: z + BAY_PITCH }
+}
+
+/** The bays of a level that overlap `footprint`, beyond a shared wall, by key. */
+export function baysOver(project: Project, level: Level, footprint: Footprint): Array<[string, Bay]> {
+  return Object.keys(level.bays)
+    .sort()
+    .map((key): [string, Bay] => [key, level.bays[key]!])
+    .filter(([key, bay]) => footprintsOverlap(footprint, bayFootprint(project, key, bay)))
+}
+
 // --------------------------------------------------------------------------
 // Cell addressing within a bay (§5.2)
 // --------------------------------------------------------------------------
@@ -683,8 +700,8 @@ function mergeGroupMembers(project: Project): Map<string, MergeBlockMember[]> {
 }
 
 /**
- * Do these members really form one room? Same level, same grain, same height,
- * same ceiling, and a filled rectangle — the V7 conditions, which is the point:
+ * Do these members really form one room? Same level, same grain, same offset,
+ * same height, same ceiling, and a filled rectangle — the V7 conditions, which is the point:
  * only a group that passes them gets its shared walls carved away below.
  */
 function isOneRoom(members: MergeBlockMember[]): boolean {
@@ -695,6 +712,7 @@ function isOneRoom(members: MergeBlockMember[]): boolean {
       (member) =>
         member.level.id !== first.level.id ||
         member.bay.grain !== first.bay.grain ||
+        member.bay.offset !== first.bay.offset ||
         member.cell.heightCells !== first.cell.heightCells ||
         member.cell.ceiling !== first.cell.ceiling,
     )
@@ -1018,7 +1036,7 @@ export function volume(box: AABB): number {
  * Do two cell footprints overlap in x/z? Strict, so bays that merely share a
  * wall plane do not count as overlapping.
  */
-export function footprintsOverlap(a: AABB, b: AABB): boolean {
+export function footprintsOverlap(a: Footprint, b: Footprint): boolean {
   return a.x1 > b.x0 && b.x1 > a.x0 && a.z1 > b.z0 && b.z1 > a.z0
 }
 

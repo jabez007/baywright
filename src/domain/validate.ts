@@ -1,11 +1,12 @@
 /**
- * PRD §8 — Validation rules V1 through V11.
+ * PRD §8 — Validation rules V1 through V12.
  *
  * Pure: no Vue, no store, no I/O.
  */
 import {
   allCellRefs,
-  bayKeyOf,
+  bayFootprint,
+  baysOver,
   builtCellRefs,
   blockKey,
   cellAABB,
@@ -15,6 +16,7 @@ import {
   cellPlenum,
   droppedCeilingY,
   footprintsOverlap,
+  type Footprint,
   horizontalOpeningSpan,
   openingYSpan,
   paletteFor,
@@ -38,6 +40,7 @@ import {
   WORLD_MIN_Y,
   type AABB,
   type Bay,
+  type BayOffset,
   type Cell,
   type CellRef,
   type Face,
@@ -49,7 +52,7 @@ import {
 
 export type Severity = 'error' | 'warning'
 
-export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9' | 'V10' | 'V11'
+export type IssueId = 'V1' | 'V2' | 'V3' | 'V4' | 'V5' | 'V6' | 'V7' | 'V8' | 'V9' | 'V10' | 'V11' | 'V12'
 
 export interface Issue {
   id: IssueId
@@ -74,6 +77,7 @@ export function validate(project: Project): Issue[] {
     ...checkDarkFloors(project),
     ...checkPortalLinks(project),
     ...checkCropLight(project),
+    ...checkBayOverlaps(project),
   ]
 }
 
@@ -85,46 +89,55 @@ export function validate(project: Project): Issue[] {
  * Cells on different levels whose x/z footprints overlap must not overlap in y.
  * Touching at exactly one shared plane is legal, hence the strict comparison.
  *
- * Bucketed by bay key first: distinct bays only ever share a wall plane, so
- * cells in different bays can never overlap in footprint.
+ * Only cells of bays that stand over each other can overlap in footprint, so
+ * each bay is compared with the bays above it whose footprints overlap its
+ * own. An offset bay can stand over bays with other keys.
  */
 export function checkVerticalCollisions(project: Project): Issue[] {
   const issues: Issue[] = []
   const levels = sortedLevels(project)
-
   for (let lower = 0; lower < levels.length; lower++) {
     for (let upper = lower + 1; upper < levels.length; upper++) {
-      const below = levels[lower]!
-      const above = levels[upper]!
-      for (const bayKey of Object.keys(below.bays).sort()) {
-        const belowBay = below.bays[bayKey]
-        const aboveBay = above.bays[bayKey]
-        if (!belowBay || !aboveBay) continue
+      issues.push(...levelCollisions(project, levels[lower]!, levels[upper]!))
+    }
+  }
+  return issues
+}
 
-        for (let i = 0; i < belowBay.cells.length; i++) {
-          if (!isBuiltCell(belowBay.cells[i]!)) continue
-          const belowRef: CellRef = { levelId: below.id, bayKey, cellIndex: i }
-          const belowBox = cellAABB(project, belowRef)
-          for (let j = 0; j < aboveBay.cells.length; j++) {
-            if (!isBuiltCell(aboveBay.cells[j]!)) continue
-            const aboveRef: CellRef = { levelId: above.id, bayKey, cellIndex: j }
-            const aboveBox = cellAABB(project, aboveRef)
-            if (!footprintsOverlap(belowBox, aboveBox)) continue
-            if (!yIntervalsCollide(belowBox, aboveBox)) continue
-            issues.push({
-              id: 'V1',
-              severity: 'error',
-              message:
-                `${bayKey} vault at y ${belowBox.y0} reaches y ${belowBox.y1} — ` +
-                `collides with level '${above.name}' at y ${aboveBox.y0}`,
-              refs: [belowRef, aboveRef],
-            })
-          }
+/** Each built cell of `below` whose vault reaches into a built cell of `above`. */
+function levelCollisions(project: Project, below: Level, above: Level): Issue[] {
+  const issues: Issue[] = []
+  for (const bayKey of Object.keys(below.bays).sort()) {
+    const belowBay = below.bays[bayKey]!
+    for (const [aboveKey, aboveBay] of baysOver(project, above, bayFootprint(project, bayKey, belowBay))) {
+      for (const belowRef of builtBayRefs(below, bayKey, belowBay)) {
+        const belowBox = cellAABB(project, belowRef)
+        for (const aboveRef of builtBayRefs(above, aboveKey, aboveBay)) {
+          const aboveBox = cellAABB(project, aboveRef)
+          if (!footprintsOverlap(belowBox, aboveBox) || !yIntervalsCollide(belowBox, aboveBox)) continue
+          issues.push({
+            id: 'V1',
+            severity: 'error',
+            message:
+              `${bayKey} vault at y ${belowBox.y0} reaches y ${belowBox.y1} — ` +
+              `collides with level '${above.name}' at y ${aboveBox.y0}`,
+            refs: [belowRef, aboveRef],
+          })
         }
       }
     }
   }
   return issues
+}
+
+/** Every cell of one bay, in index order. */
+function bayCellRefs(level: Level, bayKey: string, bay: Bay): CellRef[] {
+  return bay.cells.map((_, cellIndex) => ({ levelId: level.id, bayKey, cellIndex }))
+}
+
+/** The cells of one bay that place blocks. */
+function builtBayRefs(level: Level, bayKey: string, bay: Bay): CellRef[] {
+  return bayCellRefs(level, bayKey, bay).filter((ref) => isBuiltCell(bay.cells[ref.cellIndex]!))
 }
 
 // --------------------------------------------------------------------------
@@ -134,10 +147,10 @@ export function checkVerticalCollisions(project: Project): Issue[] {
 /** The ambiguous middle fine cell cannot open onto either coarse partner. */
 const SEAM_SAFE_SOCKETS: ReadonlySet<Socket> = new Set<Socket>(['solid'])
 
+type SideFace = Extract<Face, 'n' | 'e' | 's' | 'w'>
+
 interface SeamDirection {
-  face: Extract<Face, 'n' | 'e' | 's' | 'w'>
-  di: number
-  dj: number
+  face: SideFace
   /** Which axis the fine bay's edge cells vary along on this face. */
   axis: 'a' | 'b'
   /** The fine bay's edge index on the fixed axis. */
@@ -145,13 +158,17 @@ interface SeamDirection {
 }
 
 const SEAM_DIRECTIONS: readonly SeamDirection[] = [
-  { face: 'e', di: 1, dj: 0, axis: 'b', edge: 2 },
-  { face: 'w', di: -1, dj: 0, axis: 'b', edge: 0 },
-  { face: 's', di: 0, dj: 1, axis: 'a', edge: 2 },
-  { face: 'n', di: 0, dj: -1, axis: 'a', edge: 0 },
+  { face: 'e', axis: 'b', edge: 2 },
+  { face: 'w', axis: 'b', edge: 0 },
+  { face: 's', axis: 'a', edge: 2 },
+  { face: 'n', axis: 'a', edge: 0 },
 ]
 
 /**
+ * A fine cell on a bay's edge may open onto the next bay only where one cell
+ * there lines up with it: the fine cell's interior span along the seam must
+ * lie inside one partner cell's interior span.
+ *
  * At a fine/coarse seam the two outer fine cells line up with the two coarse
  * cells (spans 1..3 and 9..11 sit inside 1..5 and 7..11), but the middle fine
  * cell (5..7) overlaps each coarse partner by a single block. It must stay
@@ -159,63 +176,87 @@ const SEAM_DIRECTIONS: readonly SeamDirection[] = [
  *
  * Fine-to-fine and coarse-to-coarse always align, and `merged` spans 1..11,
  * which contains every fine and coarse span — the universal adapter.
+ *
+ * An offset bay moves its cells by half a bay. Coarse cells still line up
+ * across the seam, but no fine cell lines up with an offset fine neighbour,
+ * so partners are found by position rather than by bay key. Coarse and
+ * merged cells that open onto a wall end lose their link in V3 instead.
  */
 export function checkGrainSeams(project: Project): Issue[] {
   const issues: Issue[] = []
-
   for (const level of sortedLevels(project)) {
     for (const bayKey of Object.keys(level.bays).sort()) {
-      const bay = level.bays[bayKey]
-      if (!bay || bay.grain !== 'fine') continue
-      const { i, j } = parseBayKey(bayKey)
-
+      const bay = level.bays[bayKey]!
+      if (bay.grain !== 'fine') continue
       for (const dir of SEAM_DIRECTIONS) {
-        const neighbourKey = neighbourBayKey(i, j, dir.di, dir.dj)
-        if (!neighbourKey) continue
-        const neighbour = level.bays[neighbourKey]
-        if (!neighbour || neighbour.grain !== 'coarse') continue
-
-        const middleIndex = dir.axis === 'b' ? cellIndexOf('fine', dir.edge, 1) : cellIndexOf('fine', 1, dir.edge)
-        const cell = bay.cells[middleIndex]
-        if (!cell || !isBuiltCell(cell)) continue
-        const socket = cell.sockets[dir.face]
-        if (SEAM_SAFE_SOCKETS.has(socket)) continue
-
-        issues.push({
-          id: 'V2',
-          severity: 'error',
-          message:
-            `${bayKey} cell ${middleIndex} carries a '${socket}' onto the fine/coarse seam with ${neighbourKey} — ` +
-            `the middle fine cell overlaps two coarse cells, so it must stay solid ` +
-            `(convert ${bayKey} or ${neighbourKey} to merged grain to adapt)`,
-          refs: [
-            { levelId: level.id, bayKey, cellIndex: middleIndex },
-            ...coarseSeamRefs(level, neighbourKey, dir),
-          ],
-        })
+        for (let k = 0; k < GRAIN_AXIS_CELLS.fine; k++) {
+          const cellIndex = dir.axis === 'b' ? cellIndexOf('fine', dir.edge, k) : cellIndexOf('fine', k, dir.edge)
+          // Tolerate a malformed bay with missing cells, as the other checks do.
+          if (!bay.cells[cellIndex]) continue
+          const issue = seamIssue(project, { levelId: level.id, bayKey, cellIndex }, dir.face)
+          if (issue) issues.push(issue)
+        }
       }
     }
   }
   return issues
 }
 
-/** The two coarse cells sitting against the seam, for UI highlighting. */
-function coarseSeamRefs(level: Level, bayKey: string, dir: SeamDirection): CellRef[] {
-  // The coarse bay's edge is the mirror of the fine bay's edge.
-  const edge = dir.edge === 2 ? 0 : GRAIN_AXIS_CELLS.coarse - 1
-  const refs: CellRef[] = []
-  for (let k = 0; k < GRAIN_AXIS_CELLS.coarse; k++) {
-    const cellIndex = dir.axis === 'b' ? cellIndexOf('coarse', edge, k) : cellIndexOf('coarse', k, edge)
-    refs.push({ levelId: level.id, bayKey, cellIndex })
+/** The V2 issue for one edge cell's face, if it opens where nothing lines up. */
+function seamIssue(project: Project, ref: CellRef, face: SideFace): Issue | null {
+  const { level, cell } = resolveCell(project, ref)
+  const socket = cell.sockets[face]
+  if (!isBuiltCell(cell) || SEAM_SAFE_SOCKETS.has(socket)) return null
+  const partners = seamPartners(project, level, ref, face)
+  if (partners.length === 0) return null
+  const [lo, hi] = seamSpan(cellInterior(project, ref), face)
+  const linedUp = partners.some((partner) => {
+    const [partnerLo, partnerHi] = seamSpan(cellInterior(project, partner), face)
+    return partnerLo <= lo && hi <= partnerHi
+  })
+  if (linedUp) return null
+  const neighbours = distinct(partners.map((partner) => partner.bayKey)).join(' and ')
+  return {
+    id: 'V2',
+    severity: 'error',
+    message:
+      `${ref.bayKey} cell ${ref.cellIndex} carries a '${socket}' onto its seam with ${neighbours}, ` +
+      `but no single cell there lines up with it, so the opening would meet a wall. ` +
+      `Keep it solid, or change a grain so the cells line up (a merged neighbour fits any unshifted fine cell)`,
+    refs: [ref, ...partners],
   }
-  return refs
 }
 
-function neighbourBayKey(i: number, j: number, di: number, dj: number): string | null {
-  const ni = i + di
-  const nj = j + dj
-  if (ni < 0 || nj < 0) return null
-  return bayKeyOf(ni, nj)
+/** The cells of other bays on the level that stand against one face of a cell. */
+function seamPartners(project: Project, level: Level, ref: CellRef, face: SideFace): CellRef[] {
+  const strip = faceStrip(cellAABB(project, ref), face)
+  const partners: CellRef[] = []
+  for (const [bayKey, bay] of baysOver(project, level, strip)) {
+    if (bayKey === ref.bayKey) continue
+    for (const partner of bayCellRefs(level, bayKey, bay)) {
+      if (footprintsOverlap(strip, cellAABB(project, partner))) partners.push(partner)
+    }
+  }
+  return partners
+}
+
+/** A one-block strip just beyond a face, as long as the face. */
+function faceStrip(box: AABB, face: SideFace): Footprint {
+  switch (face) {
+    case 'e':
+      return { x0: box.x1, x1: box.x1 + 1, z0: box.z0, z1: box.z1 }
+    case 'w':
+      return { x0: box.x0 - 1, x1: box.x0, z0: box.z0, z1: box.z1 }
+    case 's':
+      return { x0: box.x0, x1: box.x1, z0: box.z1, z1: box.z1 + 1 }
+    case 'n':
+      return { x0: box.x0, x1: box.x1, z0: box.z0 - 1, z1: box.z0 }
+  }
+}
+
+/** A box's extent along a face, the axis a seam runs along. */
+function seamSpan(box: AABB, face: SideFace): [number, number] {
+  return face === 'e' || face === 'w' ? [box.z0, box.z1] : [box.x0, box.x1]
 }
 
 // --------------------------------------------------------------------------
@@ -269,7 +310,7 @@ export function checkStairContinuity(project: Project): Issue[] {
         // Levels are sparse, so the stair lands on the first level that builds
         // over its shaft, not merely the next level by height.
         const belowBox = cellAABB(project, belowRef)
-        const landing = stairLanding(project, levels.slice(index + 1), bayKey, belowBox)
+        const landing = stairLanding(project, levels.slice(index + 1), belowBox)
         if (!landing) {
           issues.push({
             id: 'V4',
@@ -325,22 +366,20 @@ export function checkStairContinuity(project: Project): Issue[] {
   return issues
 }
 
-/** The first level above whose built cells overlap the shaft's footprint. */
+/**
+ * The first level above whose built cells overlap the shaft's footprint. The
+ * cells may belong to any bay there, since an offset bay can stand over a
+ * shaft of a bay with another key.
+ */
 function stairLanding(
   project: Project,
   levelsAbove: Level[],
-  bayKey: string,
   shaft: AABB,
 ): { level: Level; overlapping: CellRef[] } | null {
   for (const level of levelsAbove) {
-    const bay = level.bays[bayKey]
-    if (!bay) continue
-    const overlapping: CellRef[] = []
-    for (let j = 0; j < bay.cells.length; j++) {
-      if (!isBuiltCell(bay.cells[j]!)) continue
-      const ref: CellRef = { levelId: level.id, bayKey, cellIndex: j }
-      if (footprintsOverlap(shaft, cellAABB(project, ref))) overlapping.push(ref)
-    }
+    const overlapping = baysOver(project, level, shaft)
+      .flatMap(([bayKey, bay]) => builtBayRefs(level, bayKey, bay))
+      .filter((ref) => footprintsOverlap(shaft, cellAABB(project, ref)))
     if (overlapping.length > 0) return { level, overlapping }
   }
   return null
@@ -717,6 +756,7 @@ interface GroupMember {
   ref: CellRef
   level: Level
   grain: Grain
+  offset: BayOffset | undefined
   cell: Cell
 }
 
@@ -741,6 +781,11 @@ const SHARED_BY_A_ROOM: ReadonlyArray<{
     placesLattice: true,
   },
   {
+    value: (member) => member.offset ?? 'none',
+    message: (groupId, found) => `Merge group '${groupId}' mixes offsets ${found.join(' and ')}: merged cells must share an offset`,
+    placesLattice: true,
+  },
+  {
     value: (member) => String(member.cell.heightCells),
     message: (groupId, found) => `Merge group '${groupId}' mixes heightCells ${found.join(' and ')} — merged cells must share a height`,
     placesLattice: false,
@@ -754,7 +799,8 @@ const SHARED_BY_A_ROOM: ReadonlyArray<{
 
 /**
  * Cells that render and export as one room must actually be one room: same
- * level, same grain, same height, same ceiling, and a filled rectangle.
+ * level, same grain, same offset, same height, same ceiling, and a filled
+ * rectangle.
  */
 export function checkMergeGroups(project: Project): Issue[] {
   const issues: Issue[] = []
@@ -763,7 +809,7 @@ export function checkMergeGroups(project: Project): Issue[] {
   for (const ref of allCellRefs(project)) {
     const { level, bay, cell } = resolveCell(project, ref)
     if (!cell.mergeGroup) continue
-    push(groups, cell.mergeGroup, { ref, level, grain: bay.grain, cell })
+    push(groups, cell.mergeGroup, { ref, level, grain: bay.grain, offset: bay.offset, cell })
   }
 
   for (const groupId of [...groups.keys()].sort()) {
@@ -964,6 +1010,36 @@ export function checkCropLight(project: Project): Issue[] {
       refs,
       levelId: level.id,
     })
+  }
+  return issues
+}
+
+// --------------------------------------------------------------------------
+// V12 — Bay overlap (error)
+// --------------------------------------------------------------------------
+
+/**
+ * Two bays on one level may share a wall but nothing more. An offset bay
+ * moves half into the next slot along, so that slot must stay empty.
+ */
+export function checkBayOverlaps(project: Project): Issue[] {
+  const issues: Issue[] = []
+  for (const level of sortedLevels(project)) {
+    for (const bayKey of Object.keys(level.bays).sort()) {
+      const bay = level.bays[bayKey]!
+      for (const [otherKey, other] of baysOver(project, level, bayFootprint(project, bayKey, bay))) {
+        // Each pair once; a bay always overlaps itself.
+        if (otherKey <= bayKey) continue
+        issues.push({
+          id: 'V12',
+          severity: 'error',
+          message:
+            `${bayKey} and ${otherKey} overlap on level '${level.name}'. An offset bay needs the slot ` +
+            `it moves into left empty, so remove one of them or change its offset`,
+          refs: [...bayCellRefs(level, bayKey, bay), ...bayCellRefs(level, otherKey, other)],
+        })
+      }
+    }
   }
   return issues
 }
