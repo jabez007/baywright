@@ -120,6 +120,12 @@ function newId(): string {
   return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`
 }
 
+/** A field extent in bays. */
+interface FieldSize {
+  cols: number
+  rows: number
+}
+
 export function createBay(grain: Grain, moduleId: string = DEFAULT_MODULE_ID): Bay {
   return { grain, cells: Array.from({ length: cellCount(grain) }, () => cellFromModule(moduleId)) }
 }
@@ -569,27 +575,8 @@ export const useProjectStore = defineStore('project', () => {
       const { bayCols: oldCols, bayRows: oldRows } = project.value
 
       for (const level of project.value.levels) {
-        for (const bayKey of Object.keys(level.bays)) {
-          const { i, j } = parseBayKey(bayKey)
-          if (i >= cols || j >= rows) delete level.bays[bayKey]
-        }
-        for (const bayKey of Object.keys(level.negativeSpaces ?? {})) {
-          const { i, j } = parseBayKey(bayKey)
-          if (i >= cols || j >= rows) delete level.negativeSpaces![bayKey]
-        }
-        if (level.negativeSpaces && Object.keys(level.negativeSpaces).length === 0) delete level.negativeSpaces
-
-        for (let j = 0; j < rows; j++) {
-          for (let i = 0; i < cols; i++) {
-            if (i < oldCols && j < oldRows) continue
-            // Never overwrite: a bay already standing at a position the field is
-            // only now growing into came from somewhere, and filling would
-            // destroy whatever is painted in it.
-            const bayKey = bayKeyOf(i, j)
-            if (level.bays[bayKey]) continue
-            level.bays[bayKey] = createBay(grain)
-          }
-        }
+        trimLevelToField(level, cols, rows)
+        fillGrownField(level, { cols, rows }, { cols: oldCols, rows: oldRows }, grain)
 
         // Checked after filling: shrinking one axis while growing the other can
         // hand a level its new bays even as it loses all of its old ones.
@@ -602,6 +589,36 @@ export const useProjectStore = defineStore('project', () => {
       project.value.bayRows = rows
       reconcile()
     })
+  }
+
+  /** Drops the bays and negative spaces of one level that lie outside a cols×rows field. */
+  function trimLevelToField(level: Level, cols: number, rows: number): void {
+    const outside = (bayKey: string) => {
+      const { i, j } = parseBayKey(bayKey)
+      return i >= cols || j >= rows
+    }
+    for (const bayKey of Object.keys(level.bays)) {
+      if (outside(bayKey)) delete level.bays[bayKey]
+    }
+    for (const bayKey of Object.keys(level.negativeSpaces ?? {})) {
+      if (outside(bayKey)) delete level.negativeSpaces![bayKey]
+    }
+    if (level.negativeSpaces && Object.keys(level.negativeSpaces).length === 0) delete level.negativeSpaces
+  }
+
+  /** Gives one level a new bay at each position the field has grown into. */
+  function fillGrownField(level: Level, field: FieldSize, previous: FieldSize, grain: Grain): void {
+    for (let j = 0; j < field.rows; j++) {
+      for (let i = 0; i < field.cols; i++) {
+        if (i < previous.cols && j < previous.rows) continue
+        // Never overwrite: a bay already standing at a position the field is
+        // only now growing into came from somewhere, and filling would
+        // destroy whatever is painted in it.
+        const bayKey = bayKeyOf(i, j)
+        if (level.bays[bayKey]) continue
+        level.bays[bayKey] = createBay(grain)
+      }
+    }
   }
 
   function addBay(levelId: string, bayKey: string, grain: Grain = 'fine'): void {
