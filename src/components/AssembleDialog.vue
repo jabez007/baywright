@@ -14,8 +14,9 @@ import {
   type AssemblyRequest,
   type AssemblyRole,
 } from '../domain/assembly.js'
-import { bayKeyOf, parseBayKey } from '../domain/geometry.js'
+import { bayKeyOf, coveringBay, parseBayKey } from '../domain/geometry.js'
 import { getBayPattern } from '../domain/patterns.js'
+import type { Level, Project } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 
 const props = defineProps<{ open: boolean }>()
@@ -136,11 +137,34 @@ const levelMaps = computed(() => {
             const name = getBayPattern(placed.patternId)?.name ?? placed.patternId
             return { bayKey, role: placed.role as AssemblyRole | 'open', glyph: ROLE_GLYPHS[placed.role], title: `${bayKey}: ${name}` }
           }
-          const space = level.negativeSpaces?.[bayKey]
-          return { bayKey, role: 'open' as const, glyph: '', title: `${bayKey}: ${space ? `open ${space.kind}` : 'not built'}` }
+          return { bayKey, role: 'open' as const, glyph: '', title: `${bayKey}: ${openSlotTitle(result.project, level, bayKey)}` }
         }),
       ),
     }))
+})
+
+/** Why a footprint slot holds no assembled bay. */
+function openSlotTitle(project: Project, level: Level, bayKey: string): string {
+  const space = level.negativeSpaces?.[bayKey]
+  if (space) return `open ${space.kind}`
+  const cover = coveringBay(project, level, bayKey)
+  return cover ? `under ${cover}, which is offset into it` : 'not built'
+}
+
+/** "A", "A and B", "A, B and C". */
+function listOf(items: readonly string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
+}
+
+/** The offset bays the proposal replaces with bays in their own slots, named by level. */
+const clearedSummary = computed(() => {
+  const result = proposal.value
+  if (!result || result.clearedOffsets.length === 0) return ''
+  const groups = result.project.levels.flatMap((level) => {
+    const keys = result.clearedOffsets.filter((entry) => entry.levelId === level.id).map((entry) => entry.bayKey)
+    return keys.length > 0 ? [`${listOf(keys)} on ${level.name}`] : []
+  })
+  return `Puts ${listOf(groups)} back in ${result.clearedOffsets.length === 1 ? 'its own slot' : 'their own slots'}, without an offset.`
 })
 
 const issueSummary = computed(() => {
@@ -234,6 +258,7 @@ function onClose(): void {
           </p>
           <p role="status">{{ issueSummary }}</p>
           <p v-if="unplacedSummary" class="warning">{{ unplacedSummary }}</p>
+          <p v-if="clearedSummary">{{ clearedSummary }}</p>
         </template>
       </section>
 

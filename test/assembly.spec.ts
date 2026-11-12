@@ -199,6 +199,22 @@ describe('procedural assembly', () => {
     }
   })
 
+  it('lists the offset bays it puts back in their own slots', () => {
+    // B2 and C3 are inside the footprint. D1 is outside it.
+    const source = field()
+    const ground = source.levels[0]!
+    ground.bays.B2 = { ...bay('fine'), offset: 'east' }
+    ground.bays.C3 = { ...bay('fine'), offset: 'south' }
+    ground.bays.D1 = { ...bay('fine', () => ({ module: 'empty' })), offset: 'south' }
+    const proposal = assembleProposal(source, request({ width: 3, height: 3 }))
+    expect(proposal.clearedOffsets).toEqual([
+      { levelId: 'ground', bayKey: 'B2' },
+      { levelId: 'ground', bayKey: 'C3' },
+    ])
+    for (const key of ['B2', 'C3']) expect(proposal.project.levels[0]!.bays[key]?.offset, key).toBeUndefined()
+    expect(assembleProposal(field(), request()).clearedOffsets).toEqual([])
+  })
+
   it('changes nothing outside the footprint', () => {
     const source = field()
     const outside = (p: typeof source) => JSON.stringify(Object.entries(p.levels[0]!.bays).filter(([key]) => !footprintKeys(2, 2, 1, 1).includes(key)))

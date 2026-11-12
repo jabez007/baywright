@@ -80,6 +80,8 @@ export interface AssemblyProposal {
   bays: AssembledBay[]
   /** Requested rooms that found no free slot, in request order. */
   unplacedRooms: string[]
+  /** Offset bays inside the footprint that the proposal replaces with bays in their own slots, lowest level first. */
+  clearedOffsets: Array<{ levelId: string; bayKey: string }>
   issues: Issue[]
 }
 
@@ -207,6 +209,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   for (const index of placeRooms(request.rooms, routes, random)) unplaced.add(index)
   for (const route of routes) addLoops(route, random)
 
+  const clearedOffsets = offsetBaysIn(levels, footprint, blocked)
   const bays: AssembledBay[] = []
   for (let k = 0; k < levels.length; k++) {
     const level = levels[k]!
@@ -235,7 +238,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   }
 
   const unplacedRooms = request.rooms.filter((_, index) => unplaced.has(index))
-  return { project, bays, unplacedRooms, issues: validate(project) }
+  return { project, bays, unplacedRooms, clearedOffsets, issues: validate(project) }
 }
 
 function checkRequest(project: Project, request: AssemblyRequest): void {
@@ -284,6 +287,16 @@ function blockedSlots(level: Level, footprint: readonly string[]): (key: string)
     if (bay.offset && !inside.has(key)) covered.add(offsetSlot(key, bay.offset))
   }
   return (key) => level.negativeSpaces?.[key] !== undefined || covered.has(key)
+}
+
+/** The offset bays in the footprint slots each level rewrites. */
+function offsetBaysIn(
+  levels: readonly Level[],
+  footprint: readonly string[],
+  blocked: ReadonlyArray<(key: string) => boolean>,
+): Array<{ levelId: string; bayKey: string }> {
+  return levels.flatMap((level, k) =>
+    footprint.filter((key) => level.bays[key]?.offset && !blocked[k]!(key)).map((bayKey) => ({ levelId: level.id, bayKey })))
 }
 
 /** The level at `y`, added with a stable id when the project has none there. */
