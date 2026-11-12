@@ -10,7 +10,7 @@
  *
  * Pure apart from {@link downloadProject}, which is the only browser-aware part.
  */
-import { parseBayKey } from '../domain/geometry.js'
+import { offsetOutsideField, offsetSlot, parseBayKey } from '../domain/geometry.js'
 import { PALETTES } from '../domain/palettes.js'
 import {
   MAX_BAY_FIELD,
@@ -20,6 +20,7 @@ import {
   cellCount,
   isSocketValidForFace,
   type Bay,
+  type BayOffset,
   type Cell,
   type Face,
   type Level,
@@ -34,6 +35,7 @@ export const SCHEMA_VERSION = 1
 const FACES: readonly Face[] = ['n', 'e', 's', 'w', 'up', 'down']
 const SOCKETS: ReadonlySet<string> = new Set<Socket>(['solid', 'corridor', 'arch', 'window', 'bars', 'shaft'])
 const GRAINS: ReadonlySet<string> = new Set(['fine', 'coarse', 'merged'])
+const OFFSETS: ReadonlySet<string> = new Set<BayOffset>(['south', 'east'])
 const CEILINGS: ReadonlySet<string> = new Set(['dropped', 'flat', 'vaulted'])
 const NEGATIVE_SPACE_KINDS: ReadonlySet<string> = new Set<NegativeSpaceKind>([
   'courtyard', 'garden', 'cave', 'stair-shaft', 'reserved',
@@ -145,6 +147,7 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
       )
     }
     level.bays[bayKey] = parseBay(bay, `${path}.bays.${bayKey}`)
+    assertOffsetInField(level.bays[bayKey], bayKey, { bayCols, bayRows }, `${path}.bays.${bayKey}.offset`)
   }
   if (doc['negativeSpaces'] !== undefined) {
     const spaces = object(doc['negativeSpaces'], `${path}.negativeSpaces`)
@@ -160,9 +163,7 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
           `${path}.negativeSpaces.${bayKey}`,
         )
       }
-      if (level.bays[bayKey]) {
-        throw new ProjectParseError('negative space must refer to an absent bay', `${path}.negativeSpaces.${bayKey}`)
-      }
+      assertSlotFree(level, bayKey, `${path}.negativeSpaces.${bayKey}`)
       const space = object(rawSpace, `${path}.negativeSpaces.${bayKey}`)
       const kind = string(space['kind'], `${path}.negativeSpaces.${bayKey}.kind`)
       if (!NEGATIVE_SPACE_KINDS.has(kind)) {
@@ -178,6 +179,16 @@ function parseLevel(raw: unknown, path: string, bayCols: number, bayRows: number
   return level
 }
 
+/**
+ * Negative space names an empty slot, so neither a bay of its own nor an
+ * offset bay that moves into it may stand there. The store refuses both.
+ */
+function assertSlotFree(level: Level, slotKey: string, path: string): void {
+  if (level.bays[slotKey]) throw new ProjectParseError('negative space must refer to an absent bay', path)
+  const cover = Object.entries(level.bays).find(([key, bay]) => bay.offset && offsetSlot(key, bay.offset) === slotKey)
+  if (cover) throw new ProjectParseError(`slot '${slotKey}' is under ${cover[0]}, which is offset into it`, path)
+}
+
 function parseBay(raw: unknown, path: string): Bay {
   const doc = object(raw, path)
   const grain = string(doc['grain'], `${path}.grain`)
@@ -187,10 +198,25 @@ function parseBay(raw: unknown, path: string): Bay {
   if (cells.length !== expected) {
     throw new ProjectParseError(`a ${grain} bay holds ${expected} cells, got ${cells.length}`, `${path}.cells`)
   }
-  return {
+  const bay: Bay = {
     grain: grain as Bay['grain'],
     cells: cells.map((cell, index) => parseCell(cell, `${path}.cells[${index}]`, grain as Bay['grain'])),
   }
+  if (doc['offset'] !== undefined) {
+    const offset = string(doc['offset'], `${path}.offset`)
+    if (!OFFSETS.has(offset)) throw new ProjectParseError(`unknown offset '${offset}'`, `${path}.offset`)
+    bay.offset = offset as BayOffset
+  }
+  return bay
+}
+
+/**
+ * Like an out-of-field key, an offset past the field's edge points at a slot
+ * the canvas cannot show, so it is refused on import rather than reported.
+ */
+function assertOffsetInField(bay: Bay, bayKey: string, field: Pick<Project, 'bayCols' | 'bayRows'>, path: string): void {
+  const reason = bay.offset && offsetOutsideField(field, bayKey, bay.offset)
+  if (reason) throw new ProjectParseError(reason, path)
 }
 
 function parseCell(raw: unknown, path: string, grain: Bay['grain']): Cell {

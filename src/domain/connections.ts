@@ -1,10 +1,12 @@
 /** Connection-aware placement for reusable bay patterns. */
 import {
-  bayKeyOf,
+  bayFootprint,
+  baysOver,
   cellAxisIndices,
+  faceStrip,
   horizontalOpeningSpan,
   interiorSpan,
-  parseBayKey,
+  type Footprint,
 } from './geometry.js'
 import { bayFromPattern, type QuarterTurns } from './patterns.js'
 import { GRAIN_AXIS_CELLS, type Bay, type Face, type Project, type Socket } from './types.js'
@@ -15,20 +17,20 @@ type ConnectionKind = 'room' | 'window' | 'bars'
 interface FaceOpening {
   kind: ConnectionKind
   span: [number, number]
+  /** The interior span of the cell the opening is in, along the same axis. */
+  cell: [number, number]
 }
 
 interface NeighbourDirection {
   face: HorizontalFace
   opposite: HorizontalFace
-  di: number
-  dj: number
 }
 
 const NEIGHBOURS: readonly NeighbourDirection[] = [
-  { face: 'n', opposite: 's', di: 0, dj: -1 },
-  { face: 'e', opposite: 'w', di: 1, dj: 0 },
-  { face: 's', opposite: 'n', di: 0, dj: 1 },
-  { face: 'w', opposite: 'e', di: -1, dj: 0 },
+  { face: 'n', opposite: 's' },
+  { face: 'e', opposite: 'w' },
+  { face: 's', opposite: 'n' },
+  { face: 'w', opposite: 'e' },
 ]
 
 export interface PatternFit {
@@ -48,27 +50,29 @@ export function patternFitAt(
 ): PatternFit {
   const level = project.levels.find((entry) => entry.id === levelId)
   if (!level) throw new Error(`no level '${levelId}'`)
-  if (!level.bays[bayKey]) throw new Error(`no bay '${bayKey}' on level '${levelId}'`)
+  const bay = level.bays[bayKey]
+  if (!bay) throw new Error(`no bay '${bayKey}' on level '${levelId}'`)
 
+  // The stamp keeps the bay's offset, so the candidate stands where the bay
+  // does and may meet two bays on one side.
   const candidate = bayFromPattern(patternId, quarterTurns)
-  const { i, j } = parseBayKey(bayKey)
+  const ours = bayFootprint(project, bayKey, bay)
   let checkedNeighbours = 0
   let matchedOpenings = 0
   let conflicts = 0
 
   for (const direction of NEIGHBOURS) {
-    const ni = i + direction.di
-    const nj = j + direction.dj
-    if (ni < 0 || nj < 0 || ni >= project.bayCols || nj >= project.bayRows) continue
-    const neighbour = level.bays[bayKeyOf(ni, nj)]
-    if (!neighbour) continue
-    checkedNeighbours++
-    const result = compareOpenings(
-      faceOpenings(candidate, direction.face),
-      faceOpenings(neighbour, direction.opposite),
-    )
-    matchedOpenings += result.matches
-    conflicts += result.conflicts
+    for (const [neighbourKey, neighbour] of baysOver(project, level, faceStrip(ours, direction.face))) {
+      if (neighbourKey === bayKey) continue
+      checkedNeighbours++
+      const theirs = bayFootprint(project, neighbourKey, neighbour)
+      const result = compareOpenings(
+        openingsAlong(candidate, direction.face, ours, theirs),
+        openingsAlong(neighbour, direction.opposite, theirs, ours),
+      )
+      matchedOpenings += result.matches
+      conflicts += result.conflicts
+    }
   }
 
   return {
@@ -116,9 +120,29 @@ function faceOpenings(bay: Bay, face: HorizontalFace): FaceOpening[] {
     const cross = face === 'e' || face === 'w' ? interiorSpan(bay.grain, b) : interiorSpan(bay.grain, a)
     const span = horizontalOpeningSpan(socket, cross, cell.openingWidths?.[face])
     const kind = connectionKind(socket)
-    if (span && kind) openings.push({ kind, span })
+    if (span && kind) openings.push({ kind, span, cell: cross })
   }
   return openings
+}
+
+/**
+ * A bay's openings on one face in plan coordinates along the seam, keeping
+ * those that reach the stretch the face shares with `other`. Bays in their
+ * own slots share the whole face; an offset one shares half of it with each
+ * of two neighbours.
+ */
+function openingsAlong(bay: Bay, face: HorizontalFace, own: Footprint, other: Footprint): FaceOpening[] {
+  const alongZ = face === 'e' || face === 'w'
+  const start = alongZ ? own.z0 : own.x0
+  const lo = Math.max(start, alongZ ? other.z0 : other.x0)
+  const hi = Math.min(alongZ ? own.z1 : own.x1, alongZ ? other.z1 : other.x1)
+  return faceOpenings(bay, face)
+    .map((opening): FaceOpening => ({
+      kind: opening.kind,
+      span: [opening.span[0] + start, opening.span[1] + start],
+      cell: [opening.cell[0] + start, opening.cell[1] + start],
+    }))
+    .filter((opening) => opening.span[1] > lo && opening.span[0] < hi)
 }
 
 function connectionKind(socket: Socket): ConnectionKind | null {
@@ -137,6 +161,20 @@ function compareOpenings(left: FaceOpening[], right: FaceOpening[]): { matches: 
   }
 }
 
+/**
+ * Two openings meet when they overlap and their cells line up, as V2 asks: one
+ * cell's interior span lies inside the other's. Openings in cells that straddle
+ * a joint share a block or two but would meet a wall end.
+ */
 function openingsMatch(left: FaceOpening, right: FaceOpening): boolean {
-  return left.kind === right.kind && left.span[0] <= right.span[1] && right.span[0] <= left.span[1]
+  return (
+    left.kind === right.kind
+    && left.span[0] <= right.span[1]
+    && right.span[0] <= left.span[1]
+    && (spanWithin(left.cell, right.cell) || spanWithin(right.cell, left.cell))
+  )
+}
+
+function spanWithin(inner: [number, number], outer: [number, number]): boolean {
+  return outer[0] <= inner[0] && inner[1] <= outer[1]
 }

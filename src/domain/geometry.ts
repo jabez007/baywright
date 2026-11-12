@@ -29,6 +29,7 @@ import {
   LEVEL_PITCH,
   type AABB,
   type Bay,
+  type BayOffset,
   type Cell,
   type CellRef,
   type Face,
@@ -90,13 +91,83 @@ export function parseBayKey(key: string): { i: number; j: number } {
   return { i: i - 1, j: j - 1 }
 }
 
-/** World coordinate of the bay's `(0, 0)` local corner. */
-export function bayOrigin(project: Project, bayKey: string): { x: number; z: number } {
+/**
+ * The bay's `(0, 0)` local corner relative to the project origin, as the plan
+ * draws it. Without `bay`, or without an offset, this is the corner of the
+ * slot its key names.
+ */
+export function bayCorner(bayKey: string, bay?: Pick<Bay, 'offset'>): { x: number; z: number } {
   const { i, j } = parseBayKey(bayKey)
   return {
-    x: project.origin.x + BAY_PITCH * i,
-    z: project.origin.z + BAY_PITCH * j,
+    x: BAY_PITCH * i + (bay?.offset === 'east' ? HALF_BAY : 0),
+    z: BAY_PITCH * j + (bay?.offset === 'south' ? HALF_BAY : 0),
   }
+}
+
+/** World coordinate of the bay's `(0, 0)` local corner. */
+export function bayOrigin(project: Project, bayKey: string, bay?: Pick<Bay, 'offset'>): { x: number; z: number } {
+  const corner = bayCorner(bayKey, bay)
+  return { x: project.origin.x + corner.x, z: project.origin.z + corner.z }
+}
+
+/** How far an offset moves a bay from its slot: half the bay pitch. */
+export const HALF_BAY = BAY_PITCH / 2
+
+/** The slot an offset bay moves half into: the next one south or east. */
+export function offsetSlot(bayKey: string, offset: BayOffset): string {
+  const { i, j } = parseBayKey(bayKey)
+  return offset === 'south' ? bayKeyOf(i, j + 1) : bayKeyOf(i + 1, j)
+}
+
+/**
+ * Why `offset` cannot stand in a field of this size, or null when it can. An
+ * offset bay covers half the next slot along, which must be part of the field.
+ */
+export function offsetOutsideField(
+  field: Pick<Project, 'bayCols' | 'bayRows'>,
+  bayKey: string,
+  offset: BayOffset,
+): string | null {
+  const { i, j } = parseBayKey(offsetSlot(bayKey, offset))
+  if (i < field.bayCols && j < field.bayRows) return null
+  return `an offset ${offset} moves bay '${bayKey}' past the edge of the ${field.bayCols}×${field.bayRows} field`
+}
+
+/** The x/z extent of a box, walls included, ignoring its height. */
+export type Footprint = Pick<AABB, 'x0' | 'z0' | 'x1' | 'z1'>
+
+/** Where a bay stands, walls included, after its offset. */
+export function bayFootprint(project: Project, bayKey: string, bay: Pick<Bay, 'offset'>): Footprint {
+  const { x, z } = bayOrigin(project, bayKey, bay)
+  return { x0: x, z0: z, x1: x + BAY_PITCH, z1: z + BAY_PITCH }
+}
+
+/** A one-block strip just beyond one side of a footprint, as long as that side. */
+export function faceStrip(box: Footprint, face: 'n' | 'e' | 's' | 'w'): Footprint {
+  switch (face) {
+    case 'e':
+      return { x0: box.x1, x1: box.x1 + 1, z0: box.z0, z1: box.z1 }
+    case 'w':
+      return { x0: box.x0 - 1, x1: box.x0, z0: box.z0, z1: box.z1 }
+    case 's':
+      return { x0: box.x0, x1: box.x1, z0: box.z1, z1: box.z1 + 1 }
+    case 'n':
+      return { x0: box.x0, x1: box.x1, z0: box.z0 - 1, z1: box.z0 }
+  }
+}
+
+/** The offset bay that stands over part of a slot it does not own, if any. */
+export function coveringBay(project: Project, level: Level, slotKey: string): string | undefined {
+  const slot = bayFootprint(project, slotKey, {})
+  return baysOver(project, level, slot).find(([key]) => key !== slotKey)?.[0]
+}
+
+/** The bays of a level that overlap `footprint`, beyond a shared wall, by key. */
+export function baysOver(project: Project, level: Level, footprint: Footprint): Array<[string, Bay]> {
+  return Object.keys(level.bays)
+    .sort()
+    .map((key): [string, Bay] => [key, level.bays[key]!])
+    .filter(([key, bay]) => footprintsOverlap(footprint, bayFootprint(project, key, bay)))
 }
 
 // --------------------------------------------------------------------------
@@ -213,7 +284,7 @@ export function droppedCeilingY(level: Level, cell: Cell): number | null {
 /** Outer bounds of a cell, inclusive, in world coordinates. */
 export function cellAABB(project: Project, ref: CellRef): AABB {
   const { level, bay, cell, a, b } = resolveCell(project, ref)
-  const origin = bayOrigin(project, ref.bayKey)
+  const origin = bayOrigin(project, ref.bayKey, bay)
   const [lx0, lx1] = outerSpan(bay.grain, a)
   const [lz0, lz1] = outerSpan(bay.grain, b)
   return {
@@ -229,7 +300,7 @@ export function cellAABB(project: Project, ref: CellRef): AABB {
 /** Interior (air) bounds of a cell, excluding the dropped ceiling if present. */
 export function cellInterior(project: Project, ref: CellRef): AABB {
   const { level, bay, cell, a, b } = resolveCell(project, ref)
-  const origin = bayOrigin(project, ref.bayKey)
+  const origin = bayOrigin(project, ref.bayKey, bay)
   const [lx0, lx1] = interiorSpan(bay.grain, a)
   const [lz0, lz1] = interiorSpan(bay.grain, b)
   const roomTop = hasDroppedCeiling(cell)
@@ -680,8 +751,8 @@ function mergeGroupMembers(project: Project): Map<string, MergeBlockMember[]> {
 }
 
 /**
- * Do these members really form one room? Same level, same grain, same height,
- * same ceiling, and a filled rectangle — the V7 conditions, which is the point:
+ * Do these members really form one room? Same level, same grain, same offset,
+ * same height, same ceiling, and a filled rectangle — the V7 conditions, which is the point:
  * only a group that passes them gets its shared walls carved away below.
  */
 function isOneRoom(members: MergeBlockMember[]): boolean {
@@ -692,6 +763,7 @@ function isOneRoom(members: MergeBlockMember[]): boolean {
       (member) =>
         member.level.id !== first.level.id ||
         member.bay.grain !== first.bay.grain ||
+        member.bay.offset !== first.bay.offset ||
         member.cell.heightCells !== first.cell.heightCells ||
         member.cell.ceiling !== first.cell.ceiling,
     )
@@ -862,7 +934,8 @@ function shaftWells(project: Project, ref: CellRef): ShaftWells {
 
   const outer = cellAABB(project, ref)
   const below = builtCellRefs(project).filter((other) => {
-    if (other.bayKey !== ref.bayKey || other.levelId === ref.levelId) return false
+    // By position, not key: a stair in an offset bay can climb into a bay with another key.
+    if (other.levelId === ref.levelId) return false
     const box = cellAABB(project, other)
     return box.y1 === outer.y0 && footprintsOverlap(box, outer) && resolveCell(project, other).cell.sockets.up === 'shaft'
   })
@@ -1015,7 +1088,7 @@ export function volume(box: AABB): number {
  * Do two cell footprints overlap in x/z? Strict, so bays that merely share a
  * wall plane do not count as overlapping.
  */
-export function footprintsOverlap(a: AABB, b: AABB): boolean {
+export function footprintsOverlap(a: Footprint, b: Footprint): boolean {
   return a.x1 > b.x0 && b.x1 > a.x0 && a.z1 > b.z0 && b.z1 > a.z0
 }
 

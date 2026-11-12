@@ -45,6 +45,7 @@ Every coordinate in the app derives from the rules in this section.
 - Bay `(i, j)` has its corner at world coordinate `(project.origin.x + 12 * i, project.origin.z + 12 * j)`.
 - A bay occupies **local coordinates 0..12 inclusive** in x and z. This gives it a 13x13 outer footprint. Adjacent bays share the wall plane. Bay A's local 12 is bay B's local 0.
 - Bays are addressed in the UI as a letter for i (A, B, C, ...) and a number for j (1, 2, 3, ...). Bay key format: `"A1"`, `"C3"`.
+- A bay may carry an **offset** that moves it half a bay, 6 blocks, from the slot its key names: `south` adds 6 to z and `east` adds 6 to x. An offset bay stands against two bays of the next column or row at once, for example one bay at the end of two rows that sits half in each. The slot it moves into must stay empty (V12), and it must stay inside the field.
 
 ### 5.2 Grain
 
@@ -138,7 +139,7 @@ Palette resolves per level, overridable per cell.
 
 A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Patterns are catalog data, not persisted project data. Stamping a pattern expands it into ordinary cells. Exported projects therefore do not depend on the installed pattern catalog.
 
-The catalog contains straight passage, corner passage, T-junction, four-way junction, stair hall, library hall, workshop bay, feature chamber, rail line, ice highway, and item trunk patterns. Exploration pieces add a balcony landing, dead end, side chamber, concealed room, service junction, mine head, cave mouth, compact stair, and compact landing. Every pattern, in every rotation, meets a four-way junction on each side either centre to centre or with a closed face, and a spine in a neighbouring junction reaches every cell it builds. The concealed room's vault opens through a plain arch with a note to hide it, because the model has no hidden-door socket. The mine head's floor shaft and the cave mouth's open east side lead into whatever the world holds there. Rotate a pattern in 90-degree steps before stamping it. **Auto fit** selects the rotation with the fewest conflicts and the most matching openings against adjacent bays.
+The catalog contains straight passage, corner passage, T-junction, four-way junction, stair hall, library hall, workshop bay, feature chamber, rail line, ice highway, and item trunk patterns. Exploration pieces add a balcony landing, dead end, side chamber, concealed room, service junction, mine head, cave mouth, compact stair, and compact landing. Every fine or merged pattern, in every rotation, meets a four-way junction on each side either centre to centre or with a closed face, and a spine in a neighbouring junction reaches every cell it builds. The coarse workshop bay meets the feature chamber the same way. A fine junction's middle doorway would straddle the joint between two coarse cells, which V2 rejects. The concealed room's vault opens through a plain arch with a note to hide it, because the model has no hidden-door socket. The mine head's floor shaft and the cave mouth's open east side lead into whatever the world holds there. Rotate a pattern in 90-degree steps before stamping it. **Auto fit** selects the rotation with the fewest conflicts and the most matching openings against adjacent bays. Two openings match when they overlap and one cell's interior span along the seam lies inside the other's, the rule V2 applies to fine cells.
 
 A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
 
@@ -177,6 +178,7 @@ interface Cell {
 interface Bay {
   grain: Grain
   cells: Cell[]               // 9 | 4 | 1, row-major
+  offset?: 'south' | 'east'   // half a bay from its slot, see §5.1
 }
 
 type NegativeSpaceKind = 'courtyard' | 'garden' | 'cave' | 'stair-shaft' | 'reserved'
@@ -257,7 +259,7 @@ Collision iff `aTop > bBottom && bTop > aBottom`. The comparison is strict becau
 
 Message format: `"{bayKey} vault at y {aBottom} reaches y {aTop} — collides with level '{name}' at y {bBottom}"`
 
-Naive implementation is O(n²) across cells. That is acceptable up to a few thousand cells. If it becomes slow, bucket cells by bay key first, since only cells in overlapping bays can collide.
+Only cells of bays whose footprints overlap can collide, so each bay is compared only with the bays above it that stand over it. An offset bay can stand over bays with other keys.
 
 ### V2: grain seam (error)
 
@@ -274,7 +276,9 @@ At a shared face between a `fine` bay and a `coarse` bay, the interior spans do 
 
 To clear the error without closing the face, change either bay to `merged` grain in the inspector. A merged interior spans `1..11`, so it contains every fine and coarse interior span.
 
-Fine-to-fine and coarse-to-coarse seams always align. No check needed.
+Fine-to-fine and coarse-to-coarse seams align when both bays have the same offset or neither has one.
+
+An offset moves a bay's cells by 6 blocks. Two bays with the same offset line up as unshifted ones do. Across bays shifted relative to each other, coarse cells still line up, but fine cells do not line up with fine cells, and a fine bay meets a coarse or merged one with a cell that straddles the joint. The general rule, which gives the table above for unshifted bays: a fine cell on a bay's edge may carry a non-`solid` socket only when its interior span along the seam lies inside the interior span of one built cell of a neighbouring bay. Neighbours are found by position, not by bay key. An unbuilt cell places no wall, so it does not count, and a fine cell that faces no built cell is not checked. A middle fine cell may therefore open onto a coarse bay whose two edge cells are both unbuilt.
 
 ### V3: connectivity (warning)
 
@@ -286,7 +290,7 @@ Warning rather than error, because intentionally sealed secret rooms are a legit
 
 ### V4: stair continuity (error)
 
-A cell with `sockets.up === 'shaft'` lands on the first level above it that has a cell in the same bay with an overlapping footprint. Levels are sparse, so a level in between that builds nothing over the shaft does not interrupt the stair. At least one landing cell must have `sockets.down === 'shaft'`. The y-delta between the two levels must equal `4 * heightCells` of the lower cell.
+A cell with `sockets.up === 'shaft'` lands on the first level above it that has a cell, in any bay, with an overlapping footprint. Levels are sparse, so a level in between that builds nothing over the shaft does not interrupt the stair. At least one landing cell must have `sockets.down === 'shaft'`. The y-delta between the two levels must equal `4 * heightCells` of the lower cell.
 
 A dropped ceiling puts a solid plane at `y + 4`, between the room and its upward shaft. An upward shaft on a dropped-ceiling cell is therefore an error, and V3 does not treat that shaft as a path.
 
@@ -308,7 +312,7 @@ Flood-fill from plenums in spine cells and plenums that connect to an adjacent s
 
 ### V7: merge group integrity (error)
 
-All cells sharing a `mergeGroup` must have the same grain, the same `heightCells`, the same `ceiling`, and form a contiguous rectangle. Report otherwise.
+All cells sharing a `mergeGroup` must have the same grain, the same bay offset, the same `heightCells`, the same `ceiling`, and form a contiguous rectangle. Report otherwise.
 
 ### V8: world build limits (error)
 
@@ -338,6 +342,12 @@ A portal reads `{bayKey} on level '{name}'`, with ` cell {n}` after the bay key 
 In Java Edition, a crop grows only where the light at the crop is 9 or more. Underground, that is block light alone. For each farmland block in a level's built cells, read the block light from the resolved blocks, lamps included, one block above it. Report one warning per level with the count of farmland whose crop would sit in less, and the cells that hold it.
 
 Message: `"Level '{name}' has {n} farmland blocks too dark for crops, which need light 9 to grow"`
+
+### V12: bay overlap (error)
+
+Two bays on one level may share a wall plane but no more. Report each pair whose footprints, after their offsets, overlap beyond a shared plane, with every cell of both bays. Only an offset can cause this, so the usual fix is to remove the bay in the slot the offset bay moves into.
+
+Message: `"{bayKey} and {bayKey} overlap on level '{name}'. An offset bay needs the slot it moves into left empty, so remove one of them or change its offset"`
 
 ## 9. Bill of materials
 
@@ -384,7 +394,7 @@ Four regions:
 - Choose Footprint, then drag to add or remove bays.
 - Shift-drag with a mouse to create a merge group across a rectangle. In cell mode the rectangle is of cells, and the inspector provides the same merge action for a selected cell range. In bay mode it is of whole bays: every cell of each bay that has the first bay's grain joins one group, so four merged bays become one 23x23 room. The bay inspector's Split merge groups splits every group with a cell in the bay, including the group's cells in other bays. The plan draws the walls a valid group carves away in the room's fill.
 - Alt-click a cell edge to cycle that face's socket.
-- The inspector adds a matched stair from one selected cell to the next level up. The rise must be 4, 8, or 12. The stair gets `heightCells = rise / 4`, a flat ceiling, and `up: 'shaft'`. The landing bay is created at the stair's grain when absent. Each landing cell inside the stair footprint gets `down: 'shaft'`, and an unbuilt one becomes a Junction. A landing cell wider than the stair is refused, because its floor beyond the stair would open onto unbuilt ground. The whole edit is one undo step.
+- The inspector adds a matched stair from one selected cell to the next level up. The rise must be 4, 8, or 12. The stair gets `heightCells = rise / 4`, a flat ceiling, and `up: 'shaft'`. The landing is in whichever bays on the level above stand over the stair, found by position, so a stair in an offset bay can land in a bay with another key. When no bay stands there, the action adds one with the stair bay's grain and offset, and refuses if a bay above is in the way. Each landing cell inside the stair footprint gets `down: 'shaft'`, and an unbuilt one becomes a Junction. A landing cell wider than the stair, or out of line with it, is refused, because its floor beyond the stair would open onto unbuilt ground. The whole edit is one undo step.
 - `[` and `]` decrease and increase `heightCells` on the selection.
 - Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z for undo/redo.
 - Escape clears selection.
@@ -449,7 +459,7 @@ src/
     patterns.ts           # reusable single-bay patterns
     layouts.ts            # reusable multi-bay patterns
     templates.ts          # optional starting projects
-    validate.ts           # V1 through V11
+    validate.ts           # V1 through V12
     lighting.ts           # block light for lamps and V9
     portals.ts            # Nether portal pairs for V10
     bom.ts                # material and smelting calculations

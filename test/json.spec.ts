@@ -55,6 +55,13 @@ describe('round trip', () => {
     expect(round.levels[0]?.bays['A1']?.cells[0]).toEqual(original.levels[0]?.bays['A1']?.cells[0])
   })
 
+  it('preserves a bay offset', () => {
+    const original = project([level('ground', 0, { A1: { ...bay('fine'), offset: 'south' }, B1: bay('fine') })])
+    const round = parseProject(serializeProject(original))
+    expect(round.levels[0]?.bays['A1']?.offset).toBe('south')
+    expect(round.levels[0]?.bays['B1']).not.toHaveProperty('offset')
+  })
+
   it('preserves named negative space on absent bays', () => {
     const original = project([
       level('ground', 0, { A1: bay('fine') }, {
@@ -124,6 +131,28 @@ describe('defensive import', () => {
 
   it('rejects an unknown grain', () => {
     expect(mangle((doc) => ((doc.levels[0]!.bays['A1']!.grain as string) = 'chunky'))).toThrow(/unknown grain/)
+  })
+
+  it('rejects an unknown bay offset', () => {
+    expect(mangle((doc) => ((doc.levels[0]!.bays['A1'] as { offset?: string }).offset = 'north'))).toThrow(
+      /^\$\.levels\[0\]\.bays\.A1\.offset: unknown offset 'north'/,
+    )
+  })
+
+  it('rejects an offset that moves a bay past the edge of the field', () => {
+    const edge = (doc: typeof good) => {
+      doc.levels[0]!.bays['A3'] = { ...bay('fine'), offset: 'south' }
+    }
+    expect(mangle(edge)).toThrow(/^\$\.levels\[0\]\.bays\.A3\.offset: an offset south moves bay 'A3' past the edge of the 3×3 field/)
+    expect(mangle((doc) => (doc.levels[0]!.bays['A1']!.offset = 'east'))).not.toThrow()
+  })
+
+  it('rejects negative space in a slot an offset bay moves into', () => {
+    const covered = (doc: typeof good) => {
+      doc.levels[0]!.bays['A1']!.offset = 'east'
+      doc.levels[0]!.negativeSpaces = { B1: { kind: 'courtyard' } }
+    }
+    expect(mangle(covered)).toThrow(/^\$\.levels\[0\]\.negativeSpaces\.B1: slot 'B1' is under A1, which is offset into it/)
   })
 
   it('rejects an unknown socket', () => {

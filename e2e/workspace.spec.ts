@@ -177,6 +177,38 @@ test('stamps a rotated bay pattern and undoes it as one edit', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
 })
 
+test('offsets a bay half a bay south and undoes it in one step', async ({ page }) => {
+  await page.goto('/')
+
+  // B2 gets a room, so moving B1 over it is refused.
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await page.getByLabel('Module', { exact: true }).selectOption('spine')
+  await page.locator('[data-plan-target="bay"][data-bay="B2"]').click()
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  const offset = page.getByRole('combobox', { name: 'Offset', exact: true })
+  await page.locator('[data-plan-target="bay"][data-bay="B1"]').click()
+  await offset.selectOption('south')
+  await expect(page.getByRole('alert')).toContainText('B2, which has rooms in it')
+  await expect(offset).toHaveValue('')
+
+  // C1 moves over the empty C2, which gives up its slot.
+  const bay = page.locator('[data-plan-target="bay"][data-bay="C1"]')
+  // In plan units the shell starts half a wall in from the bay corner.
+  const shell = bay.locator('rect.shell')
+  await bay.click()
+  await expect(shell).toHaveAttribute('y', '0.5')
+  await offset.selectOption('south')
+  await expect(offset).toHaveValue('south')
+  await expect(page.locator('[data-plan-target="bay"][data-bay="C2"]')).toHaveCount(0)
+  await expect(shell).toHaveAttribute('x', '24.5')
+  await expect(shell).toHaveAttribute('y', '6.5')
+
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(page.locator('[data-plan-target="bay"][data-bay="C2"]')).toHaveCount(1)
+  await expect(offset).toHaveValue('')
+})
+
 test('auto-fits a stamped pattern to an adjacent bay opening', async ({ page }) => {
   await page.goto('/')
 

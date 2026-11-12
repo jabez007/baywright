@@ -80,6 +80,24 @@ describe('F8 — grain seam, illegal', () => {
   it('clears once the coarse bay is converted to merged grain', () => {
     expect(only(validate(seamProject(5, 'corridor', 'merged')), 'V2')).toHaveLength(0)
   })
+
+  it('lets the middle fine cell open onto coarse cells that build nothing', () => {
+    const subject = seamProject(5, 'corridor')
+    subject.levels[0]!.bays['B1']!.cells.forEach((cell) => (cell.module = 'empty'))
+    expect(only(validate(subject), 'V2')).toHaveLength(0)
+  })
+
+  it('still rejects it when one of the two coarse cells is built', () => {
+    // B1 cell 0 is at z 0 to 6 against the seam, cell 2 at z 6 to 12.
+    const subject = seamProject(5, 'corridor')
+    subject.levels[0]!.bays['B1']!.cells[2]!.module = 'empty'
+    const issues = only(validate(subject), 'V2')
+    expect(issues).toHaveLength(1)
+    expect(issues[0]!.refs).toEqual([
+      { levelId: 'L1', bayKey: 'A1', cellIndex: 5 },
+      { levelId: 'L1', bayKey: 'B1', cellIndex: 0 },
+    ])
+  })
 })
 
 describe('F10 — stair continuity', () => {

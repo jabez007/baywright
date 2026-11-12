@@ -1119,6 +1119,55 @@ describe('a matched stair up', () => {
     expect(cellAt(landing).sockets.down).toBe('shaft')
   })
 
+  describe('from an offset bay', () => {
+    /**
+     * Ground C1 is coarse and offset south, to z 6 to 18. Its cell 2 spans
+     * x 24 to 30 and z 12 to 18, under Upper C2's cell 0 rather than Upper C1.
+     */
+    function offsetStair() {
+      const levels = twoLevels(8)
+      const { s, ground, upper } = levels
+      for (const id of [ground, upper]) s.setBayGrain(id, 'C1', 'coarse')
+      s.setBayGrain(upper, 'C2', 'coarse')
+      s.setBayOffset(ground, 'C1', 'south')
+      const upperBays = () => s.project.levels.find((l) => l.id === upper)!.bays
+      return { ...levels, stair: { levelId: ground, bayKey: 'C1', cellIndex: 2 }, upperBays }
+    }
+
+    it('lands in whichever bay above stands over the shaft', () => {
+      const { s, stair, upperBays } = offsetStair()
+      s.addStairUp(stair)
+      expect(upperBays()['C2']!.cells[0]!.sockets.down).toBe('shaft')
+      expect(upperBays()['C1']!.cells.every((cell) => cell.sockets.down === 'solid')).toBe(true)
+      expect(s.issues.filter((issue) => issue.id === 'V4')).toEqual([])
+    })
+
+    it('adds a landing bay at the same offset when nothing above stands there', () => {
+      const { s, upper, stair, upperBays } = offsetStair()
+      for (const key of ['C1', 'C2']) s.removeBay(upper, key)
+      s.addStairUp(stair)
+      expect(upperBays()['C1']).toMatchObject({ grain: 'coarse', offset: 'south' })
+      expect(upperBays()['C1']!.cells[2]!.sockets.down).toBe('shaft')
+      expect(s.issues.filter((issue) => issue.id === 'V4' || issue.id === 'V12')).toEqual([])
+    })
+
+    it('refuses when no bay above covers the shaft and there is no room to add one', () => {
+      const { s, upper, stair, cellAt } = offsetStair()
+      s.removeBay(upper, 'C2')
+      expect(() => s.addStairUp(stair)).toThrow(
+        "No bay in 'Upper' stands over the stair, and C1 cannot be added there at its offset. Add a bay above the stair first.",
+      )
+      expect(cellAt(stair).module).toBe('empty')
+    })
+
+    it('refuses landing cells that straddle the shaft', () => {
+      const { s, upper, stair, cellAt } = offsetStair()
+      s.setBayGrain(upper, 'C2', 'fine')
+      expect(() => s.addStairUp(stair)).toThrow("The landing in 'Upper' at C2 is wider than the stair or not in line with it.")
+      expect(cellAt(stair).module).toBe('empty')
+    })
+  })
+
   it('lands on the next level up, past levels at other heights', () => {
     const { s, stair, landing, cellAt } = twoLevels(8)
     s.addLevel(20, 'Roof')
@@ -1149,7 +1198,7 @@ describe('a matched stair up', () => {
     const wide = twoLevels(8)
     wide.s.setBayGrain(wide.upper, 'A1', 'merged')
     expect(() => wide.s.addStairUp(wide.stair)).toThrow(
-      "The landing in 'Upper' at A1 is wider than the stair. Match the bay grain above first.",
+      "The landing in 'Upper' at A1 is wider than the stair or not in line with it. Match the bay grain and offset above first.",
     )
     expect(wide.cellAt(wide.stair).module).toBe('empty')
   })
@@ -1344,5 +1393,103 @@ describe('procedural assembly', () => {
     expect(() => s.assemble(request({ anchorBayKey: 'B1', width: 3 }))).toThrow('leaves the bay field')
     expect(JSON.stringify(s.toJSON())).toBe(before)
     expect(s.undoDepth).toBe(0)
+  })
+})
+
+describe('offset bays', () => {
+  const bays = () => store().currentLevel!.bays
+
+  it('moves a bay half a bay south, takes the empty bay it covers, and undoes as one step', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    expect(bays()['C1']!.offset).toBe('south')
+    expect(bays()['C2']).toBeUndefined()
+    expect(s.issues.filter((issue) => issue.id === 'V12')).toEqual([])
+    s.undo()
+    expect(bays()['C1']).not.toHaveProperty('offset')
+    expect(bays()['C2']).toBeDefined()
+  })
+
+  it('moves a bay east into the next column', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'B3', 'east')
+    expect(bays()['B3']!.offset).toBe('east')
+    expect(bays()['C3']).toBeUndefined()
+  })
+
+  it('puts a bay back in its slot', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    s.setBayOffset(s.currentLevelId, 'C1', null)
+    expect(bays()['C1']).not.toHaveProperty('offset')
+  })
+
+  it('refuses to cover a bay with rooms in it', () => {
+    const s = store()
+    s.paintBay(s.currentLevelId, 'C2', 'storage', 'coarse')
+    expect(() => s.setBayOffset(s.currentLevelId, 'C1', 'south')).toThrow(/C2/)
+    expect(bays()['C1']).not.toHaveProperty('offset')
+    expect(bays()['C2']!.cells[0]!.module).toBe('storage')
+  })
+
+  it('refuses to move a bay past the edge of the field', () => {
+    const s = store()
+    expect(() => s.setBayOffset(s.currentLevelId, 'A3', 'south')).toThrow(/edge of the 3×3 field/)
+    expect(() => s.setBayOffset(s.currentLevelId, 'C1', 'east')).toThrow(/edge of the 3×3 field/)
+  })
+
+  it('leaves a slot under an offset bay alone when the footprint adds bays', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    s.addBay(s.currentLevelId, 'C2')
+    expect(bays()['C2']).toBeUndefined()
+    expect(() => s.setNegativeSpace(s.currentLevelId, 'C2', 'courtyard')).toThrow(/under C1/)
+  })
+
+  it('puts a bay back in its slot when the field shrinks past it', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C2', 'south')
+    s.setFieldExtent(3, 2)
+    expect(bays()['C2']).not.toHaveProperty('offset')
+  })
+
+  it('copies offsets to a new level and across levels with the footprint', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    s.setBayOffset(ground, 'C1', 'south')
+    const upper = s.addLevel(8, 'Upper')
+    const upperBays = () => s.project.levels.find((level) => level.id === upper)!.bays
+    expect(upperBays()['C1']!.offset).toBe('south')
+    expect(upperBays()['C2']).toBeUndefined()
+
+    s.setBayOffset(ground, 'A1', 'east')
+    expect(s.applyFootprintToAllLevels(ground)).toBe(1)
+    expect(upperBays()['A1']!.offset).toBe('east')
+    expect(upperBays()['B1']).toBeUndefined()
+  })
+
+  it('clears negative space that a footprint copy puts under an offset bay', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(8, 'Upper')
+    const upperLevel = () => s.project.levels.find((level) => level.id === upper)!
+    // On Upper, A1 stays and gains the offset. C2 is gone, so C1 arrives new.
+    for (const key of ['B1', 'C1', 'C2']) s.removeBay(upper, key)
+    s.setNegativeSpace(upper, 'B1', 'courtyard')
+    s.setNegativeSpace(upper, 'C2', 'courtyard')
+    s.setBayOffset(ground, 'A1', 'east')
+    s.setBayOffset(ground, 'C1', 'south')
+
+    s.applyFootprintToAllLevels(ground)
+    expect(upperLevel().bays['A1']!.offset).toBe('east')
+    expect(upperLevel().bays['C1']!.offset).toBe('south')
+    expect(upperLevel().negativeSpaces).toBeUndefined()
+  })
+
+  it('keeps the offset when a pattern is stamped on the bay', () => {
+    const s = store()
+    s.setBayOffset(s.currentLevelId, 'C1', 'south')
+    s.stampBayPattern(s.currentLevelId, 'C1', 'straight-passage', 1)
+    expect(bays()['C1']!.offset).toBe('south')
   })
 })

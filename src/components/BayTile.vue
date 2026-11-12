@@ -11,7 +11,7 @@
  */
 import { computed } from 'vue'
 
-import { outerSpan } from '../domain/geometry.js'
+import { bayCorner, outerSpan } from '../domain/geometry.js'
 import { getModule } from '../domain/modules.js'
 import { BAY_PITCH, GRAIN_AXIS_CELLS, type Bay } from '../domain/types.js'
 import CellTile from './CellTile.vue'
@@ -20,9 +20,6 @@ import { moduleFill } from './fills.js'
 const props = defineProps<{
   bayKey: string
   bay: Bay
-  /** Bay column and row, 0-indexed. */
-  i: number
-  j: number
   mode: 'bay' | 'cell'
   selectedCells: ReadonlySet<number>
   errorCells: ReadonlySet<number>
@@ -31,8 +28,10 @@ const props = defineProps<{
   activeTarget: string | null
 }>()
 
-const bayX = computed(() => BAY_PITCH * props.i)
-const bayZ = computed(() => BAY_PITCH * props.j)
+/** Where the bay stands, which an offset moves away from its key's slot. */
+const corner = computed(() => bayCorner(props.bayKey, props.bay))
+const bayX = computed(() => corner.value.x)
+const bayZ = computed(() => corner.value.z)
 
 /** Half of each shared wall block, so bays partition the plane. See CellTile. */
 const outer = computed(() => ({
