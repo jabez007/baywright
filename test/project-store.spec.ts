@@ -1419,6 +1419,24 @@ describe('offset bays', () => {
     expect(upperBays()['B1']).toBeUndefined()
   })
 
+  it('clears negative space that a footprint copy puts under an offset bay', () => {
+    const s = store()
+    const ground = s.currentLevelId
+    const upper = s.addLevel(8, 'Upper')
+    const upperLevel = () => s.project.levels.find((level) => level.id === upper)!
+    // On Upper, A1 stays and gains the offset. C2 is gone, so C1 arrives new.
+    for (const key of ['B1', 'C1', 'C2']) s.removeBay(upper, key)
+    s.setNegativeSpace(upper, 'B1', 'courtyard')
+    s.setNegativeSpace(upper, 'C2', 'courtyard')
+    s.setBayOffset(ground, 'A1', 'east')
+    s.setBayOffset(ground, 'C1', 'south')
+
+    s.applyFootprintToAllLevels(ground)
+    expect(upperLevel().bays['A1']!.offset).toBe('east')
+    expect(upperLevel().bays['C1']!.offset).toBe('south')
+    expect(upperLevel().negativeSpaces).toBeUndefined()
+  })
+
   it('keeps the offset when a pattern is stamped on the bay', () => {
     const s = store()
     s.setBayOffset(s.currentLevelId, 'C1', 'south')

@@ -717,6 +717,22 @@ export const useProjectStore = defineStore('project', () => {
    *
    * Returns how many levels changed, so a caller can tell a no-op from work.
    */
+  /**
+   * Gives `level` a bay at `bayKey` placed like the source's: a blank one where
+   * there was none, or the source's offset on the bay already there. Negative
+   * space cannot share a slot with a bay, so the bay's own slot and any slot
+   * its offset covers lose theirs. Returns whether anything changed.
+   */
+  function matchSourceBay(level: Level, bayKey: string, source: Bay): boolean {
+    const existing = level.bays[bayKey]
+    if (existing && existing.offset === source.offset) return false
+    if (existing) copyOffset(source, existing)
+    else level.bays[bayKey] = blankBayLike(source)
+    clearNegativeSpace(level, bayKey)
+    if (source.offset) clearNegativeSpace(level, offsetSlot(bayKey, source.offset))
+    return true
+  }
+
   function applyFootprintToAllLevels(sourceLevelId: string): number {
     return mutate(() => {
       const source = requireLevel(sourceLevelId)
@@ -732,16 +748,7 @@ export const useProjectStore = defineStore('project', () => {
           touched = true
         }
         for (const [bayKey, bay] of Object.entries(source.bays)) {
-          const existing = level.bays[bayKey]
-          if (existing) {
-            if (existing.offset === bay.offset) continue
-            copyOffset(bay, existing)
-            touched = true
-            continue
-          }
-          level.bays[bayKey] = blankBayLike(bay)
-          clearNegativeSpace(level, bayKey)
-          touched = true
+          if (matchSourceBay(level, bayKey, bay)) touched = true
         }
 
         if (touched) changed++
