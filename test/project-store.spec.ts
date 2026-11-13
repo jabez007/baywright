@@ -541,6 +541,31 @@ describe('bays', () => {
     expect(s.undoDepth).toBe(0)
   })
 
+  it('refuses a layout over a slot that an offset bay moves into and changes nothing', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    // A1 moves east into B1, the layout's north-west slot.
+    s.setBayOffset(levelId, 'A1', 'east')
+    const before = s.toJSON()
+
+    expect(() => s.stampLayoutPattern(levelId, 'B1', 'grand-chamber', 0)).toThrow(
+      /^The Grand chamber layout does not fit here\. A1 and B1 overlap/,
+    )
+    expect(s.toJSON()).toStrictEqual(before)
+  })
+
+  it('refuses a layout over an offset bay rather than moving the bay back', () => {
+    const s = store()
+    const levelId = s.currentLevelId
+    s.setBayOffset(levelId, 'C2', 'south')
+    const before = s.toJSON()
+
+    expect(() => s.stampLayoutPattern(levelId, 'B1', 'grand-chamber', 0)).toThrow(
+      /^The Grand chamber layout does not fit here\. C2 on level '.+' is offset south/,
+    )
+    expect(s.toJSON()).toStrictEqual(before)
+  })
+
   it('names and clears an absent bay as planned negative space', () => {
     const s = store()
     const levelId = s.currentLevelId
