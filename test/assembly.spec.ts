@@ -199,20 +199,40 @@ describe('procedural assembly', () => {
     }
   })
 
-  it('lists the offset bays it puts back in their own slots', () => {
-    // B2 and C3 are inside the footprint. D1 is outside it.
+  it('lists the offset bays it puts back in their own slots and the ones it removes', () => {
+    // B2 and C3 are inside the footprint. D1 is outside it. The route builds
+    // B2 and leaves C3 unbuilt.
     const source = field()
     const ground = source.levels[0]!
     ground.bays.B2 = { ...bay('fine'), offset: 'east' }
     ground.bays.C3 = { ...bay('fine'), offset: 'south' }
     ground.bays.D1 = { ...bay('fine', () => ({ module: 'empty' })), offset: 'south' }
     const proposal = assembleProposal(source, request({ width: 3, height: 3 }))
-    expect(proposal.clearedOffsets).toEqual([
-      { levelId: 'ground', bayKey: 'B2' },
-      { levelId: 'ground', bayKey: 'C3' },
-    ])
-    for (const key of ['B2', 'C3']) expect(proposal.project.levels[0]!.bays[key]?.offset, key).toBeUndefined()
-    expect(assembleProposal(field(), request()).clearedOffsets).toEqual([])
+    expect(proposal.clearedOffsets).toEqual([{ levelId: 'ground', bayKey: 'B2' }])
+    expect(proposal.removedOffsets).toEqual([{ levelId: 'ground', bayKey: 'C3' }])
+    expect(proposal.project.levels[0]!.bays.B2?.offset).toBeUndefined()
+    expect(proposal.project.levels[0]!.bays.C3).toBeUndefined()
+    expect(assembleProposal(field(), request())).toMatchObject({ clearedOffsets: [], removedOffsets: [] })
+  })
+
+  it('names the offset bays it removes apart from the ones it puts back', () => {
+    // Offset bays fill columns A and C. The route builds some of their slots
+    // and leaves the rest unbuilt.
+    const offsetKeys = footprintKeys(4, 4).filter((key) => key.startsWith('A') || key.startsWith('C'))
+    let removals = 0
+    for (let seed = 1; seed <= 12; seed++) {
+      const source = field()
+      for (const key of offsetKeys) source.levels[0]!.bays[key] = { ...bay('fine'), offset: 'east' }
+      const proposal = assembleProposal(source, request({ seed }))
+      const ground = proposal.project.levels[0]!
+      const cleared = proposal.clearedOffsets.map((entry) => entry.bayKey)
+      const removed = proposal.removedOffsets.map((entry) => entry.bayKey)
+      expect([...cleared, ...removed].sort(), `seed ${seed}`).toEqual([...offsetKeys].sort())
+      for (const key of cleared) expect(ground.bays[key] && !ground.bays[key].offset, `seed ${seed} ${key}`).toBe(true)
+      for (const key of removed) expect(ground.bays[key], `seed ${seed} ${key}`).toBeUndefined()
+      removals += removed.length
+    }
+    expect(removals).toBeGreaterThan(0)
   })
 
   it('changes nothing outside the footprint', () => {

@@ -290,15 +290,18 @@ test('previews an assembled base, applies it, and undoes it in one step', async 
   await expect(page.locator('[data-plan-target="bay"][data-bay="A1"]')).toHaveAccessibleName(/A1.*fine grain, Empty/)
 })
 
-test('assembles around offset bays and says which ones it puts back', async ({ page }) => {
+test('assembles around offset bays and says which ones it puts back or removes', async ({ page }) => {
   await page.goto('/')
   const offset = page.getByRole('combobox', { name: 'Offset', exact: true })
   const shell = (key: string) => page.locator(`[data-plan-target="bay"][data-bay="${key}"] rect.shell`)
-  // A1 moves east into B1, outside the footprint. C2 moves south, inside it.
+  // A1 moves east into B1, outside the footprint. B2 and C2 move south,
+  // inside it. Seed 1 builds C2's slot and leaves B2's unbuilt.
   await page.locator('[data-plan-target="bay"][data-bay="A1"]').click()
   await offset.selectOption('east')
-  await page.locator('[data-plan-target="bay"][data-bay="C2"]').click()
-  await offset.selectOption('south')
+  for (const key of ['B2', 'C2']) {
+    await page.locator(`[data-plan-target="bay"][data-bay="${key}"]`).click()
+    await offset.selectOption('south')
+  }
 
   await openProjectMenu(page)
   await page.getByRole('button', { name: 'Assemble a base' }).click()
@@ -307,16 +310,18 @@ test('assembles around offset bays and says which ones it puts back', async ({ p
   await dialog.getByLabel('Footprint width').fill('2')
   await dialog.getByLabel('Footprint depth').fill('3')
   await dialog.getByLabel('Levels').fill('1')
+  await dialog.getByLabel('Seed').fill('1')
 
   const preview = dialog.getByRole('region', { name: 'Proposal preview' })
   await expect(preview.locator('.bay[title^="B1:"]')).toHaveAttribute('title', 'B1: under A1, which is offset into it')
   await expect(preview.getByText('Puts C2 on Ground back in its own slot, without an offset.')).toBeVisible()
+  await expect(preview.getByText('Removes the offset bay B2 on Ground, which the plan leaves unbuilt.')).toBeVisible()
 
   await dialog.getByRole('button', { name: 'Apply' }).click()
   await expect(dialog).toBeHidden()
   await expect(shell('A1')).toHaveAttribute('x', '6.5')
   await expect(shell('C2')).toHaveAttribute('y', '12.5')
-  await expect(page.locator('[data-plan-target="bay"][data-bay="B1"]')).toHaveCount(0)
+  for (const key of ['B1', 'B2']) await expect(page.locator(`[data-plan-target="bay"][data-bay="${key}"]`)).toHaveCount(0)
 })
 
 test('paints infrastructure modules and stamps a rail-line bay', async ({ page }) => {

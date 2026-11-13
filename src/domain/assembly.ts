@@ -74,6 +74,12 @@ export interface AssembledBay {
   role: AssemblyRole
 }
 
+/** An offset bay that a proposal replaces or deletes. */
+export interface OffsetBayRef {
+  levelId: string
+  bayKey: string
+}
+
 export interface AssemblyProposal {
   /** A copy of the project with the proposal written in. */
   project: Project
@@ -81,7 +87,9 @@ export interface AssemblyProposal {
   /** Requested rooms that found no free slot, in request order. */
   unplacedRooms: string[]
   /** Offset bays inside the footprint that the proposal replaces with bays in their own slots, lowest level first. */
-  clearedOffsets: Array<{ levelId: string; bayKey: string }>
+  clearedOffsets: OffsetBayRef[]
+  /** Offset bays inside the footprint whose slots the proposal leaves unbuilt, so Apply deletes them, lowest level first. */
+  removedOffsets: OffsetBayRef[]
   issues: Issue[]
 }
 
@@ -209,7 +217,8 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   for (const index of placeRooms(request.rooms, routes, random)) unplaced.add(index)
   for (const route of routes) addLoops(route, random)
 
-  const clearedOffsets = offsetBaysIn(levels, footprint, blocked)
+  // Read the offsets before the loop below rewrites or deletes their bays.
+  const offsetBays = offsetBaysIn(levels, footprint, blocked)
   const bays: AssembledBay[] = []
   for (let k = 0; k < levels.length; k++) {
     const level = levels[k]!
@@ -238,7 +247,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   }
 
   const unplacedRooms = request.rooms.filter((_, index) => unplaced.has(index))
-  return { project, bays, unplacedRooms, clearedOffsets, issues: validate(project) }
+  return { project, bays, unplacedRooms, ...splitOffsets(offsetBays, levels), issues: validate(project) }
 }
 
 function checkRequest(project: Project, request: AssemblyRequest): void {
@@ -294,9 +303,18 @@ function offsetBaysIn(
   levels: readonly Level[],
   footprint: readonly string[],
   blocked: ReadonlyArray<(key: string) => boolean>,
-): Array<{ levelId: string; bayKey: string }> {
+): OffsetBayRef[] {
   return levels.flatMap((level, k) =>
     footprint.filter((key) => level.bays[key]?.offset && !blocked[k]!(key)).map((bayKey) => ({ levelId: level.id, bayKey })))
+}
+
+/** Splits `offsetBays` by whether the written `levels` build a bay in each one's slot or leave it unbuilt. */
+function splitOffsets(
+  offsetBays: readonly OffsetBayRef[],
+  levels: readonly Level[],
+): Pick<AssemblyProposal, 'clearedOffsets' | 'removedOffsets'> {
+  const rebuilt = (ref: OffsetBayRef) => levels.find((level) => level.id === ref.levelId)!.bays[ref.bayKey] !== undefined
+  return { clearedOffsets: offsetBays.filter(rebuilt), removedOffsets: offsetBays.filter((ref) => !rebuilt(ref)) }
 }
 
 /** The level at `y`, added with a stable id when the project has none there. */

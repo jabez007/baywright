@@ -13,6 +13,7 @@ import {
   type AssemblyProposal,
   type AssemblyRequest,
   type AssemblyRole,
+  type OffsetBayRef,
 } from '../domain/assembly.js'
 import { bayKeyOf, coveringBay, parseBayKey } from '../domain/geometry.js'
 import { getBayPattern } from '../domain/patterns.js'
@@ -156,15 +157,29 @@ function listOf(items: readonly string[]): string {
   return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
 }
 
-/** The offset bays the proposal replaces with bays in their own slots, named by level. */
+/** `refs` named by level in level order, as in "B2 and C3 on Ground and A1 on Upper". */
+function offsetBaysByLevel(project: Project, refs: readonly OffsetBayRef[]): string {
+  const groups = project.levels.flatMap((level) => {
+    const keys = refs.filter((ref) => ref.levelId === level.id).map((ref) => ref.bayKey)
+    return keys.length > 0 ? [`${listOf(keys)} on ${level.name}`] : []
+  })
+  return listOf(groups)
+}
+
+/** The offset bays the proposal replaces with bays in their own slots. */
 const clearedSummary = computed(() => {
   const result = proposal.value
   if (!result || result.clearedOffsets.length === 0) return ''
-  const groups = result.project.levels.flatMap((level) => {
-    const keys = result.clearedOffsets.filter((entry) => entry.levelId === level.id).map((entry) => entry.bayKey)
-    return keys.length > 0 ? [`${listOf(keys)} on ${level.name}`] : []
-  })
-  return `Puts ${listOf(groups)} back in ${result.clearedOffsets.length === 1 ? 'its own slot' : 'their own slots'}, without an offset.`
+  const slots = result.clearedOffsets.length === 1 ? 'its own slot' : 'their own slots'
+  return `Puts ${offsetBaysByLevel(result.project, result.clearedOffsets)} back in ${slots}, without an offset.`
+})
+
+/** The offset bays the proposal deletes, because it leaves their slots unbuilt. */
+const removedSummary = computed(() => {
+  const result = proposal.value
+  if (!result || result.removedOffsets.length === 0) return ''
+  const one = result.removedOffsets.length === 1
+  return `Removes the offset ${one ? 'bay' : 'bays'} ${offsetBaysByLevel(result.project, result.removedOffsets)}, which the plan leaves unbuilt.`
 })
 
 const issueSummary = computed(() => {
@@ -259,6 +274,7 @@ function onClose(): void {
           <p role="status">{{ issueSummary }}</p>
           <p v-if="unplacedSummary" class="warning">{{ unplacedSummary }}</p>
           <p v-if="clearedSummary">{{ clearedSummary }}</p>
+          <p v-if="removedSummary" class="warning">{{ removedSummary }}</p>
         </template>
       </section>
 
