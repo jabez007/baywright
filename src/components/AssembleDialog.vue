@@ -13,9 +13,11 @@ import {
   type AssemblyProposal,
   type AssemblyRequest,
   type AssemblyRole,
+  type OffsetBayRef,
 } from '../domain/assembly.js'
-import { bayKeyOf, parseBayKey } from '../domain/geometry.js'
+import { bayKeyOf, coveringBay, parseBayKey } from '../domain/geometry.js'
 import { getBayPattern } from '../domain/patterns.js'
+import type { Level, Project } from '../domain/types.js'
 import { useProjectStore } from '../stores/project.js'
 
 const props = defineProps<{ open: boolean }>()
@@ -136,11 +138,48 @@ const levelMaps = computed(() => {
             const name = getBayPattern(placed.patternId)?.name ?? placed.patternId
             return { bayKey, role: placed.role as AssemblyRole | 'open', glyph: ROLE_GLYPHS[placed.role], title: `${bayKey}: ${name}` }
           }
-          const space = level.negativeSpaces?.[bayKey]
-          return { bayKey, role: 'open' as const, glyph: '', title: `${bayKey}: ${space ? `open ${space.kind}` : 'not built'}` }
+          return { bayKey, role: 'open' as const, glyph: '', title: `${bayKey}: ${openSlotTitle(result.project, level, bayKey)}` }
         }),
       ),
     }))
+})
+
+/** Why a footprint slot holds no assembled bay. */
+function openSlotTitle(project: Project, level: Level, bayKey: string): string {
+  const space = level.negativeSpaces?.[bayKey]
+  if (space) return `open ${space.kind}`
+  const cover = coveringBay(project, level, bayKey)
+  return cover ? `under ${cover}, which is offset into it` : 'not built'
+}
+
+/** "A", "A and B", "A, B and C". */
+function listOf(items: readonly string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
+}
+
+/** `refs` named by level in level order, as in "B2 and C3 on Ground and A1 on Upper". */
+function offsetBaysByLevel(project: Project, refs: readonly OffsetBayRef[]): string {
+  const groups = project.levels.flatMap((level) => {
+    const keys = refs.filter((ref) => ref.levelId === level.id).map((ref) => ref.bayKey)
+    return keys.length > 0 ? [`${listOf(keys)} on ${level.name}`] : []
+  })
+  return listOf(groups)
+}
+
+/** The offset bays the proposal replaces with bays in their own slots. */
+const clearedSummary = computed(() => {
+  const result = proposal.value
+  if (!result || result.clearedOffsets.length === 0) return ''
+  const slots = result.clearedOffsets.length === 1 ? 'its own slot' : 'their own slots'
+  return `Puts ${offsetBaysByLevel(result.project, result.clearedOffsets)} back in ${slots}, without an offset.`
+})
+
+/** The offset bays the proposal deletes, because it leaves their slots unbuilt. */
+const removedSummary = computed(() => {
+  const result = proposal.value
+  if (!result || result.removedOffsets.length === 0) return ''
+  const one = result.removedOffsets.length === 1
+  return `Removes the offset ${one ? 'bay' : 'bays'} ${offsetBaysByLevel(result.project, result.removedOffsets)}, which the plan leaves unbuilt.`
 })
 
 const issueSummary = computed(() => {
@@ -234,6 +273,8 @@ function onClose(): void {
           </p>
           <p role="status">{{ issueSummary }}</p>
           <p v-if="unplacedSummary" class="warning">{{ unplacedSummary }}</p>
+          <p v-if="clearedSummary">{{ clearedSummary }}</p>
+          <p v-if="removedSummary" class="warning">{{ removedSummary }}</p>
         </template>
       </section>
 

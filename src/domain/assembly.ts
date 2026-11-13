@@ -9,7 +9,7 @@
  * same proposal.
  */
 import { bayOpenFaces, type HorizontalFace } from './connections.js'
-import { bayKeyOf, parseBayKey, sortedLevels } from './geometry.js'
+import { bayKeyOf, offsetSlot, parseBayKey, sortedLevels } from './geometry.js'
 import { getLayoutPattern, rotatedLayout } from './layouts.js'
 import { SPINE_MODULE_ID, cellFromModule } from './modules.js'
 import { bayFromPattern, getBayPattern, type QuarterTurns } from './patterns.js'
@@ -74,12 +74,22 @@ export interface AssembledBay {
   role: AssemblyRole
 }
 
+/** An offset bay that a proposal replaces or deletes. */
+export interface OffsetBayRef {
+  levelId: string
+  bayKey: string
+}
+
 export interface AssemblyProposal {
   /** A copy of the project with the proposal written in. */
   project: Project
   bays: AssembledBay[]
   /** Requested rooms that found no free slot, in request order. */
   unplacedRooms: string[]
+  /** Offset bays inside the footprint that the proposal replaces with bays in their own slots, lowest level first. */
+  clearedOffsets: OffsetBayRef[]
+  /** Offset bays inside the footprint whose slots the proposal leaves unbuilt, so Apply deletes them, lowest level first. */
+  removedOffsets: OffsetBayRef[]
   issues: Issue[]
 }
 
@@ -136,6 +146,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   const footprint = footprintKeys(request)
   const base = project.levels.find((level) => level.id === request.levelId)!
   const levels = Array.from({ length: request.levelCount }, (_, k) => levelAt(project, base, base.y + stair.rise * k))
+  const blocked = levels.map((level) => blockedSlots(level, footprint))
 
   // Grow every level's route first, so rooms can go wherever a slot is free.
   // Atriums go in before the route on their level grows around them.
@@ -145,7 +156,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   const risers: Array<Set<string>> = levels.map(() => new Set())
   const unplaced = new Set<number>()
   let atriums = request.rooms.flatMap((id, index) => (id === ATRIUM_LAYOUT_ID ? [index] : []))
-  const isClimbable = (k: number, key: string) => !levels[k]!.negativeSpaces?.[key] && !risers[k]!.has(key)
+  const isClimbable = (k: number, key: string) => !blocked[k]!(key) && !risers[k]!.has(key)
 
   /** Grow level `k`'s route around its presets and choose its stair up. */
   const growLevel = (k: number, open: readonly string[], entry: string): Route => {
@@ -165,8 +176,10 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
     return route
   }
 
-  let available = footprint.filter((key) => !base.negativeSpaces?.[key])
-  if (available.length === 0) throw new Error('The footprint is all named negative space, so there is nowhere to build')
+  let available = footprint.filter((key) => !blocked[0]!(key))
+  if (available.length === 0) {
+    throw new Error('The footprint is all named negative space or slots that offset bays move into, so there is nowhere to build')
+  }
   for (let k = 0; k < levels.length; k++) {
     const entry = k === 0 ? centralKey(available, random) : routes[k - 1]!.exit!
     const above = levels[k + 1]
@@ -175,7 +188,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
     if (above) {
       const share = Math.ceil(atriums.length / (levels.length - 1 - k))
       for (const index of atriums.slice(0, share)) {
-        const atrium = chooseAtrium(available, entry, k > 0, presets[k]!, presets[k + 1]!, above, stair.rise, random)
+        const atrium = chooseAtrium(available, entry, k > 0, presets[k]!, presets[k + 1]!, blocked[k + 1]!, stair.rise, random)
         if (!atrium) continue
         presets[k]!.push(atrium.lower)
         presets[k + 1]!.push(atrium.upper)
@@ -204,13 +217,15 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   for (const index of placeRooms(request.rooms, routes, random)) unplaced.add(index)
   for (const route of routes) addLoops(route, random)
 
+  // Read the offsets before the loop below rewrites or deletes their bays.
+  const offsetBays = offsetBaysIn(levels, footprint, blocked)
   const bays: AssembledBay[] = []
   for (let k = 0; k < levels.length; k++) {
     const level = levels[k]!
     const route = routes[k]!
     const below = k > 0 ? levels[k - 1]! : undefined
     for (const key of footprint) {
-      if (level.negativeSpaces?.[key]) continue
+      if (blocked[k]!(key)) continue
       const links = route.links.get(key)
       if (!links) {
         delete level.bays[key]
@@ -232,7 +247,7 @@ export function assembleProposal(source: Project, request: AssemblyRequest): Ass
   }
 
   const unplacedRooms = request.rooms.filter((_, index) => unplaced.has(index))
-  return { project, bays, unplacedRooms, issues: validate(project) }
+  return { project, bays, unplacedRooms, ...splitOffsets(offsetBays, levels), issues: validate(project) }
 }
 
 function checkRequest(project: Project, request: AssemblyRequest): void {
@@ -266,6 +281,40 @@ function footprintKeys(request: AssemblyRequest): string[] {
     for (let di = 0; di < request.width; di++) keys.push(bayKeyOf(i + di, j + dj))
   }
   return keys
+}
+
+/**
+ * Whether assembly must leave a footprint slot of `level` alone: named
+ * negative space, or a slot that an offset bay from outside the footprint
+ * moves into. A bay there would overlap the offset bay, and negative space
+ * cannot be named under it. Offset bays inside the footprint are replaced.
+ */
+function blockedSlots(level: Level, footprint: readonly string[]): (key: string) => boolean {
+  const inside = new Set(footprint)
+  const covered = new Set<string>()
+  for (const [key, bay] of Object.entries(level.bays)) {
+    if (bay.offset && !inside.has(key)) covered.add(offsetSlot(key, bay.offset))
+  }
+  return (key) => level.negativeSpaces?.[key] !== undefined || covered.has(key)
+}
+
+/** The offset bays in the footprint slots each level rewrites. */
+function offsetBaysIn(
+  levels: readonly Level[],
+  footprint: readonly string[],
+  blocked: ReadonlyArray<(key: string) => boolean>,
+): OffsetBayRef[] {
+  return levels.flatMap((level, k) =>
+    footprint.filter((key) => level.bays[key]?.offset && !blocked[k]!(key)).map((bayKey) => ({ levelId: level.id, bayKey })))
+}
+
+/** Splits `offsetBays` by whether the written `levels` build a bay in each one's slot or leave it unbuilt. */
+function splitOffsets(
+  offsetBays: readonly OffsetBayRef[],
+  levels: readonly Level[],
+): Pick<AssemblyProposal, 'clearedOffsets' | 'removedOffsets'> {
+  const rebuilt = (ref: OffsetBayRef) => levels.find((level) => level.id === ref.levelId)!.bays[ref.bayKey] !== undefined
+  return { clearedOffsets: offsetBays.filter(rebuilt), removedOffsets: offsetBays.filter((ref) => !rebuilt(ref)) }
 }
 
 /** The level at `y`, added with a stable id when the project has none there. */
@@ -401,7 +450,7 @@ function chooseAtrium(
   entryIsLeaf: boolean,
   presetsHere: readonly Preset[],
   presetsAbove: readonly Preset[],
-  above: Level,
+  blockedAbove: (key: string) => boolean,
   rise: number,
   random: () => number,
 ): AtriumPlacement | null {
@@ -419,7 +468,7 @@ function chooseAtrium(
       const lower = piecesAt(0)
       const upper = piecesAt(rise)
       if ([...lower.keys()].some((key) => !open.has(key) || key === entry || takenHere.has(key))) continue
-      if ([...lower.keys()].some((key) => above.negativeSpaces?.[key] || takenAbove.has(key))) continue
+      if ([...lower.keys()].some((key) => blockedAbove(key) || takenAbove.has(key))) continue
 
       const lowerLinks = doorwayLinks(lower, () => true)
       const ports = lowerLinks.map(([, to]) => to).filter((key) => !lower.has(key))
@@ -429,7 +478,7 @@ function chooseAtrium(
       // A balcony's doorway over the core opens onto the core, not a bay.
       const upperLinks = doorwayLinks(upper, (key) => upper.has(key) || !lower.has(key))
       const upperPorts = upperLinks.map(([, to]) => to).filter((key) => !upper.has(key))
-      if (upperPorts.some((key) => !ports.includes(key) || above.negativeSpaces?.[key] || takenAbove.has(key))) continue
+      if (upperPorts.some((key) => !ports.includes(key) || blockedAbove(key) || takenAbove.has(key))) continue
 
       candidates.push({
         lower: { pieces: lower, links: lowerLinks, mustJoin: true, through: [] },

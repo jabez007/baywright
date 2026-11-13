@@ -5,7 +5,7 @@ import { bayOpenFaces } from '../src/domain/connections.js'
 import { bayKeyOf, parseBayKey } from '../src/domain/geometry.js'
 import type { Level } from '../src/domain/types.js'
 import { validate } from '../src/domain/validate.js'
-import { level, project } from './factory.js'
+import { bay, level, project } from './factory.js'
 
 function field(cols = 4, rows = 4) {
   return project([level('ground', 0, {})], { bayCols: cols, bayRows: rows })
@@ -175,6 +175,64 @@ describe('procedural assembly', () => {
     })
     expect(Math.max(...loops)).toBeGreaterThan(0)
     expect(Math.min(...loops)).toBeGreaterThanOrEqual(0)
+  })
+
+  it('leaves alone the slots that offset bays from outside the footprint move into', () => {
+    // The footprint is columns B to D. A1 moves east into B1 on the ground, and
+    // A2 into B2 on the level above.
+    // Their cells are unbuilt, so only the overlap V12 checks can fail.
+    const unbuilt = () => ({ ...bay('fine', () => ({ module: 'empty' })), offset: 'east' as const })
+    const source = project([level('ground', 0, { A1: unbuilt() }), level('upper', 8, { A2: unbuilt() })], { bayCols: 4, bayRows: 4 })
+    const rooms = ASSEMBLY_ROOMS.map((room) => room.id)
+    for (let levelCount = 1; levelCount <= 3; levelCount++) {
+      for (let seed = 1; seed <= 12; seed++) {
+        const label = `${levelCount} levels, seed ${seed}`
+        const proposal = assembleProposal(source, request({ anchorBayKey: 'B1', width: 3, height: 4, levelCount, rooms, seed }))
+        const [ground, upper] = proposal.project.levels as [Level, Level]
+        expect(proposal.issues.map((issue) => issue.message), label).toEqual([])
+        expect(ground.bays.A1, label).toEqual(source.levels[0]!.bays.A1)
+        for (const [subject, key] of [[ground, 'B1'], [upper, 'B2']] as const) {
+          expect(subject.bays[key], `${label} ${key}`).toBeUndefined()
+          expect(subject.negativeSpaces?.[key], `${label} ${key}`).toBeUndefined()
+        }
+      }
+    }
+  })
+
+  it('lists the offset bays it puts back in their own slots and the ones it removes', () => {
+    // B2 and C3 are inside the footprint. D1 is outside it. The route builds
+    // B2 and leaves C3 unbuilt.
+    const source = field()
+    const ground = source.levels[0]!
+    ground.bays.B2 = { ...bay('fine'), offset: 'east' }
+    ground.bays.C3 = { ...bay('fine'), offset: 'south' }
+    ground.bays.D1 = { ...bay('fine', () => ({ module: 'empty' })), offset: 'south' }
+    const proposal = assembleProposal(source, request({ width: 3, height: 3 }))
+    expect(proposal.clearedOffsets).toEqual([{ levelId: 'ground', bayKey: 'B2' }])
+    expect(proposal.removedOffsets).toEqual([{ levelId: 'ground', bayKey: 'C3' }])
+    expect(proposal.project.levels[0]!.bays.B2?.offset).toBeUndefined()
+    expect(proposal.project.levels[0]!.bays.C3).toBeUndefined()
+    expect(assembleProposal(field(), request())).toMatchObject({ clearedOffsets: [], removedOffsets: [] })
+  })
+
+  it('names the offset bays it removes apart from the ones it puts back', () => {
+    // Offset bays fill columns A and C. The route builds some of their slots
+    // and leaves the rest unbuilt.
+    const offsetKeys = footprintKeys(4, 4).filter((key) => key.startsWith('A') || key.startsWith('C'))
+    let removals = 0
+    for (let seed = 1; seed <= 12; seed++) {
+      const source = field()
+      for (const key of offsetKeys) source.levels[0]!.bays[key] = { ...bay('fine'), offset: 'east' }
+      const proposal = assembleProposal(source, request({ seed }))
+      const ground = proposal.project.levels[0]!
+      const cleared = proposal.clearedOffsets.map((entry) => entry.bayKey)
+      const removed = proposal.removedOffsets.map((entry) => entry.bayKey)
+      expect([...cleared, ...removed].sort(), `seed ${seed}`).toEqual([...offsetKeys].sort())
+      for (const key of cleared) expect(ground.bays[key] && !ground.bays[key].offset, `seed ${seed} ${key}`).toBe(true)
+      for (const key of removed) expect(ground.bays[key], `seed ${seed} ${key}`).toBeUndefined()
+      removals += removed.length
+    }
+    expect(removals).toBeGreaterThan(0)
   })
 
   it('changes nothing outside the footprint', () => {
