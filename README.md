@@ -34,6 +34,7 @@ npm run lint         # ESLint for Vue and TypeScript
 npm run typecheck    # vue-tsc in strict mode
 npm run build        # typecheck and create the production bundle in dist/
 npm run test:e2e     # Playwright tests in Chromium
+npm run audit:deps   # npm audit, less the advisories scripts/audit.mjs allows
 npm run verify       # tests, build, e2e, dependency audits, and git diff checks
 ```
 
@@ -136,6 +137,8 @@ The inspector also exposes module, merge, height, ceiling, socket, and opening-w
 Vitest covers geometry, every validator, the BOM and recipes, modules, the project store, JSON, PNG, and Litematica exports, IndexedDB recovery, and autosave behavior. Playwright checks editing and reload, one-bay issue navigation, roving SVG focus, PNG state restoration, Litematica download, project Back/Forward routes, and narrow or short viewports.
 
 The Test workflow runs on a push to any branch except `main`. It installs with `npm ci`, runs ESLint, the unit tests, and the production build, audits the dependencies, installs Chromium, and runs the Playwright suite.
+
+The audit runs `npm audit` through `scripts/audit.mjs`, which fails on any advisory not on its `ALLOWED` list. Each entry records why the advisory doesn't apply, its vulnerable range and the package's latest release. The audit fails again once either changes, since that may mean a fix shipped. GHSA-fc5q-39xc-vjpf, a ReDoS in `picomatch` with no fixed release, is the one entry. Only build and dev tools use `picomatch`, and none of it reaches the built site.
 
 ## Branches and deployment
 

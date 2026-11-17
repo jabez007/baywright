@@ -495,6 +495,8 @@ e2e/
   workspace.spec.ts        # Playwright workspace flows
 test/
   *.spec.ts                # domain, store, export, and persistence tests
+scripts/
+  audit.mjs                # npm audit, less the advisories it allows and why
 .github/workflows/
   test.yaml                # lint, unit, build, audit, and Playwright checks on every branch but main
   deploy.yaml              # builds vue and publishes dist to main for GitHub Pages
