@@ -141,7 +141,7 @@ A `BayPattern` is a reusable arrangement of modules and sockets for one bay. Pat
 
 The catalog contains straight passage, corner passage, T-junction, four-way junction, stair hall, library hall, workshop bay, feature chamber, rail line, ice highway, and item trunk patterns. Exploration pieces add a balcony landing, dead end, side chamber, concealed room, service junction, mine head, cave mouth, compact stair, and compact landing. Every fine or merged pattern, in every rotation, meets a four-way junction on each side either centre to centre or with a closed face, and a spine in a neighbouring junction reaches every cell it builds. The coarse workshop bay meets the feature chamber the same way. A fine junction's middle doorway would straddle the joint between two coarse cells, which V2 rejects. The concealed room's vault opens through a plain arch with a note to hide it, because the model has no hidden-door socket. The mine head's floor shaft and the cave mouth's open east side lead into whatever the world holds there. Rotate a pattern in 90-degree steps before stamping it. **Auto fit** selects the rotation with the fewest conflicts and the most matching openings against adjacent bays. Two openings match when they overlap and one cell's interior span along the seam lies inside the other's, the rule V2 applies to fine cells.
 
-A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step.
+A `LayoutPattern` arranges several `BayPattern` placements relative to one north-west anchor. Layout patterns rotate in 90-degree steps and expand into ordinary bays. The catalog contains a Stronghold loop, grand chamber, library wing, and workshop wing. A layout stamp resolves every target before it changes the project and uses one undo step. Every placement lands in its own slot. The stamp refuses a target that holds an offset bay rather than moving the bay back, and it runs V12 so that a placement in a slot another offset bay moves into is refused too. Either refusal leaves the project unchanged.
 
 A placement may also set `dy`, a multiple of 4 blocks above the level the user stamps on. The stamp uses the level already at that y or adds one, named `Level {y}`, that copies the footprint below. Before it keeps the edit, the stamp runs V1. If any stamped cell collides with another level, the whole stamp is refused and the project is left unchanged. The multi-level catalog contains a stair stack over three levels, a compact stair with its landing 8 blocks up, a library with a gallery that looks down through a 3x3 well, a 12-high atrium with a balcony over each side hall, and two merged smelter bays over an item-trunk service run.
 
@@ -495,6 +495,8 @@ e2e/
   workspace.spec.ts        # Playwright workspace flows
 test/
   *.spec.ts                # domain, store, export, and persistence tests
+scripts/
+  audit.mjs                # npm audit, less the advisories it allows and why
 .github/workflows/
   test.yaml                # lint, unit, build, audit, and Playwright checks on every branch but main
   deploy.yaml              # builds vue and publishes dist to main for GitHub Pages

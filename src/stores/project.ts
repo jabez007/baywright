@@ -33,7 +33,7 @@ import { DEFAULT_MODULE_ID, cellFromModule, getModule, isBuiltCell, type CellOve
 import { PALETTES } from '../domain/palettes.js'
 import { bayFromPattern, type PatternRotation, type QuarterTurns } from '../domain/patterns.js'
 import { projectFromTemplate, type ProjectTemplateId } from '../domain/templates.js'
-import { checkVerticalCollisions, validate, type Issue } from '../domain/validate.js'
+import { checkBayOverlaps, checkVerticalCollisions, validate, type Issue } from '../domain/validate.js'
 import {
   LEVEL_PITCH,
   MAX_BAY_FIELD,
@@ -583,6 +583,18 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  /**
+   * Refuse a layout stamp over an offset bay. A single-bay stamp keeps a bay's
+   * offset, but a layout's pieces line up slot by slot, so moving the bay back
+   * is left to the user.
+   */
+  function assertNoOffsetBays(targets: ReadonlyArray<{ level: Level; bayKey: string }>, refusal: string): void {
+    for (const { level, bayKey } of targets) {
+      const offset = level.bays[bayKey]?.offset
+      if (offset) throw new Error(`${refusal} ${bayKey} on level '${level.name}' is offset ${offset}. Clear its offset first`)
+    }
+  }
+
   function clearNegativeSpace(level: Level, bayKey: string): void {
     if (!level.negativeSpaces) return
     delete level.negativeSpaces[bayKey]
@@ -828,8 +840,10 @@ export const useProjectStore = defineStore('project', () => {
   /**
    * Stamp a whole bay arrangement relative to its north-west anchor. A
    * placement with `dy` lands on the level that many blocks up, which is added
-   * when missing. A stamp whose cells would collide vertically with anything is
-   * refused whole. Returns the bay keys stamped on the anchor level.
+   * when missing. Every placement lands in its own slot, so a stamp over an
+   * offset bay, over a slot an offset bay moves into, or whose cells would
+   * collide vertically with anything is refused whole. Returns the bay keys
+   * stamped on the anchor level.
    */
   function stampLayoutPattern(
     levelId: string,
@@ -841,6 +855,7 @@ export const useProjectStore = defineStore('project', () => {
       const base = requireLevel(levelId)
       const anchor = parseBayKey(anchorBayKey)
       const layout = rotatedLayout(layoutId, quarterTurns)
+      const refusal = `The ${getLayoutPattern(layoutId)?.name ?? layoutId} layout does not fit here.`
       const targets = layout.placements.map((placement) => ({
         placement,
         dy: placement.dy ?? 0,
@@ -854,6 +869,7 @@ export const useProjectStore = defineStore('project', () => {
         const y = base.y + dy
         levels.set(dy, project.value.levels.find((level) => level.y === y) ?? insertLevel(y))
       }
+      assertNoOffsetBays(targets.map(({ dy, bayKey }) => ({ level: levels.get(dy)!, bayKey })), refusal)
 
       const mergeGroups = new Map<string, string>()
       const stamped = new Set<string>()
@@ -871,13 +887,10 @@ export const useProjectStore = defineStore('project', () => {
         stamped.add(`${level.id}/${bayKey}`)
       }
 
-      const collision = checkVerticalCollisions(project.value).find((issue) =>
+      const collision = [...checkBayOverlaps(project.value), ...checkVerticalCollisions(project.value)].find((issue) =>
         issue.refs.some((ref) => stamped.has(`${ref.levelId}/${ref.bayKey}`)),
       )
-      if (collision) {
-        const name = getLayoutPattern(layoutId)?.name ?? layoutId
-        throw new Error(`The ${name} layout does not fit here. ${collision.message}`)
-      }
+      if (collision) throw new Error(`${refusal} ${collision.message}`)
       return targets.filter(({ dy }) => dy === 0).map(({ bayKey }) => bayKey)
     })
   }

@@ -16,7 +16,8 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint .",
     "test:e2e": "playwright test",
-    "verify": "npm run lint && npm test && npm run build && npm run test:e2e && npm audit && npm audit --omit=dev && git diff --check"
+    "audit:deps": "node scripts/audit.mjs",
+    "verify": "npm run lint && npm test && npm run build && npm run test:e2e && npm run audit:deps && npm run audit:deps -- --omit=dev && git diff --check"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

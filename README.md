@@ -34,6 +34,7 @@ npm run lint         # ESLint for Vue and TypeScript
 npm run typecheck    # vue-tsc in strict mode
 npm run build        # typecheck and create the production bundle in dist/
 npm run test:e2e     # Playwright tests in Chromium
+npm run audit:deps   # npm audit, less the advisories scripts/audit.mjs allows
 npm run verify       # tests, build, e2e, dependency audits, and git diff checks
 ```
 
@@ -110,7 +111,7 @@ When the page becomes hidden or starts to unload, Baywright starts any pending w
 - Double-click a bay to open its cells. Use the **Bays** and **Cells** controls to change views directly.
 - Choose **Paint** and a module to paint bays or cells. Drag with a mouse, touch, or pen to paint several targets.
 - Choose **Stamp** and a bay pattern to replace whole bays with reusable layouts. **Auto fit** rotates each stamp to match openings in adjacent bays; fixed rotations remain available when the plan calls for a specific orientation. Besides passages, junctions, and feature rooms, the catalog has exploration pieces: a balcony landing, a dead end, a side chamber, a concealed room behind an arch you hide in the build, a service junction for item trunks, a mine head, a cave mouth, and a compact stair with its matching landing. The Compact stair layout stamps the stair and its landing 8 blocks up in one step.
-- Choose **Layout** to stamp a Stronghold loop, grand chamber, library wing, or workshop wing from a north-west anchor. Layouts may fill absent footprint slots, and the whole placement is one undo step.
+- Choose **Layout** to stamp a Stronghold loop, grand chamber, library wing, or workshop wing from a north-west anchor. Layouts may fill absent footprint slots, and the whole placement is one undo step. A layout puts every bay in its own slot, so it stamps nothing over an offset bay or over a slot an offset bay moves into. Clear the offset first.
 - Some layouts build on more than one level, and the picker shows how many. A stair stack, compact stair, library gallery, atrium, or machinery hall uses a level that already sits at the right height, or adds one. If any part would hit a room on another level, nothing is stamped.
 - Choose **Empty** to clear bays or cells. Clearing a bay preserves its grain. Empty cells are unbuilt: they place no blocks, cost nothing in the materials list, and take no part in the checks.
 - Choose **Footprint** to add or remove bays. Drag to change several bays.
@@ -136,6 +137,8 @@ The inspector also exposes module, merge, height, ceiling, socket, and opening-w
 Vitest covers geometry, every validator, the BOM and recipes, modules, the project store, JSON, PNG, and Litematica exports, IndexedDB recovery, and autosave behavior. Playwright checks editing and reload, one-bay issue navigation, roving SVG focus, PNG state restoration, Litematica download, project Back/Forward routes, and narrow or short viewports.
 
 The Test workflow runs on a push to any branch except `main`. It installs with `npm ci`, runs ESLint, the unit tests, and the production build, audits the dependencies, installs Chromium, and runs the Playwright suite.
+
+The audit runs `npm audit` through `scripts/audit.mjs`, which fails on any advisory not on its `ALLOWED` list. Each entry records why the advisory doesn't apply, its vulnerable range and the package's latest release. The audit fails again once either changes, since that may mean a fix shipped. GHSA-fc5q-39xc-vjpf, a ReDoS in `picomatch` with no fixed release, is the one entry. Only build and dev tools use `picomatch`, and none of it reaches the built site.
 
 ## Branches and deployment
 
